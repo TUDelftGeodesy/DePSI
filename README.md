@@ -30,7 +30,7 @@ mamba activate pydepsi-dev
 Install this package in development mode:
 
 ```bash
-pip install -e .[dev,docs]
+pip install -e ".[dev,docs]"
 ```
 
 In the end, install the pre-commit hooks:
