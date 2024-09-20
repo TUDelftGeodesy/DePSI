@@ -16,7 +16,7 @@ cd PyDePSI
 Create a new conda environment (here we give an example name `pydepsi-dev`) with `mamba`.:
 
 ```bash
-mamba create -n pydepsi-dev python=3.12
+mamba create -c conda-forge -n pydepsi-dev python=3.12
 ```
 
 Here we use Python 3.12 since we aim to support python 3.10 and above.
@@ -38,7 +38,7 @@ In the end, install the pre-commit hooks:
 pre-commit install
 ```
 
-## References
+## Useful reading material
 
 - [Python packaging user guide](https://packaging.python.org/)
 - [Testing in Python](https://docs.kedro.org/en/stable/development/automated_testing.html)
