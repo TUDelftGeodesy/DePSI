@@ -35,5 +35,8 @@ def intf_to_slc(mother_slc, ifgs):
 
 
 def _slc_complex_recontruct(mother_slc_complex, ifg_complex):
-    """Reconstruct the SLC complex values from the mother SLC complex and the interferogram complex."""
-    return (ifg_complex * mother_slc_complex.conj()) / (np.abs(mother_slc_complex) ** 2)
+    """Reconstruct the SLC complex values from the mother SLC complex and the interferogram complex.
+
+    The implementation equivalent to: (ifg_complex * mother_slc_complex.conj()) / (np.abs(mother_slc_complex) ** 2).
+    """
+    return ifg_complex / mother_slc_complex
