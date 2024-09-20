@@ -1,6 +1,6 @@
-# PyDePSI (Tenative name)
+# PyDePSI (Tentative name)
 
-This is the repository of WIP, where we are developing a Python package for inteferometric SAR processing. The software will be inspired by the MATLAB software DePSI, but implemented in Python and include recent developments in the field.
+This is repository is WIP, where we are developing a Python package for inteferometric SAR processing. The software will be inspired by the MATLAB software DePSI, but implemented in Python and include recent developments in the field.
 
 ## Installation for development
 
@@ -24,7 +24,7 @@ Here we use Python 3.12 since we aim to support python 3.10 and above.
 Activate the environment:
 
 ```bash
-conda activate pydepsi-dev
+mamba activate pydepsi-dev
 ```
 
 Install this package in development mode:
