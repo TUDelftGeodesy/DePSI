@@ -1,6 +1,6 @@
 # Example script for PyDePSI
 
-This folder contains scripts to run PyDePSI on SLURM infrastructures. One needs to modify `exec_python.slurm` to specify 1) a conda environment with PyDePSI and 2) the desired Python script. The command can be used to execute the specified script:
+This folder contains scripts to run PyDePSI on SLURM infrastructures. One needs to modify `exec_python.slurm` to specify 1) a conda environment with PyDePSI and 2) the desired Python script. The following command can be used to execute the specified script:
 
 ```bash
 sbatch exec_python.slurm
@@ -16,6 +16,6 @@ Some HPC system (for example SURF Spider system, see [this documentation](https:
 
 ## PyDePSI with RS-DAT
 
-The [RS-DAT platform](https://rs-dat.github.io/RS-DAT/) developed by Netherlands eScience Center can be used to start up a Jupyter environment with Dask cluster. With RS-DAT, one can also start a Dask cluster schedular on a HPC system, then pass the schedular address to the Python script. In this way, the same Dask cluster can be re-used for multiple Python script executions. This can be useful for developing and testing PyDePSI scripts.
+The [RS-DAT platform](https://rs-dat.github.io/RS-DAT/) developed by Netherlands eScience Center can be used to start up a Jupyter environment with Dask cluster. RS-DAT can also be used to start a Dask cluster scheduler on a HPC system, to which other Python scripts/processes can connect by providing the scheduler address. In this way, the same Dask cluster can be re-used for multiple Python script executions. This can be useful for developing and testing PyDePSI scripts.
 
 Please refer to the [RS-DAT JupyterDaskOnSLURM user guide](https://github.com/RS-DAT/JupyterDaskOnSLURM/blob/main/user-guide.md) for this option.

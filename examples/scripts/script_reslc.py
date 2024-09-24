@@ -1,6 +1,6 @@
 """Example script for calculating SLCs from interferograms.
 
-This .py script is designed to be executed with a Dask SLURMCluster on a SLURM HPC.
+This .py script is designed to be executed with a Dask SLURMCluster on a SLURM managed HPC system.
 It should be executed through a SLURM script by `sbatch` command.
 Please do not run this script by "python xxx.py" on a login node.
 """
