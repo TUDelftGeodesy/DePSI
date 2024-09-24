@@ -1,4 +1,4 @@
-"""Example script of calculating SLC from interferograms.
+"""Example script for calculating SLCs from interferograms.
 
 This .py script is designed to be executed with a Dask SLURMCluster on a SLURM HPC.
 It should be executed through a SLURM script by `sbatch` command.
@@ -44,7 +44,6 @@ reading_chunks = (2000, 2000)  # Reading chunks from binary
 # Output config
 overwrite_zarr = False  # Flag for zarr overwrite
 writing_chunks = (2000, 2000)  # Writing chunks to zarr, (azimuth, range)
-path_stm = Path("./stm.zarr")  # Zarr output storage for STM
 path_figure = Path("./figure")  # Output path for figure
 
 
@@ -69,8 +68,8 @@ path_figure = Path("./figure")  # Output path for figure
 #     you can access it at: localhost:8889/proxy/{FREE_SOCKET}/status"
 # )
 
-# Option 2: Intiate a new SLURMCluster
-# Uncomment the following part to give an exist Dask SLURMCluster
+# Option 2: Use an existing SLURMCluster by giving the schedular address 
+# Uncomment the following part to use an existing Dask SLURMCluster
 ADDRESS = "tcp://XX.X.X.XX:12345" # Manual input: Dask schedular address
 SOCKET = 12345 # Manual input: port number. It should be the number after ":" of ADDRESS
 cluster = None  # Keep this None, needed for an if statement

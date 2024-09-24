@@ -1,6 +1,6 @@
 # Example script for PyDePSI
 
-This folder contains scripts to run PyDePSI on SLURM infrastructures. One needs to modify `exec_python.slurm` to specify 1) a conda environment with PyDePSI and 2) the desired Python script. The the command can be used to execute the specified script:
+This folder contains scripts to run PyDePSI on SLURM infrastructures. One needs to modify `exec_python.slurm` to specify 1) a conda environment with PyDePSI and 2) the desired Python script. The command can be used to execute the specified script:
 
 ```bash
 sbatch exec_python.slurm
