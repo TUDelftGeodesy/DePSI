@@ -4,7 +4,7 @@ import dask.array as da
 import numpy as np
 
 
-def intf_to_slc(mother_slc, ifgs):
+def ifg_to_slc(mother_slc, ifgs):
     """Convert a stack of interferograms to SLCs.
 
     The conversion will be implemented by conjugated multiplication of the interferograms complex values

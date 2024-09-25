@@ -15,7 +15,7 @@ from dask.distributed import Client
 from dask_jobqueue import SLURMCluster
 import sarxarray
 
-from pydepsi.slc import intf_to_slc
+from pydepsi.slc import ifg_to_slc
 from pydepsi.io import read_metadata
 
 # Make a logger to log the stages of processing
@@ -37,7 +37,7 @@ def get_free_port():
 
 # ---- Config 1: Path Configuration ----
 # Paths and files
-stack_dir = Path("/project/caroline/Share/stacks/nl_veenweiden_s1_dsc_t037/stack")  # Intf stack dir
+stack_dir = Path("/project/caroline/Share/stacks/nl_veenweiden_s1_dsc_t037/stack")  # ifg stack dir
 mother_dir = stack_dir / "20200328"  # Mother image dir
 reading_chunks = (2000, 2000)  # Reading chunks from binary
 
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     ifgs = sarxarray.from_binary(f_ifgs, shape, dtype=dtype_slc_ifg, chunks=reading_chunks)
 
     # Generate reconstructed SLCs
-    slc_recon = intf_to_slc(mother, ifgs)
+    slc_recon = ifg_to_slc(mother, ifgs)
 
     # Extract real and image part. remove other fields. convert to float16
     slc_recon_output = slc_recon.copy()
