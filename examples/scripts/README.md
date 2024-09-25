@@ -12,7 +12,7 @@ The submitted SLURM job will execute the Python script. A Dask cluster will be c
 
 It is assumed that the user has a working conda environment with PyDePSI installed. This conda environment is required in the `exec_python.slurm` script. 
 
-Some HPC system (for example SURF Spider system, see [this documentation](https://doc.spider.surfsara.nl/en/latest/Pages/software_on_spider.html)) may require the user to execute the conda environment inside a container. One can for example use the [LUMI container wrapper](https://docs.lumi-supercomputer.eu/software/installing/container-wrapper/) as a solution.
+Some HPC system (for example SURF Spider system, see [this documentation](https://doc.spider.surfsara.nl/en/latest/Pages/software_on_spider.html)) may require the user to execute the conda environment inside a container. One can for example use the [LUMI container wrapper](https://docs.lumi-supercomputer.eu/software/installing/container-wrapper/) as a solution. The [JupyterDaskOnSLURM](https://github.com/RS-DAT/JupyterDaskOnSLURM/tree/main) tool from RS-DAT platform provides the LUMI container wrapper together with Jupyter Lab interface and Dask-Slurm cluster, see the [Container wrapper for Spider system](https://github.com/RS-DAT/JupyterDaskOnSLURM/blob/main/user-guide.md#container-wrapper-for-spider-system) section. For more information on the RS-DAT platform, please refer to the following section "PyDePSI with RS-DAT".
 
 ## PyDePSI with RS-DAT
 
