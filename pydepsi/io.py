@@ -29,7 +29,7 @@ def read_metadata(resfile, mode="raw", **kwargs):
     # +++   - Satellite ID
     pattern = r"Product type specifier:\s+(.*?(?=\n))"
     match = re.search(pattern, content)
-    match.group(1).upper()
+    sat_id = match.group(1).upper()
 
     # ++++1 - Geometry [DESCENDING or ASCENDING]
     pattern = r"PASS:\s+(.*?(?=\n))"
@@ -49,7 +49,6 @@ def read_metadata(resfile, mode="raw", **kwargs):
     # ++++ 3 - azimuth0time
 
     # convert from time format to seconds of the day
-    match.group(2)
     pattern = r"(\d+):(\d+):(\d+.\d+)"
     match = re.search(pattern, content)
     azimuth0time = int(match.group(1)) * 3600 + int(match.group(2)) * 60 + float(match.group(3))
@@ -226,6 +225,7 @@ def read_metadata(resfile, mode="raw", **kwargs):
 
     # Fill the dictionary
     datewise_metadata = {
+        "sat_id": sat_id,
         "orbit": geometry,
         "acq_date": acq_date,
         "azimuth0time": azimuth0time,
