@@ -45,6 +45,7 @@ reading_chunks = (2000, 2000)  # Reading chunks (azimuth, range) from binary
 overwrite_zarr = False  # Flag for zarr overwrite
 writing_chunks = (2000, 2000)  # Writing chunks to zarr, (azimuth, range)
 path_figure = Path("./figure")  # Output path for figure
+path_figure.mkdir(exist_ok=True)    # Make figure directory if not exists
 
 
 # ---- Config 2: Dask configuration ----
@@ -90,9 +91,6 @@ if __name__ == "__main__":
         # each worker will appear as a Slurm job
         cluster.scale(jobs=N_WORKERS)
         client = Client(cluster)
-
-    # Make figure directory if not exists
-    path_figure.mkdir(exist_ok=True)
 
     logger.info("Loading data ...")
     # Metadata
