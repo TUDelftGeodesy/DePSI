@@ -7,7 +7,11 @@ import xarray as xr
 
 
 def ps_selection(
-    slcs: xr.Dataset, threshold: float, method: Literal["nad", "nmad"] = "nad", output_chunks: int = 10000
+    slcs: xr.Dataset,
+    threshold: float,
+    method: Literal["nad", "nmad"] = "nad",
+    output_chunks: int = 10000,
+    mem_persist: bool = False,
 ) -> xr.Dataset:
     """Select Persistent Scatterers (PS) from a SLC stack, and return a Space-Time Matrix.
 
@@ -15,6 +19,8 @@ def ps_selection(
     The selected pixels will be reshaped to (space, time), where `space` is the number of selected pixels.
     The unselected pixels will be discarded.
     The original `azimuth` and `range` coordinates will be persisted.
+    The computed NAD or NMAD will be added to the output dataset as a new variable. It can be persisted in
+    memory if `mem_persist` is True.
 
     Parameters
     ----------
@@ -27,9 +33,11 @@ def ps_selection(
         Method of selection, by default "nad".
         - "nad": Normalized Amplitude Dispersion
         - "nmad": Normalized Median Amplitude Deviation
-
     output_chunks : int, optional
         Chunk size in the `space` dimension, by default 10000
+    mem_persist : bool, optional
+        If true persist the NAD or NMAD in memory, by default False.
+
 
     Returns
     -------
@@ -41,11 +49,18 @@ def ps_selection(
     NotImplementedError
         Raised when an unsupported method is provided.
     """
+    # Make sure there is not temporal chunk
+    # since later a block function assumes all temporal data is available in a spatial block
+    slcs = slcs.chunk({"time": -1})
+
+    # Calculate selection mask
     match method:
         case "nad":
             nad = xr.map_blocks(
                 _nad_block, slcs["amplitude"], template=slcs["amplitude"].isel(time=0).drop_vars("time")
             )
+            nad = nad.compute() if mem_persist else nad
+            slcs = slcs.assign(pnt_nad=nad)
             mask = nad < threshold
         case _:
             raise NotImplementedError
@@ -91,6 +106,13 @@ def ps_selection(
             "space": (["space"], range(stm_masked.sizes["space"])),
         }
     )
+
+    # Compute NAD or NMAD if mem_persist is True
+    # This only evaluate a very short task graph, since NAD or NMAD is already in memory
+    if mem_persist:
+        match method:
+            case "nad":
+                stm_masked["pnt_nad"] = stm_masked["pnt_nad"].compute()
 
     return stm_masked
 
