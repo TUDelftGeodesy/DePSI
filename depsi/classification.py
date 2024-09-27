@@ -96,6 +96,19 @@ def ps_selection(
 
 
 def _nad_block(amp: xr.DataArray) -> xr.DataArray:
+    """Compute Normalized Amplitude Dispersion (NAD) for a block of amplitude data.
+
+    Parameters
+    ----------
+    amp : xr.DataArray
+        Amplitude data, with dimensions ("azimuth", "range", "time").
+        This can be extracted from a SLC xr.Dataset.
+
+    Returns
+    -------
+    xr.DataArray
+        Normalized Amplitude Dispersion (NAD) data, with dimensions ("azimuth", "range").
+    """
     # Time dimension order
     t_order = list(amp.dims).index("time")
 
