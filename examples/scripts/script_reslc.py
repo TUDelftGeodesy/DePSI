@@ -39,7 +39,7 @@ def get_free_port():
 # Paths and files
 stack_dir = Path("/project/caroline/Share/stacks/nl_veenweiden_s1_dsc_t037/stack")  # ifg stack dir
 mother_dir = stack_dir / "20200328"  # Mother image dir
-reading_chunks = (2000, 2000)  # Reading chunks from binary
+reading_chunks = (2000, 2000)  # Reading chunks (azimuth, range) from binary
 
 # Output config
 overwrite_zarr = False  # Flag for zarr overwrite

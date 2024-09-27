@@ -9,7 +9,7 @@ from pydepsi.utils import _orbit_fit
 
 # Define constants
 SC_N_PATTERN = r"\s+([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
-SPPED_OF_LIGHT = 299792458.0
+SPEED_OF_LIGHT = 299792458.0
 
 
 def read_metadata(resfile, mode="raw", **kwargs):
@@ -70,7 +70,7 @@ def read_metadata(resfile, mode="raw", **kwargs):
     match = re.search(pattern, content)
     rsr = float(match.group(1)) * 1e6 * 2
 
-    # ++++ 7 - wavelenght
+    # ++++ 7 - wavelength
     pattern = r"Radar_wavelength \(m\):" + SC_N_PATTERN
     match = re.search(pattern, content)
     wavelength = float(match.group(1))
