@@ -9,7 +9,7 @@ from pydepsi.utils import _orbit_fit
 
 # Define constants
 SC_N_PATTERN = r"\s+([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
-SPEED_OF_LIGHT = 299792458.0 # m/s
+SPEED_OF_LIGHT = 299792458.0  # m/s
 
 
 def read_metadata(resfile, mode="raw", **kwargs):
@@ -58,7 +58,7 @@ def read_metadata(resfile, mode="raw", **kwargs):
     # ++++ 4 - range0time
     pattern = r"Range_time_to_first_pixel \(2way\) \(ms\):" + SC_N_PATTERN
     match = re.search(pattern, content)
-    range0time = float(match.group(1)) * 1e-3
+    range0time = float(match.group(1)) * 1e-3 / 2  # devide by 2 to balance the two way travel
 
     # ++++ 5 - prf
     pattern = r"Pulse_Repetition_Frequency \(computed, Hz\):" + SC_N_PATTERN
@@ -155,7 +155,7 @@ def read_metadata(resfile, mode="raw", **kwargs):
     # ++++ 20 - range_resolution
     pattern = r"Total_range_band_width \(MHz\):" + SC_N_PATTERN
     match = re.search(pattern, content)
-    range_resolution = SPPED_OF_LIGHT / (2 * float(match.group(1)) * 1e6)
+    range_resolution = SPEED_OF_LIGHT / (2 * float(match.group(1)) * 1e6)
 
     # ++++ 21 - nBursts
     burst_n = None
@@ -231,7 +231,7 @@ def read_metadata(resfile, mode="raw", **kwargs):
         "orbit": geometry,
         "acq_date": acq_date,
         "azimuth0time": azimuth0time,
-        "range0time": range0time / 2,
+        "range0time": range0time,
         "prf": prf,
         "rsr": rsr,
         "wavelength": wavelength,
