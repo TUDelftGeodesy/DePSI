@@ -9,7 +9,7 @@ from pydepsi.utils import _orbit_fit
 
 # Define constants
 SC_N_PATTERN = r"\s+([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
-SPEED_OF_LIGHT = 299792458.0
+SPEED_OF_LIGHT = 299792458.0 # m/s
 
 
 def read_metadata(resfile, mode="raw", **kwargs):
