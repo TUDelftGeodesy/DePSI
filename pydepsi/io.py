@@ -149,7 +149,7 @@ def read_metadata(resfile, mode="raw", **kwargs):
 
     # resolutions [from s1 annual performance reports]
     az_resolutions = np.array([21.76, 21.89, 21.71])
-    np.array([2.63, 3.09, 3.51])
+    sr_resolutions = np.array([2.63, 3.09, 3.51])  # slant range resolution
     azimuth_resolution = az_resolutions[swath - 1]
 
     # ++++ 20 - range_resolution
@@ -250,6 +250,7 @@ def read_metadata(resfile, mode="raw", **kwargs):
         "beta0": beta0,
         "azimuth_resolution": azimuth_resolution,
         "range_resolution": range_resolution,
+        "slant_range_resolution": sr_resolutions,
         "nBursts": 1,
         "burstInfo": burst_n,
         "steering_rate": steering_rate,
