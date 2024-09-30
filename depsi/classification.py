@@ -25,7 +25,7 @@ def ps_selection(
     Parameters
     ----------
     slcs : xr.Dataset
-        nput SLC stack. It should have the following dimensions: ("azimuth", "range", "time").
+        Input SLC stack. It should have the following dimensions: ("azimuth", "range", "time").
         There should be a `amplitude` variable in the dataset.
     threshold : float
         Threshold value for selection.
