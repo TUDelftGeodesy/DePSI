@@ -73,7 +73,7 @@ def ps_selection(
             raise NotImplementedError
 
     # Get the 1D index on space dimension
-    mask_1d = mask.stack(space=("azimuth", "range")).drop_vars(["azimuth", "range"])
+    mask_1d = mask.stack(space=("azimuth", "range")).drop_vars(["azimuth", "range", "space"])  # Drop multi-index coords
     index = mask_1d["space"].where(mask_1d.compute(), other=0, drop=True)  # Evaluate the 1D mask to index
 
     # Reshape from Stack ("azimuth", "range", "time") to Space-Time Matrix  ("space", "time")
@@ -81,7 +81,7 @@ def ps_selection(
 
     # Drop multi-index coords for space coordinates
     # This will also azimuth and range coordinates, as they are part of the multi-index coordinates
-    stm = stacked.drop_vars(["space"])
+    stm = stacked.drop_vars(["space", "azimuth", "range"])
 
     # Assign a continuous index the space dimension
     # Assign azimuth and range back as coordinates
