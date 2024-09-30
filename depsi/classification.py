@@ -62,6 +62,13 @@ def ps_selection(
             nad = nad.compute() if mem_persist else nad
             slcs = slcs.assign(pnt_nad=nad)
             mask = nad < threshold
+        case "nmad":
+            nmad = xr.map_blocks(
+                _nmad_block, slcs["amplitude"], template=slcs["amplitude"].isel(time=0).drop_vars("time")
+            )
+            nmad = nmad.compute() if mem_persist else nmad
+            slcs = slcs.assign(pnt_nmad=nmad)
+            mask = nmad < threshold
         case _:
             raise NotImplementedError
 
@@ -113,6 +120,8 @@ def ps_selection(
         match method:
             case "nad":
                 stm_masked["pnt_nad"] = stm_masked["pnt_nad"].compute()
+            case "nmad":
+                stm_masked["pnt_nmad"] = stm_masked["pnt_nmad"].compute()
 
     return stm_masked
 
@@ -131,14 +140,33 @@ def _nad_block(amp: xr.DataArray) -> xr.DataArray:
     xr.DataArray
         Normalized Amplitude Dispersion (NAD) data, with dimensions ("azimuth", "range").
     """
-    # Time dimension order
-    t_order = list(amp.dims).index("time")
-
     # Compoute amplitude dispersion
     # By defalut, the mean and std function from Xarray will skip NaN values
     # However, if there is NaN value in time series, we want to discard the pixel
     # Therefore, we set skipna=False
     # Adding epsilon to avoid zero division
-    nad_da = amp.std(axis=t_order, skipna=False) / (amp.mean(axis=t_order, skipna=False) + np.finfo(amp.dtype).eps)
+    nad_da = amp.std(dim="time", skipna=False) / (amp.mean(dim="time", skipna=False) + np.finfo(amp.dtype).eps)
 
     return nad_da
+
+
+def _nmad_block(amp: xr.DataArray) -> xr.DataArray:
+    """Compute Normalized Median Absolute Dispersion (NMAD) for a block of amplitude data.
+
+    Parameters
+    ----------
+    amp : xr.DataArray
+        Amplitude data, with dimensions ("azimuth", "range", "time").
+        This can be extracted from a SLC xr.Dataset.
+
+    Returns
+    -------
+    xr.DataArray
+        Normalized Median Absolute Dispersion (NMAD) data, with dimensions ("azimuth", "range").
+    """
+    # Compoute NMAD
+    median_amplitude = amp.median(dim="time", skipna=False)
+    mad = (np.abs(amp - median_amplitude)).median(dim="time")  # Median Absolute Dispersion
+    nmad = mad / (median_amplitude + np.finfo(amp.dtype).eps)  # Normalized Median Absolute Dispersion
+
+    return nmad
