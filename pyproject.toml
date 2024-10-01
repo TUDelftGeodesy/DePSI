@@ -77,7 +77,7 @@ lint.ignore = [
 ] # docstring style
 
 line-length = 120
-exclude = ["docs", "build", "*.ipynb"]
+exclude = ["docs", "build", "*.ipynb", "examples/*"]
 # Allow unused variables when underscore-prefixed.
 lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 target-version = "py310"
