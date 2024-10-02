@@ -8,11 +8,13 @@ Please do not run this script by "python xxx.py" on a login node.
 import logging
 import os
 import socket
+import xarray as xr
 from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
 from dask.distributed import Client
 from dask_jobqueue import SLURMCluster
+import sarxarray
 import stmtools
 
 from pydepsi.classification import ps_selection
@@ -41,9 +43,11 @@ path_slc_zarr = Path("/project/caroline/slc_file.zarr")  # SLC zarr file
 
 # Output config
 overwrite_zarr = False  # Flag for zarr overwrite
-chunk_space = 25000  # Output chunk size in space dimension
+chunk_space = 10000  # Output chunk size in space dimension
 path_figure = Path("./figure")  # Output path for figure
 path_figure.mkdir(exist_ok=True)    # Make figure directory if not exists
+
+path_ps_zarr = Path("./ps.zarr")
 
 
 # ---- Config 2: Dask configuration ----
@@ -99,6 +103,11 @@ if __name__ == "__main__":
     slcs['complex'] = slcs['real'] + 1j*slcs['imag']
     slcs = slcs.slcstack._get_amplitude()
     slcs = slcs.slcstack._get_phase()
+    slcs = slcs.drop_vars(["real", "imag"])
+
+    # A rechunk might be needed to make a optimal usage of the resources
+    # Uncomment the following line to apply a rechunk after loading the data
+    # slcs = slcs.chunk({"azimuth":1000, "range":1000, "time":-1})
 
     # Select PS
     stm_ps = ps_selection(slcs, 0.45, method='nmad', output_chunks=chunk_space)
@@ -107,7 +116,10 @@ if __name__ == "__main__":
     stm_ps_reordered = stm_ps.stm.reorder(xlabel='lon', ylabel='lat')
 
     # Save the PS to zarr
-    stm_ps_reordered.to_zarr(path_ps_zarr, overwrite=overwrite_zarr)
+    if overwrite_zarr:
+        stm_ps_reordered.to_zarr(path_ps_zarr, mode="w")
+    else:
+        stm_ps_reordered.to_zarr(path_ps_zarr)
 
     # Close the client when finishing
     client.close()
