@@ -43,3 +43,9 @@ pre-commit install
 - [Python packaging user guide](https://packaging.python.org/)
 - [Testing in Python](https://docs.kedro.org/en/stable/development/automated_testing.html)
 - [Code formatting and linting](https://docs.kedro.org/en/stable/development/linting.html)
+
+## License
+
+Copyright (c) 2023 - 2025, Netherlands eScience Center & Delft University of Technology
+
+Apache Software License 2.0
