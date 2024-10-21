@@ -131,7 +131,10 @@ if __name__ == "__main__":
     ifgs['time'] = [datetime.strptime(file.parts[-2], '%Y%m%d') for file in f_ifgs] # Add time coords to ifgs
 
     # Lazy loading mother SLC 
-    mother = sarxarray.from_binary([f_mother_slc], shape, dtype=dtype_slc_ifg, chunks=reading_chunks) # Load mother SLC
+    mother = sarxarray.from_binary([f_mother_slc], 
+                                   shape,
+                                   dtype=dtype_slc_ifg,
+                                   chunks=reading_chunks) # Load mother SLC
     # Construct a dummy h2ph with zeros and assign to mother
     mother_h2ph = mother['amplitude'].copy()
     mother_h2ph.data = da.zeros(mother_h2ph.shape, dtype=np.float32)
