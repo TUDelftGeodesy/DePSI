@@ -214,8 +214,6 @@ def network_stm_seletcion(
     stm_remain = stm_remain.sortby(sortby_var)
 
     while stm_remain.sizes["space"] > 0:
-        print(f"Remaining points: {stm_remain.sizes['space']}")
-
         # Select one point with best sorting metric
         stm_now = stm_remain.isel(space=0)
 
