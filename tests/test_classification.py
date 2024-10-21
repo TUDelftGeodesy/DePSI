@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from pydepsi.classification import _nad_block, _nmad_block, ps_selection
+from pydepsi.classification import _idx_within_distance, _nad_block, _nmad_block, ps_selection
 
 # Create a random number generator
 rng = np.random.default_rng(42)
@@ -121,3 +121,27 @@ def test_nmad_block_select_two():
     res = ps_selection(slcs, 1e-10, method="nmad", output_chunks=5)  # Select pixels with dispersion lower than 0.00001
     assert res.sizes["time"] == 10
     assert res.sizes["space"] == 2
+
+
+def test__idx_within_distance():
+    coords_include = np.array([[1, 1]])
+    coords_remain = np.array([[0, 0], [1, 1], [2, 2], [3, 3]])
+    idx_within = _idx_within_distance(coords_include, coords_remain, 1)
+    assert np.all(idx_within == np.array([1]))
+
+    coords_include = np.array([[1, 1], [2, 2]])
+    coords_remain = np.array([[0, 0], [1.1, 1], [2.2, 2], [3, 3]])
+    idx_within = _idx_within_distance(coords_include, coords_remain, 1)
+    assert np.all(idx_within == np.array([1, 2]))
+
+    coords_include = np.array([[1, 1]])
+    coords_remain = np.array([[0, 0], [1, 1], [2, 2], [3, 3]])
+    idx_within = _idx_within_distance(coords_include, coords_remain, 2)
+    assert np.all(idx_within == np.array([0, 1, 2]))
+
+
+def test__idx_within_distance_no_drop():
+    coords_include = np.array([[100, 100]])
+    coords_remain = np.array([[0, 0], [1, 1], [2, 2], [3, 3]])
+    idx_within = _idx_within_distance(coords_include, coords_remain, 1)
+    assert idx_within is None
