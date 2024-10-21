@@ -35,6 +35,7 @@ dev = [
     "pycodestyle",
     "pre-commit",
     "ruff",
+    "graphviz",
 ]
 docs = [
     "mkdocs",
