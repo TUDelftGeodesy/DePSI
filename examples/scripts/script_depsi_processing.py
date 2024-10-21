@@ -42,6 +42,8 @@ def get_free_port():
 # Parameters
 method = 'nmad'  # Method for selection
 threshold = 0.45  # Threshold for selection
+dist_thres = 200  # Distance threshold for network selection
+include_index = [101] # Force including the 101th point, use None if no point need to be included
 
 # Input data paths
 path_slc_zarr = Path("/project/caroline/slc_file.zarr")  # Zarr file of all SLCs
@@ -98,6 +100,7 @@ if __name__ == "__main__":
         cluster.scale(jobs=N_WORKERS)
         client = Client(cluster)
 
+    # ---- Processing Stage 1: Pixel Classification ----
     # Load the SLC data
     logger.info("Loading data ...")
     ds = xr.open_zarr(path_slc_zarr) # Load the zarr file as a xr.Dataset
@@ -120,6 +123,16 @@ if __name__ == "__main__":
         stm_ps_reordered.to_zarr(path_ps_zarr, mode="w")
     else:
         stm_ps_reordered.to_zarr(path_ps_zarr)
+
+    # ---- Processing Stage 2: Network Processing ----
+    # Select network points
+    stm_network = network_stm_seletcion(stm, 
+                                        dist_thres,
+                                        include_index=include_index, 
+                                        azimuth_spacing=azimuth_spacing,
+                                        range_spacing=range_spacing)
+
+    
 
     # Close the client when finishing
     client.close()
