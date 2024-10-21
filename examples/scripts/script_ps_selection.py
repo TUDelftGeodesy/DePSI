@@ -36,19 +36,23 @@ def get_free_port():
     return freesock
 
 
-# ---- Config 1: Path Configuration ----
-# Paths
-path_slc_zarr = Path("/project/caroline/slc_file.zarr")  # SLC zarr file
+# ---- Config 1: Human Input ----
 
+
+# Parameters
+method = 'nmad'  # Method for selection
+threshold = 0.45  # Threshold for selection
+
+# Input data paths
+path_slc_zarr = Path("/project/caroline/slc_file.zarr")  # Zarr file of all SLCs
 
 # Output config
 overwrite_zarr = False  # Flag for zarr overwrite
 chunk_space = 10000  # Output chunk size in space dimension
 path_figure = Path("./figure")  # Output path for figure
-path_figure.mkdir(exist_ok=True)    # Make figure directory if not exists
-
 path_ps_zarr = Path("./ps.zarr") # output file for selected PS
 
+path_figure.mkdir(exist_ok=True)    # Make figure directory if not exists
 
 # ---- Config 2: Dask configuration ----
 
@@ -110,7 +114,7 @@ if __name__ == "__main__":
     # slcs = slcs.chunk({"azimuth":1000, "range":1000, "time":-1})
 
     # Select PS
-    stm_ps = ps_selection(slcs, 0.45, method='nmad', output_chunks=chunk_space)
+    stm_ps = ps_selection(method, threshold, method='nmad', output_chunks=chunk_space)
 
     # Re-order the PS to make the spatially adjacent PS in the same chunk
     stm_ps_reordered = stm_ps.stm.reorder(xlabel='lon', ylabel='lat')
