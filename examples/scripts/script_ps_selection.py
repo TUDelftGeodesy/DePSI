@@ -100,14 +100,10 @@ if __name__ == "__main__":
 
     # Load the SLC data
     logger.info("Loading data ...")
-    slcs = xr.open_zarr(path_slc_zarr)
-
-    # Construct the three datavariables: complex, amplitude, and phase
-    # This should be removed after fixing: https://github.com/TUDelftGeodesy/sarxarray/issues/55
-    slcs['complex'] = slcs['real'] + 1j*slcs['imag']
-    slcs = slcs.slcstack._get_amplitude()
-    slcs = slcs.slcstack._get_phase()
-    slcs = slcs.drop_vars(["real", "imag"])
+    ds = xr.open_zarr(path_slc_zarr) # Load the zarr file as a xr.Dataset
+    # Construct SLCs from xr.Dataset
+    # this construct three datavariables: complex, amplitude, and phase 
+    slcs = sarxarray.from_ds(slcs)
 
     # A rechunk might be needed to make a optimal usage of the resources
     # Uncomment the following line to apply a rechunk after loading the data
