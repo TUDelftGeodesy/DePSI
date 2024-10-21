@@ -38,8 +38,6 @@ def get_free_port():
 
 
 # ---- Config 1: Human Input ----
-
-
 # Input data paths
 path_slc_zarr = Path("/project/caroline/slc_file.zarr")  # Zarr file of all SLCs
 path_metadata = Path("/project/caroline/metadata.res")  # Metadata file
@@ -141,12 +139,14 @@ if __name__ == "__main__":
         stm_ps_reordered.to_zarr(path_ps_zarr)
 
     # ---- Processing Stage 2: Network Processing ----
-    # Load the PS data from zarr
+    # Uncomment the following line to load the PS data from zarr
     # stm_ps_reordered = xr.open_zarr(path_ps_zarr)
 
     # Select network points
     logger.info("Select network scatterers ...")
+    # Apply a pre-filter
     stm_network_candidates = xr.where(stm_ps_reordered[network_stm_quality_metric]<network_stm_quality_threshold)
+    # Select based on sparsity and quality
     stm_network = network_stm_seletcion(stm_network_candidates, 
                                         dist_thres,
                                         include_index=include_index,
