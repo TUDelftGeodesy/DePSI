@@ -1,4 +1,4 @@
-"""Functions for scatter selection related operations."""
+"""Functions for scatterer selection related operations."""
 
 from typing import Literal
 
@@ -13,7 +13,7 @@ def ps_selection(
     output_chunks: int = 10000,
     mem_persist: bool = False,
 ) -> xr.Dataset:
-    """Select Persistent Scatterers (PS) from a SLC stack, and return a Space-Time Matrix.
+    """Select Persistent Scatterers (PS) from an SLC stack, and return a Space-Time Matrix.
 
     The selection method is defined by `method` and `threshold`.
     The selected pixels will be reshaped to (space, time), where `space` is the number of selected pixels.
@@ -32,7 +32,7 @@ def ps_selection(
     method : Literal["nad", "nmad"], optional
         Method of selection, by default "nad".
         - "nad": Normalized Amplitude Dispersion
-        - "nmad": Normalized Median Amplitude Deviation
+        - "nmad": Normalized median absolute deviation
     output_chunks : int, optional
         Chunk size in the `space` dimension, by default 10000
     mem_persist : bool, optional
@@ -42,14 +42,14 @@ def ps_selection(
     Returns
     -------
     xr.Dataset
-        Selected PS, in form of an xarray.Dataset with two dimensions: (space, time).
+        Selected STM, in form of an xarray.Dataset with two dimensions: (space, time).
 
     Raises
     ------
     NotImplementedError
         Raised when an unsupported method is provided.
     """
-    # Make sure there is not temporal chunk
+    # Make sure there is no temporal chunk
     # since later a block function assumes all temporal data is available in a spatial block
     slcs = slcs.chunk({"time": -1})
 
@@ -133,14 +133,14 @@ def _nad_block(amp: xr.DataArray) -> xr.DataArray:
     ----------
     amp : xr.DataArray
         Amplitude data, with dimensions ("azimuth", "range", "time").
-        This can be extracted from a SLC xr.Dataset.
+        This can be extracted from an SLC xr.Dataset.
 
     Returns
     -------
     xr.DataArray
         Normalized Amplitude Dispersion (NAD) data, with dimensions ("azimuth", "range").
     """
-    # Compoute amplitude dispersion
+    # Compute amplitude dispersion
     # By defalut, the mean and std function from Xarray will skip NaN values
     # However, if there is NaN value in time series, we want to discard the pixel
     # Therefore, we set skipna=False
@@ -151,13 +151,13 @@ def _nad_block(amp: xr.DataArray) -> xr.DataArray:
 
 
 def _nmad_block(amp: xr.DataArray) -> xr.DataArray:
-    """Compute Normalized Median Absolute Dispersion (NMAD) for a block of amplitude data.
+    """Compute Normalized Median Absolute Deviation(NMAD) for a block of amplitude data.
 
     Parameters
     ----------
     amp : xr.DataArray
         Amplitude data, with dimensions ("azimuth", "range", "time").
-        This can be extracted from a SLC xr.Dataset.
+        This can be extracted from an SLC xr.Dataset.
 
     Returns
     -------
@@ -166,7 +166,7 @@ def _nmad_block(amp: xr.DataArray) -> xr.DataArray:
     """
     # Compoute NMAD
     median_amplitude = amp.median(dim="time", skipna=False)
-    mad = (np.abs(amp - median_amplitude)).median(dim="time")  # Median Absolute Dispersion
-    nmad = mad / (median_amplitude + np.finfo(amp.dtype).eps)  # Normalized Median Absolute Dispersion
+    mad = (np.abs(amp - median_amplitude)).median(dim="time")  # Median Absolute Deviation
+    nmad = mad / (median_amplitude + np.finfo(amp.dtype).eps)  # Normalized Median Absolute Deviation
 
     return nmad
