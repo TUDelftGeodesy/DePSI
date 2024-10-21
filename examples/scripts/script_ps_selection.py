@@ -103,7 +103,7 @@ if __name__ == "__main__":
     ds = xr.open_zarr(path_slc_zarr) # Load the zarr file as a xr.Dataset
     # Construct SLCs from xr.Dataset
     # this construct three datavariables: complex, amplitude, and phase 
-    slcs = sarxarray.from_ds(slcs)
+    slcs = sarxarray.from_dataset(slcs)
 
     # A rechunk might be needed to make a optimal usage of the resources
     # Uncomment the following line to apply a rechunk after loading the data
