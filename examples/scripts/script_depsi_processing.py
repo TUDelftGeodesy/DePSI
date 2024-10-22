@@ -52,7 +52,6 @@ network_stm_quality_threshold = 0.45 # Quality threshold for network selection
 dist_thres = 200  # Distance threshold for network selection, in meters
 include_index = [101] # Force including the 101th point, use None if no point need to be included
 
-
 # Output config
 overwrite_zarr = False  # Flag for zarr overwrite
 chunk_space = 10000  # Output chunk size in space dimension
