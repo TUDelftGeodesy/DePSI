@@ -21,6 +21,18 @@ def get_distance(s, t):
     -------
         The distance between the two points.
     """
+    # TODO(tvl) More complex distance functions can be implemented here.
+    #
+    # For example, network generation gives better results for square Euclidean distances.
+    # Non-square coordinate systems (like non-square image coordinates) may distort the circle properties of Delaunay
+    # networks into ellipses.
+    # Non-Euclidean coordinate systems (like angular lat-lon systems) may distort these same properties depending on
+    # the distance to a pole.
+    #
+    # Coordinate system transformations may be done on the STM before generating the network.
+    # However, there may be cases where it is impossible or undesirable to transform the point coordinates in the STM.
+    # In such a case, coordinates may be transformed inside this function.
+
     return math.dist(s, t)
 
 
