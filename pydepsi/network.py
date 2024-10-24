@@ -21,7 +21,7 @@ def get_distance(s, t):
     return math.dist(s, t)
 
 
-def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=None, max_links=12, num_groups=8):
+def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=None, max_links=12, num_partitions=8):
     """Generate a network from a list of STM points.
 
     The network is undirected and without self-loops.
@@ -33,8 +33,9 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
         x: str, first coordinate used to describe a point.
         y: str, second coordinate used to describe a point.
         max_length: float, maximum length of any generated arc or None.
-        max_links: int, maximum number of arcs per node for the redundant method.
-        num_groups: int, number of parts to split the orientations around each node into for the redundant method.
+        max_links: int, maximum number of arcs per node. Only used for the redundant method.
+        num_partitions: int, number of partitions to split the nodes into based on orientation from the current node.
+          Only used for the redundant method.
 
     Returns:
     -------
@@ -44,8 +45,8 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
         if max_links <= 0:
             print(f"max_links must be positive (currently: {max_links})")
             return
-        if num_groups <= 0:
-            print(f"num_groups must be positive (currently: {num_groups})")
+        if num_partitions <= 0:
+            print(f"num_partitions must be positive (currently: {num_partitions})")
             return
 
     # Collect point coordinates.
@@ -58,7 +59,7 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
     if method == "delaunay":
         arcs = _generate_arcs_delaunay(coordinates, max_length)
     elif method == "redundant":
-        arcs = _generate_arcs_redundant(coordinates, max_length, max_links, num_groups)
+        arcs = _generate_arcs_redundant(coordinates, max_length, max_links, num_partitions)
 
     return coordinates, arcs
 
@@ -82,54 +83,55 @@ def _generate_arcs_delaunay(coordinates, max_length=None):
     return arcs
 
 
-def _generate_arcs_redundant(coordinates, max_length=None, max_links=12, num_groups=8):
+def _generate_arcs_redundant(coordinates, max_length=None, max_links=12, num_partitions=8):
     # Create a network with at most max_links arcs per node.
     # Arcs are created ordered by length.
-    # However, the orientations around the node are split into num_groups groups;
-    # each group can only get an (x+1)th arc if every other group either
+    # However, the orientations around the node are split into num_partitions partitions;
+    # each partition can only get an (x+1)th arc if every other partition either
     # already has x arcs connected or already has all allowed arcs connected
-    # (e.g. there are no more nodes in that group, or they are all too far away).
+    # (e.g. there are no more nodes in that partition, or they are all too far away).
 
     arcs = []
     indices = range(len(coordinates))
     for cur_index in indices:
-        # Calculate per node, the group they are in and the distance from the current node.
-        groups = [
-            int(math.floor(num_groups * (0.5 + math.atan2(coordinate[1], coordinate[0]) / math.tau)))
+        # Calculate per node, the partition they are in and the distance from the current node.
+        partitions = [
+            int(math.floor(num_partitions * (0.5 + math.atan2(coordinate[1], coordinate[0]) / math.tau)))
             for coordinate in coordinates - coordinates[cur_index]
         ]
-        groups[cur_index] = num_groups + 1  # Separate the current node into its own group.
+        partitions[cur_index] = num_partitions + 1  # Separate the current node into its own partition.
         distances = [get_distance(coordinates[cur_index], coordinate) for coordinate in coordinates]
 
-        # Create a list of tuples with the group, distance, and index, sorted by group and then distance.
-        values = np.array(sorted(list(zip(groups, distances, indices, strict=False))))
+        # Create a list of tuples with the partition, distance, and index, sorted by partition and then distance.
+        values = np.array(sorted(list(zip(partitions, distances, indices, strict=False))))
 
-        # Collect the nearest max_links neighbors per group and discard the group of the current node.
-        groups_diff = values[1:, 0] - values[:-1, 0]
-        separators = np.where(groups_diff > 0)[0]
-        groups = np.split(values, separators + 1)
-        groups = groups[: len(groups) - 1]
-        groups = [group[:max_links] for group in groups]
+        # Collect the nearest max_links neighbors per partition and discard the partition of the current node.
+        partitions_diff = values[1:, 0] - values[:-1, 0]
+        separators = np.where(partitions_diff > 0)[0]
+        partitions = np.split(values, separators + 1)
+        partitions = partitions[: len(partitions) - 1]
+        partitions = [partition[:max_links] for partition in partitions]
 
         # Collect the neighbor 'hierarchies'.
-        # Each hierarchy contains the nth nearest neighbor from all groups.
+        # Each hierarchy contains the nth nearest neighbor from all partitions.
         neighbor_hierarchies = [[] for _ in range(max_links)]
         count = 0
         for n in range(max_links):
             # Break early if we have gathered enough neighbors.
             if max_links <= count:
                 break
-            for group in groups:
-                # Note that we do not break inside this loop, because we want the nth nearest neighbors from all groups.
-                if n < len(group) and (max_length is None or group[n][1] <= max_length):
-                    neighbor_hierarchies[n].append(group[n])
+            for partition in partitions:
+                # Note that we do not break inside this loop,
+                # because we want the nth nearest neighbors from all partitions.
+                if n < len(partition) and (max_length is None or partition[n][1] <= max_length):
+                    neighbor_hierarchies[n].append(partition[n])
                     count = count + 1
         # Possibly, these loops could be replaced by this.
         # neighbor_hierarchies = [np.stack([el for el in zipped \
         #                         if (el is not None and (max_length is None or el[1] <= max_length))]) \
-        #                         for zipped in itertools.zip_longest(*groups)]
+        #                         for zipped in itertools.zip_longest(*partitions)]
 
-        # Sort hierarchies per group by distance to the current node.
+        # Sort hierarchies per partition by distance to the current node.
         neighbor_hierarchies = [
             sorted(hierarchy, key=lambda x: x[1]) for hierarchy in neighbor_hierarchies if len(hierarchy) != 0
         ]
