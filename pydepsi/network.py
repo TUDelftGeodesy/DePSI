@@ -21,7 +21,7 @@ def get_distance(s, t):
     return math.dist(s, t)
 
 
-def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=None, max_links=12, num_partitions=8):
+def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=None, min_links=12, num_partitions=8):
     """Generate a network from a list of STM points.
 
     The network is undirected and without self-loops.
@@ -33,7 +33,7 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
         x: str, first coordinate used to describe a point.
         y: str, second coordinate used to describe a point.
         max_length: float, maximum length of any generated arc or None.
-        max_links: int, maximum number of arcs per node. Only used for the redundant method.
+        min_links: int, minimum number of arcs per node, limited by max_length. Only used for the redundant method.
         num_partitions: int, number of partitions to split the nodes into based on orientation from the current node.
           Only used for the redundant method.
 
@@ -42,8 +42,8 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
         arcs: list of pairs, point indices describing the adjacent nodes. The pairs are sorted, as is the list.
     """
     if method == "redundant":
-        if max_links <= 0:
-            print(f"max_links must be positive (currently: {max_links})")
+        if min_links <= 0:
+            print(f"min_links must be positive (currently: {min_links})")
             return
         if num_partitions <= 0:
             print(f"num_partitions must be positive (currently: {num_partitions})")
@@ -59,7 +59,7 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
     if method == "delaunay":
         arcs = _generate_arcs_delaunay(coordinates, max_length)
     elif method == "redundant":
-        arcs = _generate_arcs_redundant(coordinates, max_length, max_links, num_partitions)
+        arcs = _generate_arcs_redundant(coordinates, max_length, min_links, num_partitions)
 
     return coordinates, arcs
 
@@ -83,13 +83,14 @@ def _generate_arcs_delaunay(coordinates, max_length=None):
     return arcs
 
 
-def _generate_arcs_redundant(coordinates, max_length=None, max_links=12, num_partitions=8):
-    # Create a network with at most max_links arcs per node.
+def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_partitions=8):
+    # Create a network with at least min_links arcs per node.
     # Arcs are created ordered by length.
     # However, the orientations around the node are split into num_partitions partitions;
     # each partition can only get an (x+1)th arc if every other partition either
     # already has x arcs connected or already has all allowed arcs connected
     # (e.g. there are no more nodes in that partition, or they are all too far away).
+    # Note that a node may get less than min_links arcs if there are not enough neighbors within max_length.
 
     arcs = []
     indices = range(len(coordinates))
@@ -105,20 +106,20 @@ def _generate_arcs_redundant(coordinates, max_length=None, max_links=12, num_par
         # Create a list of tuples with the partition, distance, and index, sorted by partition and then distance.
         values = np.array(sorted(list(zip(partitions, distances, indices, strict=False))))
 
-        # Collect the nearest max_links neighbors per partition and discard the partition of the current node.
+        # Collect the nearest min_links neighbors per partition and discard the partition of the current node.
         partitions_diff = values[1:, 0] - values[:-1, 0]
         separators = np.where(partitions_diff > 0)[0]
         partitions = np.split(values, separators + 1)
         partitions = partitions[: len(partitions) - 1]
-        partitions = [partition[:max_links] for partition in partitions]
+        partitions = [partition[:min_links] for partition in partitions]
 
         # Collect the neighbor 'hierarchies'.
         # Each hierarchy contains the nth nearest neighbor from all partitions.
-        neighbor_hierarchies = [[] for _ in range(max_links)]
+        neighbor_hierarchies = [[] for _ in range(min_links)]
         count = 0
-        for n in range(max_links):
+        for n in range(min_links):
             # Break early if we have gathered enough neighbors.
-            if max_links <= count:
+            if min_links <= count:
                 break
             for partition in partitions:
                 # Note that we do not break inside this loop,
@@ -136,17 +137,13 @@ def _generate_arcs_redundant(coordinates, max_length=None, max_links=12, num_par
             sorted(hierarchy, key=lambda x: x[1]) for hierarchy in neighbor_hierarchies if len(hierarchy) != 0
         ]
 
-        # Add sorted arcs to at most max_links neighbors.
+        # Add sorted arcs to at least min_links neighbors.
         cur_arcs = [
             tuple(sorted([cur_index, int(neighbor[2])])) for hierarchy in neighbor_hierarchies for neighbor in hierarchy
         ]
-        cur_arcs = cur_arcs[:max_links]
+        cur_arcs = cur_arcs[:min_links]
 
         arcs.extend(cur_arcs)
-
-    # TODO(tvl): Fix issue with max_links: a later node may add an extra arc to an already 'full' earlier node.
-    #           For example, node 1 may be connected to max_links neighbors other than node 2,
-    #           before node 2 adds an arc connecting it to node 1 as one of its max_links neighbors.
 
     # Remove duplicates and make the list canonical.
     arcs = sorted(list(set(arcs)))
