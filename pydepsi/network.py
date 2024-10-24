@@ -42,6 +42,7 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
 
     Returns:
     -------
+        coordinates: list, [x, y] point coordinates extracted from stm_points.
         arcs: list of pairs, point indices describing the adjacent nodes. The pairs are sorted, as is the list.
     """
     if method == "redundant":
