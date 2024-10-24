@@ -1,9 +1,12 @@
 """Module for creating networks from STM points."""
 
+import logging
 import math
 
 import numpy as np
 from scipy.spatial import Delaunay
+
+logger = logging.getLogger(__name__)
 
 
 def get_distance(s, t):
@@ -43,10 +46,10 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
     """
     if method == "redundant":
         if min_links <= 0:
-            print(f"min_links must be positive (currently: {min_links})")
+            logger.warning(f"min_links must be strictly positive (currently: {min_links})")
             return
         if num_partitions <= 0:
-            print(f"num_partitions must be positive (currently: {num_partitions})")
+            logger.warning(f"num_partitions must be strictly positive (currently: {num_partitions})")
             return
 
     # Collect point coordinates.
