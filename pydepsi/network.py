@@ -130,10 +130,6 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
                 if n < len(partition) and (max_length is None or partition[n][1] <= max_length):
                     neighbor_hierarchies[n].append(partition[n])
                     count = count + 1
-        # Possibly, these loops could be replaced by this.
-        # neighbor_hierarchies = [np.stack([el for el in zipped \
-        #                         if (el is not None and (max_length is None or el[1] <= max_length))]) \
-        #                         for zipped in itertools.zip_longest(*partitions)]
 
         # Sort hierarchies per partition by distance to the current node.
         neighbor_hierarchies = [
