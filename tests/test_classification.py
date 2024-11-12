@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from pydepsi.classification import _idx_within_distance, _nad_block, _nmad_block, network_stm_seletcion, ps_selection
+from pydepsi.classification import _idx_within_distance, _nad_block, _nmad_block, network_stm_selection, ps_selection
 
 # Create a random number generator
 rng = np.random.default_rng(42)
@@ -73,7 +73,7 @@ def test_ps_seletion_not_implemented():
         ps_selection(slcs, 0.5, method="not_implemented", output_chunks=5)
 
 
-def test_network_stm_seletcion_results():
+def test_network_stm_selection_results():
     stm = xr.Dataset(
         data_vars={
             "amplitude": (("space", "time"), np.ones((100, 10))),
@@ -82,8 +82,8 @@ def test_network_stm_seletcion_results():
         },
         coords={"azimuth": (("space"), np.arange(100)), "range": (("space"), np.arange(100)), "time": np.arange(10)},
     )
-    res_nad = network_stm_seletcion(stm, min_dist=20, sortby_var="pnt_nad", azimuth_spacing=10, range_spacing=10)
-    res_nmad = network_stm_seletcion(stm, min_dist=20, sortby_var="pnt_nmad", azimuth_spacing=10, range_spacing=10)
+    res_nad = network_stm_selection(stm, min_dist=20, sortby_var="pnt_nad", azimuth_spacing=10, range_spacing=10)
+    res_nmad = network_stm_selection(stm, min_dist=20, sortby_var="pnt_nmad", azimuth_spacing=10, range_spacing=10)
     # Fields should remain the same
     assert "pnt_nad" in res_nad
     assert "azimuth" in res_nad
@@ -97,7 +97,7 @@ def test_network_stm_seletcion_results():
     assert res_nmad.sizes["time"] == 10
 
 
-def test_network_stm_seletcion_quality():
+def test_network_stm_selection_quality():
     stm = xr.Dataset(
         data_vars={
             "amplitude": (("space", "time"), np.ones((5, 10))),
@@ -111,8 +111,8 @@ def test_network_stm_seletcion_quality():
             "range": (("space"), np.arange(5)),
         },
     )
-    res_nad = network_stm_seletcion(stm, min_dist=3, sortby_var="pnt_nad", azimuth_spacing=1, range_spacing=1)
-    res_nmad = network_stm_seletcion(stm, min_dist=3, sortby_var="pnt_nmad", azimuth_spacing=1, range_spacing=1)
+    res_nad = network_stm_selection(stm, min_dist=3, sortby_var="pnt_nad", azimuth_spacing=1, range_spacing=1)
+    res_nmad = network_stm_selection(stm, min_dist=3, sortby_var="pnt_nmad", azimuth_spacing=1, range_spacing=1)
 
     # The two pixels with the lowest NAD should be selected
     assert np.all(np.isclose(res_nad["pnt_nad"].values, 0.01, rtol=1e-09, atol=1e-09))
@@ -121,7 +121,7 @@ def test_network_stm_seletcion_quality():
     assert np.all(res_nmad["space"].values == np.array([3, 7]))
 
 
-def test_network_stm_seletcion_include_index():
+def test_network_stm_selection_include_index():
     stm = xr.Dataset(
         data_vars={
             "amplitude": (("space", "time"), np.ones((5, 10))),
@@ -135,10 +135,10 @@ def test_network_stm_seletcion_include_index():
             "range": (("space"), np.arange(5)),
         },
     )
-    res_nad = network_stm_seletcion(
+    res_nad = network_stm_selection(
         stm, min_dist=3, include_index=[1], sortby_var="pnt_nad", azimuth_spacing=1, range_spacing=1
     )
-    res_nmad = network_stm_seletcion(
+    res_nmad = network_stm_selection(
         stm, min_dist=3, include_index=[1], sortby_var="pnt_nmad", azimuth_spacing=1, range_spacing=1
     )
 
@@ -149,7 +149,7 @@ def test_network_stm_seletcion_include_index():
     assert np.all(res_nmad["space"].values == np.array([2, 7]))
 
 
-def test_network_stm_seletcion_wrong_csr():
+def test_network_stm_selection_wrong_csr():
     stm = xr.Dataset(
         data_vars={
             "amplitude": (("space", "time"), np.ones((100, 10))),
@@ -159,7 +159,7 @@ def test_network_stm_seletcion_wrong_csr():
     )
     # catch not implemented method
     with pytest.raises(NotImplementedError):
-        network_stm_seletcion(
+        network_stm_selection(
             stm, min_dist=20, sortby_var="pnt_nad", azimuth_spacing=10, range_spacing=10, crs="not_implemented"
         )
 

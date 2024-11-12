@@ -127,7 +127,7 @@ def ps_selection(
     return stm_masked
 
 
-def network_stm_seletcion(
+def network_stm_selection(
     stm: xr.Dataset,
     min_dist: int | float,
     include_index: list[int] = None,
