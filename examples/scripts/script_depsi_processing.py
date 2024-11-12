@@ -18,7 +18,7 @@ import sarxarray
 import stmtools
 
 from pydepsi.io import read_metadata
-from pydepsi.classification import ps_selection, network_stm_seletcion
+from pydepsi.classification import ps_selection, network_stm_selection
 
 # Make a logger to log the stages of processing
 logger = logging.getLogger(__name__)
@@ -49,8 +49,8 @@ ps_selection_threshold = 0.45  # Threshold for PS selection
 # Parameters network selection
 network_stm_quality_metric = 'nmad' # Quality metric for network selection
 network_stm_quality_threshold = 0.45 # Quality threshold for network selection
-dist_thres = 200  # Distance threshold for network selection, in meters
-include_index = [101] # Force including the 101th point, use None if no point need to be included
+min_dist = 200  # Distance threshold for network selection, in meters
+include_index = [57, 101, 189] # Force including the points with index 57, 101, and 189, use None if no point need to be included
 
 # Output config
 overwrite_zarr = False  # Flag for zarr overwrite
@@ -131,7 +131,7 @@ if __name__ == "__main__":
     stm_ps_reordered = stm_ps.stm.reorder(xlabel='lon', ylabel='lat')
 
     # Save the PS to zarr
-    logger.info("Writting seleced pixels to Zarr ...")
+    logger.info("Writting selected pixels to Zarr ...")
     if overwrite_zarr:
         stm_ps_reordered.to_zarr(path_ps_zarr, mode="w")
     else:
@@ -146,8 +146,8 @@ if __name__ == "__main__":
     # Apply a pre-filter
     stm_network_candidates = xr.where(stm_ps_reordered[network_stm_quality_metric]<network_stm_quality_threshold)
     # Select based on sparsity and quality
-    stm_network = network_stm_seletcion(stm_network_candidates, 
-                                        dist_thres,
+    stm_network = network_stm_selection(stm_network_candidates, 
+                                        min_dist,
                                         include_index=include_index,
                                         sortby_var=network_stm_quality_metric,
                                         azimuth_spacing=metadata['azimuth_spacing'],
