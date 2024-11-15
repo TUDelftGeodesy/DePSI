@@ -213,15 +213,18 @@ def network_stm_selection(
     # Reorder the remaining points by the sorting metric
     stm_remain = stm_remain.sortby(sortby_var)
 
+    # Build a list of the index of selected points
+    if stm_select is None:
+        space_idx_sel = []
+    else:
+        space_idx_sel = stm_select["space"].values.tolist()
+
     while stm_remain.sizes["space"] > 0:
         # Select one point with best sorting metric
         stm_now = stm_remain.isel(space=0)
 
-        # Add the selected point to the selection
-        if stm_select is None:
-            stm_select = stm_now.copy()
-        else:
-            stm_select = xr.concat([stm_select, stm_now], dim="space")
+        # Append the selected point index
+        space_idx_sel.append(stm_now["space"].values.tolist())
 
         # Remove the selected point from the remaining points
         stm_remain = stm_remain.isel(space=slice(1, None)).copy()
@@ -239,7 +242,7 @@ def network_stm_selection(
             stm_remain = stm_remain.where(~(stm_remain["space"].isin(stm_drop["space"])), drop=True)
 
     # Get the selected points by space index from the original stm
-    stm_out = stm.sel(space=stm_select["space"].values)
+    stm_out = stm.sel(space=space_idx_sel)
 
     return stm_out
 
