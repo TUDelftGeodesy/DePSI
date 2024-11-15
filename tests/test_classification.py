@@ -80,7 +80,12 @@ def test_network_stm_selection_results():
             "pnt_nad": (("space"), np.linspace(0, 1, 100)),
             "pnt_nmad": (("space"), np.linspace(0, 1, 100)),
         },
-        coords={"azimuth": (("space"), np.arange(100)), "range": (("space"), np.arange(100)), "time": np.arange(10)},
+        coords={
+            "azimuth": (("space"), np.arange(100)),
+            "range": (("space"), np.arange(100)),
+            "time": np.arange(10),
+            "space": np.arange(100),
+        },
     )
     res_nad = network_stm_selection(stm, min_dist=20, sortby_var="pnt_nad", azimuth_spacing=10, range_spacing=10)
     res_nmad = network_stm_selection(stm, min_dist=20, sortby_var="pnt_nmad", azimuth_spacing=10, range_spacing=10)
