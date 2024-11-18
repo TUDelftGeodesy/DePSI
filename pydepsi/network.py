@@ -32,10 +32,10 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
     """
     if method == "redundant":
         if min_links <= 0:
-            logger.warning(f"min_links must be strictly positive (currently: {min_links})")
+            logger.error(f"min_links must be strictly positive (currently: {min_links})")
             return
         if num_partitions <= 0:
-            logger.warning(f"num_partitions must be strictly positive (currently: {num_partitions})")
+            logger.error(f"num_partitions must be strictly positive (currently: {num_partitions})")
             return
 
     # Collect point coordinates.
