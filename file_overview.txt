@@ -1,0 +1,42 @@
+_pscZ.raw
+_psc_atmo_filtZ.raw
+_psc_atmoZ.raw
+_psc_atmo_tempZ.raw
+_psc_defoZ.raw
+_psc_defo_tempZ.raw
+_psc_trendZ.raw
+_psc_resultsZ_I.raw
+_psc_results_covarZ_I.raw
+_psc_validZ.raw
+
+_dpscZ.raw
+_dpsc_resultsZ.raw
+_dpsc_validZ.raw
+
+case 'psp'
+	_pspZ.raw
+	_psp_atmoZ.raw
+	_psp_atmo_tempZ.raw
+	_psp_defoZ.raw
+	_psp_defo_tempZ.raw
+	_psp_trendZ.raw
+	_psp_valid.raw
+case 'whole'
+	_atmo_selZ.raw
+	_defo_selZ.raw
+	_trend_selZ.raw
+
+_ps_results_['atmo'/'defo']Z.raw
+_ps_results_covar_['atmo'/'defo']Z.raw
+
+_refZ.raw
+
+_mrm.raw
+_amp_disp.raw
+
+_adapted_arcsZ_I.mat
+_network_pscZ_I.mat
+_removed_arcsZ_I.mat
+_project.mat
+
+_resfile.txt

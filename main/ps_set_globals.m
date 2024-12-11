@@ -1,0 +1,9 @@
+%general
+global fig ps_method ps_eval_method project_id results_id
+global m2ph Npar_max unwrap_istep unwrap2_istep
+global max_mem_buffer orbit Nlines Npixels az_spacing r_spacing
+global Npsc_selections weighting varfac_threshold
+global visible_plots detail_plots ens_coh_threshold
+global atmo_range defo_range sat_vel weighted_unwrap
+global detrend_flag defo_model_flag
+global run_mode
