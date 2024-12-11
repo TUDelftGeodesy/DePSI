@@ -5,7 +5,7 @@ from datetime import datetime
 
 import numpy as np
 
-from pydepsi.utils import _orbit_fit
+from depsi.utils import _orbit_fit
 
 # Define constants
 SC_N_PATTERN = r"\s+([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
