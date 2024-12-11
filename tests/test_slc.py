@@ -3,7 +3,7 @@
 import numpy as np
 import xarray as xr
 
-from pydepsi.slc import _slc_complex_recontruct, ifg_to_slc
+from depsi.slc import _slc_complex_recontruct, ifg_to_slc
 
 
 def test__slc_complex_recontruct():
