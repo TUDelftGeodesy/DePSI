@@ -1,4 +1,4 @@
-from pydepsi.io import read_metadata
+from depsi.io import read_metadata
 
 
 def test_read_metadata_lines_pixels():
