@@ -3,7 +3,7 @@
 import pytest
 import xarray as xr
 
-from pydepsi.network import generate_arcs
+from depsi.network import generate_arcs
 
 
 @pytest.fixture

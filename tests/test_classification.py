@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from pydepsi.classification import _idx_within_distance, _nad_block, _nmad_block, network_stm_selection, ps_selection
+from depsi.classification import _idx_within_distance, _nad_block, _nmad_block, network_stm_selection, ps_selection
 
 # Create a random number generator
 rng = np.random.default_rng(42)
