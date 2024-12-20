@@ -17,8 +17,8 @@ from dask_jobqueue import SLURMCluster
 import sarxarray
 import stmtools
 
-from pydepsi.io import read_metadata
-from pydepsi.classification import ps_selection, network_stm_selection
+from depsi.io import read_metadata
+from depsi.classification import ps_selection, network_stm_selection
 
 # Make a logger to log the stages of processing
 logger = logging.getLogger(__name__)
