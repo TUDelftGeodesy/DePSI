@@ -18,3 +18,7 @@ Please refer to the [Developer Guide](docs/dev_guide.md) for installation instru
 Copyright (c) 2023 - 2025, Netherlands eScience Center & Delft University of Technology
 
 Apache Software License 2.0
+
+## References
+
+[1] Van Leijen, Frederik Johannes. "Persistent scatterer interferometry based on geodetic estimation theory." (2014).
