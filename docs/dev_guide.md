@@ -58,7 +58,7 @@ To run the tests, use the following command in the root directory of the reposit
 pytest tests
 ```
 
-The [GitHub Actions](/.github/workflows/build.yml) will run the tests automatically for each push and pull-request
+The [GitHub Actions](https://github.com/TUDelftGeodesy/DePSI/blob/main/.github/workflows/build.yml) will run the tests automatically for each push and pull-request
 on the `main` branch.
 
 ## Documentation
