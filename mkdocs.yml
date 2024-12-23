@@ -5,8 +5,10 @@ repo_name: DePSI
 nav:
   - Getting started: 
     - About SARXarray: index.md
-    - Developer Guide: dev_guide.md
-    - API Reference: api_reference.md
+  - Usages:
+    - SLC methods: usages/slc.md
+  - API Reference: api_reference.md
+  - Developer Guide: dev_guide.md
 
 
 theme:
