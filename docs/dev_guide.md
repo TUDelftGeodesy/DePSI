@@ -72,3 +72,7 @@ mkdocs serve
 ```
 
 This will build and render the documentation at a local server. Follow the link provided in the terminal to view the documentation in the browser.
+
+## Parallelization
+
+We use `dask` in many functions for delayed computation and parallelization. Since DePSI operates with Xarray, in most cases, we us Xarray's interface with Dask Arrays, such as `xarray.apply_gufunc` or `xarray.map_blocks` to perform parallel computation. Please refer to the [Xarray Tutorial of Parallelizing Custom Functions](https://tutorial.xarray.dev/advanced/parallel-intro.html) as the best practices for implementing parallelization in DePSI.  
