@@ -2,7 +2,7 @@
 
 ## Converting coregistered interferogram stack to SLC stack
 
-After reading the coregistered interferogram stack and the mother SLC with `sarxarray`, the SLC stack can be reconstructed using the `ifg_to_slc` method. The method takes the mother SLC and the coregistered interferogram stack as input and returns the reconstructed SLC stack.
+After reading the coregistered interferogram stack and the mother SLC with `sarxarray`, the SLC stack can be reconstructed using the [`ifg_to_slc`](https://tudelftgeodesy.github.io/DePSI/api_reference/#depsi.slc.ifg_to_slc) method. The method takes the mother SLC and the coregistered interferogram stack as input and returns the reconstructed SLC stack.
 
 ```python
 import sarxarray
