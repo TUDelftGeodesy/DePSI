@@ -5,10 +5,11 @@ This is the WIP repository for the Python version of DePSI *(), a Python package
 
 It is assumed that you have `mamba` installed. If not, you can find the installation instructions [here](https://mamba.readthedocs.io/en/latest/installation/mamba-installation.html). Other package managers like `conda` or `venv` can be used as well.
 
-Clone this repository and `cd` into it:
+Clone this repository 
+
+Then`cd` into it:
 
 ```bash
-git clone git@github.com:TUDelftGeodesy/DePSI.git
 cd DePSI
 ```
 
