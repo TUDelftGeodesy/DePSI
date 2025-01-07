@@ -11,7 +11,7 @@
 
 ::: depsi.io
     options:
-      show_root_heading: true
+      show_root_heading: false
       show_source: true
       heading_level: 3
 
@@ -19,7 +19,7 @@
 
 ::: depsi.slc
     options:
-      show_root_heading: true
+      show_root_heading: false
       show_source: true
       heading_level: 3
 
