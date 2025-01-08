@@ -36,7 +36,7 @@ def ds_selection(settings, slc_stack, stack_meta):
 
     else:
         print('Assigning radar pixel_id to the corresponding parcel ...')
-        slc_stack, ds_stm = assign_id_pixel(settings, slc_stack, stack_meta)
+        pixel_id, ds_stm = assign_id_pixel(settings, slc_stack, stack_meta)
     
     ## Multilooking and equivalent single mother phase estimation
     ## In progress ...
