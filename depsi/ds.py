@@ -31,7 +31,7 @@ def ds_selection(settings, slc_stack, stack_meta):
         with h5py.File(filename, 'r') as f:
             pixel_id  = f['pixel_id'][()]
         ds_stm = xr.open_zarr(
-            os.path.join(settings['phase_est_dir'], 'ds_stm_' + stack_meta['stack_id'] + '.zarr')
+            os.path.join(settings['stm_dir'], 'ds_stm_' + stack_meta['stack_id'] + '.zarr')
         )
 
     else:
@@ -118,7 +118,7 @@ def assign_id_pixel(settings, slc_stack, stack_meta):
             lon = ("space", centroid[:,0]),
         )
     )
-    fileout = os.path.join(settings['phase_est_dir'], 'ds_stm_' + stack_meta['stack_id'] + '.zarr')
+    fileout = os.path.join(settings['stm_dir'], 'ds_stm_' + stack_meta['stack_id'] + '.zarr')
     ds_stm.to_zarr(fileout)
 
     print('Saving pixel_id into an HDF file ...')
