@@ -81,7 +81,7 @@ def assign_id_pixel(settings, slc_stack, stack_meta):
     for j, feature in enumerate(features):
         s = sg.shape(feature.geometry)
         if s.is_valid and s.is_simple:
-            if s.geom_type != 'MultiPolygon':
+            if s.geom_type == 'Polygon':
                 coords = list(s.exterior.coords)
                 r      = sg.LinearRing(coords)
                 poly   = mpl.path.Path(coords)
