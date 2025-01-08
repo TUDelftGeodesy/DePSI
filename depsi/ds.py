@@ -4,9 +4,6 @@ import h5py
 import fiona
 import shapely.geometry as sg
 import matplotlib as mpl
-from scipy import stats
-import multiprocessing as mp
-import itertools
 import xarray as xr
 import numba
     
