@@ -318,3 +318,140 @@ def _idx_within_distance(coords_ref, coords_others, min_dist):
         return idx
     else:
         return None
+
+
+def detect_side_lobes(stm, max_pixel_dist, max_correlation):
+    """Detect and mask side-lobe points based on the phase correlation between points.
+
+    It first finds points on the same range and azimuth and only considers points close by. Then it
+    computes the complex DD phase and computes the correlation.
+
+    Parameters
+    ----------
+    stm : (xarray.Dataset)
+      An input stm must include 'range', 'azimuth', 'pnt_idx', 'sd_complex', and 'nmad_full'.
+    max_pixel_dist : (float)
+      The maximum allowed spatial distance (in pixels) between points to be considered potential side-lobes.
+    max_correlation : (float)
+      The minimum correlation threshold to classify points as side-lobes. 0 means no correlation, 1 is maximum
+      correlation
+
+    Returns
+    -------
+    side_lobes_array : (np.ndarray)
+      An array containing the indices of the detected side-lobe points.
+    mask_side_lobes : (np.ndarray)
+      A boolean mask where 'False' indicates detected side-lobe points.
+    """
+    # Lazy load variables
+    range_vals = stm["range"].data
+    azimuth_vals = stm["azimuth"].data
+    sd_complex = stm["sd_complex"].data
+    nmad_full_vals = stm["nmad_full"].data
+    nr_epochs = len(stm.time)
+
+    point_idx = stm["pnt_idx"].values
+
+    # Define an empty set where the sidelobes will be stored
+    side_lobes = set()
+
+    for point in point_idx:
+        # Skip the point if it is already detected as a sidelobe
+        if point in side_lobes:
+            continue
+
+        # Get the range and azimuth coordinates of the point
+        range_i = range_vals[point]
+        azimuth_i = azimuth_vals[point]
+
+        # Search for points close by with same range and azimuth coordinates
+        idx_range = np.where(
+            np.logical_and(
+                range_vals == range_i,  # Same range value
+                np.abs(azimuth_vals - azimuth_i) < max_pixel_dist,  # Within pixel distance
+            )
+        )[0]
+
+        idx_azimuth = np.where(
+            np.logical_and(
+                azimuth_vals == azimuth_i,  # Same azimuth value
+                np.abs(range_vals - range_i) < max_pixel_dist,  # Within pixel distance
+            )
+        )[0]
+
+        potential_side_lobe_idx = np.union1d(idx_range, idx_azimuth).compute()
+
+        for point2 in potential_side_lobe_idx:
+            if point2 != point and point2 not in side_lobes:  # Skip the current and already detected side-lobe points
+                dd_complex = _compute_dd_correlation(
+                    sd_complex[point, :], sd_complex[point2, :]
+                )  # Compute DD between the two points
+                corr = _calculate_phase_correlation(
+                    dd_complex, nr_epochs
+                )  # Check the phase difference between two points and compute correlation
+
+                if corr >= max_correlation:  # The  point with the lowest amplitude will be detected as the side-lobe
+                    nmad_p1 = nmad_full_vals[point]
+                    nmad_p2 = nmad_full_vals[point2]
+
+                    if nmad_p2 < nmad_p1:
+                        side_lobes.add(point)  # point 2 has the lowest amplitude, so it is dected as the side-lobe
+                    else:
+                        side_lobes.add(point2)  # point 1 has the lowest amplitude, so it is dected as the side-lobe
+
+    # Make an array of the set
+    side_lobes_array = np.array(list(side_lobes))
+
+    mask_side_lobes = np.ones(len(point_idx), dtype=bool)  # Create a mask
+    mask_side_lobes[side_lobes_array] = False
+
+    return side_lobes_array, mask_side_lobes
+
+
+def _calculate_phase_correlation(dd_complex, nr_epochs):
+    """Compute correlation between phase time series of two pixels based on their double-difference (DD) phasors.
+
+    This function calculates the phase similarity between two complex-valued time series
+    by analyzing the angular differences in their double-difference (DD) phasors.
+    The correlation is normalized over the number of epochs to produce a value between 0 and 1,
+    where 1 indicates perfect correlation.
+
+    Parameters
+    ----------
+    dd_complex : array-like
+      A complex-valued array representing the double-difference phasors
+                             between two pixels over multiple epochs.
+    nr_epochs : int
+      The number of time epochs (observations) over which the correlation is calculated.
+
+    Returns
+    -------
+    float: A correlation value between 0 and 1, representing the phase similarity of the two time series.
+    """
+    corr = np.abs(np.sum(np.exp(1j * (np.angle(dd_complex))))) / nr_epochs
+    return corr
+
+
+def _compute_dd_correlation(complex_p1, complex_p2):
+    """Compute the complex double-difference (DD) between two complex-valued time series.
+
+    This function calculates the element-wise product of the complex conjugate of the first time series (`complex_p1`)
+    and the second time series (`complex_p2`). The result represents the phase difference
+    between the two series, which is useful for detecting similarities in phase behavior.
+
+    Parameters
+    ----------
+    complex_p1 : (np.ndarray)
+      A complex-valued array representing the first time series.
+    complex_p2 : (np.ndarray)
+      A complex-valued array representing the second time series.
+
+    Returns
+    -------
+    np.ndarray: An array of complex values representing the phase differences (double differences)
+                between the two input time series.
+    """
+    complex_conj_p1 = np.conj(complex_p1)
+    dd_complex = complex_conj_p1 * complex_p2
+
+    return dd_complex
