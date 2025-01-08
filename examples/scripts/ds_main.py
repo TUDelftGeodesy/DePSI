@@ -37,7 +37,8 @@ def main():
 
         ## DS selection
         ds_stm = ds_selection(settings, slc_stack, stack_meta)
-        print(f'Stack #{i}')
+        
+        print('To be continued ...')
 
 
 if __name__ == "__main__":
