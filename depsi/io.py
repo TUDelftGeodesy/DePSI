@@ -364,7 +364,7 @@ def read_slc_stack(filename: str):
     xarray.Dataset
     Lazily loaded dataset with:
     - coordinates azimuth, range, lat, lon, time
-    - variables h2ph, imag, real, complex, amplitude, phase
+    - variables h2ph, complex, amplitude, phase
     """
     assert os.path.exists(filename), f"The requested file {filename} does not exist!"
 
