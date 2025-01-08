@@ -97,10 +97,6 @@ def identify_stacks(settings):
         master_date = extract_master_date(os.path.join(stack_dirs[i], 'doris_input.xml'))
 
         assert master_date << start_date or master_date >> end_date, 'Master image is outside specified date range, add it later'
-
-        # for root, dirs, files in os.walk(stack_dirs[i]):
-        #     if str(master_date) in dirs:
-        #         master_dir = os.path.join(root, str(master_date))
         
         if settings['processor'] == 'flinsar':
             master_dir = os.path.join(stack_dirs[i], str(master_date))
@@ -219,6 +215,7 @@ def create_processing_folders(settings):
     settings['run_dir']        = os.path.join(settings['proj_dir'], settings['run_name'])
     settings['meta_dir']       = os.path.join(settings['run_dir'], 'metadata/')
     settings['phase_est_dir']  = os.path.join(settings['run_dir'], 'phase_estimation/')
+    settings['stm_dir']        = os.path.join(settings['run_dir'], 'stm/')
 
     if not os.path.exists(settings['run_dir']):
         os.makedirs(settings['run_dir'])
@@ -228,6 +225,9 @@ def create_processing_folders(settings):
 
     if not os.path.exists(settings['phase_est_dir']):
         os.makedirs(settings['phase_est_dir'])
+    
+    if not os.path.exists(settings['stm_dir']):
+        os.makedirs(settings['stm_dir'])
     
     return settings
 
