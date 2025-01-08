@@ -10,6 +10,8 @@ dependencies = [
     "matplotlib",
     "sarxarray",
     "stmtools",
+    "ruptures", 
+    "networkx",
 ]
 description = "Python package for interferometric synthetic aperture radar (InSAR) data processing."
 readme = "README.md"
@@ -46,6 +48,7 @@ docs = [
 ]
 demo = [
     "jupyterlab",
+    "contextily",
 ]
 
 [tool.setuptools]
