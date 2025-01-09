@@ -214,6 +214,9 @@ def multilooking(settings, slc_stack, stack_meta, pixel_id, ds_stm):
         sel     = np.where(pixel_id == pid)
         cpx_sel = cpx_stack[sel]
 
+        ## Remove nan rows from cpx_sel (indicating unwanted pixel, e.g. water)
+        cpx_sel  = cpx_sel[~np.isnan(cpx_sel).all(axis=1)]
+
         ## Perform brotherhood selection to each parcel
         if settings['ds_shp_test'] == 'yes':
             cpx_sel = shp_test(cpx_sel, 'ks-test')
