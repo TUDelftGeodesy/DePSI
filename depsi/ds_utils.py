@@ -5,6 +5,10 @@ from pathlib import Path
 import geopandas as gpd
 import json
 import numpy as np
+import sarxarray
+import xarray as xr
+import dask.array as da
+from slc import *
 
 
 def extract_master_date(xml_file):
@@ -235,4 +239,192 @@ def create_processing_folders(settings):
 def extract_date(path):
     match = re.search(r'/(\d{8})/', path)
     return int(match.group(1)) if match else None
+
+
+def load_slc_stack(stack_meta, chunks=(500,500)):
+    """
+    Function to load stack (SLCs or interferograms), assign coordinates, 
+    and subset to the area of interest.
+
+    Parameters:
+        - settings
+        - stack_meta
+        - chunks
+    
+    Returns:
+        - stack
+        - stack_meta
+    """
+    ## Read variables
+    master_dir  = stack_meta['master_dir']
+    master_date = stack_meta['master_date']
+    filelist    = stack_meta['slc_paths']
+    npixels     = stack_meta['npixels_res']
+    nlines      = stack_meta['nlines_res']
+    slc_dates   = stack_meta['slc_dates']
+
+    ## Load coordinates
+    lat = sarxarray.from_binary(
+        [os.path.join(master_dir, 'phi.raw')], 
+        shape=(nlines,npixels), 
+        vlabel='lat', 
+        dtype=np.float32, 
+        chunks=chunks
+    )
+    lon = sarxarray.from_binary(
+        [os.path.join(master_dir, 'lam.raw')], 
+        shape=(nlines,npixels), 
+        vlabel='lon', 
+        dtype=np.float32, 
+        chunks=chunks
+    )
+
+    ## Load SLCs and crop to aoi
+    if stack_meta['do_reslc'] == 'no':
+        slc_stack = sarxarray.from_binary(
+            filelist, 
+            shape=(nlines,npixels), 
+            dtype=np.complex64, 
+            chunks=chunks
+        )
+
+        ## Drop amplitude and phase, keep complex only
+        slc_stack = slc_stack.drop_vars(['amplitude', 'phase'])
+
+        ## Assign coordinates to the stack
+        slc_stack = slc_stack.assign_coords(
+            lat = (('azimuth', 'range'), lat.squeeze().lat.data), 
+            lon = (('azimuth', 'range'), lon.squeeze().lon.data)
+        )
+        # slc_stack = slc_stack.assign({'lon':lon, 'lat':lat})
+
+        ## Assign datetime as time coordinates
+        slc_stack['time'] = [datetime.strptime(str(date_int), '%Y%m%d') for date_int in slc_dates]
+
+        ## Extract aoi indices for cropping stack to the area of interest
+        l0, lN, p0, pN = extract_stack_aoi_indices(slc_stack, stack_meta)
+
+        ## Crop stack
+        slc_stack_subset = slc_stack.sel(azimuth=slice(l0,lN), range=slice(p0,pN))
+
+        ## Add amplitude and phase as attributes
+        slc_stack_subset = get_amplitude(slc_stack_subset)
+        slc_stack_subset = get_phase(slc_stack_subset)
+
+    ## Recompute SLCs from IFGs
+    if stack_meta['do_reslc'] == 'yes':
+        ## Load IFGs
+        ifg_stack = sarxarray.from_binary(
+            filelist, 
+            shape=(nlines,npixels), 
+            dtype=np.complex64, 
+            chunks=chunks
+        )
+
+        ## Drop amplitude and phase, keep complex only
+        ifg_stack = ifg_stack.drop_vars(['amplitude', 'phase'])
+        
+        ## Assign coordinates to the stack
+        ifg_stack = ifg_stack.assign_coords(
+            lat = (('azimuth', 'range'), lat.squeeze().lat.data), 
+            lon = (('azimuth', 'range'), lon.squeeze().lon.data)
+        )
+
+        ## Assign datetime as time coordinates
+        ifg_stack['time'] = [datetime.strptime(str(date_int), '%Y%m%d') for date_int in slc_dates]
+
+        ## Load master SLC
+        master_idx = slc_dates.index(master_date)
+        slc_master = ifg_stack.isel(time=slice(master_idx, master_idx+1))
+
+        ## Extract aoi indices for cropping stack to the area of interest
+        l0, lN, p0, pN = extract_stack_aoi_indices(ifg_stack, stack_meta)
+
+        ## Crop stack
+        ifg_stack_subset  = ifg_stack.sel(azimuth=slice(l0,lN), range=slice(p0,pN))
+        slc_master_subset = slc_master.sel(azimuth=slice(l0,lN), range=slice(p0,pN))
+
+        ## Re-SLC
+        # reslc = da.conj(stack_subset.complex.values) / master_subset.complex.values
+        slc_stack_out = ifg_to_slc(slc_master_subset, ifg_stack_subset)
+
+        ## Insert master slc to the re-slc stack
+        ## TODO: check the master slc
+        slc_stack_subset = xr.concat([slc_stack_out, slc_master_subset], dim='time').drop_duplicates(dim='time', keep='last').sortby('time')
+
+        ## Add amplitude and phase as attributes
+        slc_stack_subset = get_amplitude(slc_stack_subset)
+        slc_stack_subset = get_phase(slc_stack_subset)
+
+    ## Add the cropped shape to stack_meta
+    stack_meta['nlines']  = int(lN-l0+1)
+    stack_meta['npixels'] = int(pN-p0+1)
+
+    ## Save the updated stack metadata
+    with open(os.path.join(stack_meta['meta_dir'], 'stack_meta_' + stack_meta['stack_id'] + '.json'), 'w') as file:
+        json.dump(stack_meta, file, indent=2)
+
+    return slc_stack_subset, stack_meta
+    
+
+def extract_stack_aoi_indices(stack, stack_meta):
+    """
+    Function that finds the start indices (l0, p0) and end indices (lN, pN) of the aoi on the stack.
+
+    Parameters:
+        - stack
+        - stack_meta
+    
+    Returns: tuple
+        - l0
+        - lN
+        - p0
+        - pN
+    """
+    ## Load area of interest as geodataframe
+    gdf_aoi = gpd.read_file(stack_meta['aoi_path'])
+    assert gdf_aoi.crs == 'EPSG:4326', 'Area of interest is not using WGS84 coordinate reference system'
+    lon_min, lat_min, lon_max, lat_max = gdf_aoi.total_bounds
+
+    ## Create a mask for cropping stack to the area of interest
+    mask = (stack['lat']>lat_min) & (stack['lat']<lat_max) & (stack['lon']>lon_min) & (stack['lon']<lon_max)
+    mask_idx = np.argwhere(mask.values==True)
+    # mask = mask.compute()
+
+    ## Extract the start and the end of lines/azimuth and pixel/range
+    l0, lN = min(mask_idx[:,0]), max(mask_idx[:,0])
+    p0, pN = min(mask_idx[:,1]), max(mask_idx[:,1])
+
+    return l0, lN, p0, pN
+
+
+def get_amplitude(slc):
+    slc_out = slc.copy()
+    meta_arr = np.array((), dtype=np.float32)
+    amplitude = da.apply_gufunc(
+        _compute_amp, "()->()", slc["complex"], meta=meta_arr
+    )
+    slc_out = slc_out.assign(
+        {"amplitude": (("azimuth", "range", "time"), amplitude)}
+    )
+    return slc_out
+
+def get_phase(slc):
+    slc_out = slc.copy()
+    meta_arr = np.array((), dtype=np.float32)
+    phase = da.apply_gufunc(
+        _compute_phase, "()->()", slc["complex"], meta=meta_arr
+    )
+    slc_out = slc_out.assign(
+        {"phase": (("azimuth", "range", "time"), phase)}
+    )
+    return slc_out
+
+
+def _compute_amp(complex):
+    return np.abs(complex)
+
+
+def _compute_phase(complex):
+    return np.angle(complex)
 
