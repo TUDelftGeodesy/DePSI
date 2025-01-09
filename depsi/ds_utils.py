@@ -398,6 +398,11 @@ def extract_stack_aoi_indices(stack, stack_meta):
     return l0, lN, p0, pN
 
 
+################################################################################################################
+#    Source:                                                                                                   #
+#    https://github.com/TUDelftGeodesy/sarxarray/blob/main/sarxarray/stack.py                                  #
+#                                                                                                              #
+################################################################################################################
 def get_amplitude(slc):
     slc_out = slc.copy()
     meta_arr = np.array((), dtype=np.float32)
@@ -427,4 +432,5 @@ def _compute_amp(complex):
 
 def _compute_phase(complex):
     return np.angle(complex)
+################################################################################################################
 
