@@ -1,0 +1,15 @@
+# Lint and format check
+# For dev branch on private repo, only test on PR, not triggered for draft PR
+
+name: Ruff
+on:
+    push:
+      branches: [ "main" ]
+    pull_request:
+      branches: [ "main", "dev" ]
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
