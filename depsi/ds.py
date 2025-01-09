@@ -123,6 +123,7 @@ def assign_id_pixel(settings, slc_stack, stack_meta):
         if np.mod(j, round(len(features)/(len(features)/15))) == 0:
             print('Done {} polygons ({} %)'.format(j, round(j/len(features)*100, 2)))
     
+    pixel_id  = pixel_id.reshape(nlines,npixels)
     parcel_id = np.array(parcel_id)
     centroid  = np.array(centroid)
 
@@ -142,7 +143,7 @@ def assign_id_pixel(settings, slc_stack, stack_meta):
 
     print('Saving pixel_id into an HDF file ...')
     export_to_hdf(dataset_name = ['pixel_id'], 
-                  dataset      = [pixel_id.reshape(nlines,npixels)], 
+                  dataset      = [pixel_id], 
                   out_dir      = settings['phase_est_dir'], 
                   filename     = 'id_pixel_' + stack_meta['stack_id'])
     
@@ -254,7 +255,7 @@ def multilooking(settings, slc_stack, stack_meta, pixel_id, ds_stm):
         esm_phase = (["space", "time"], esm_phase),
     )
     fileout = os.path.join(settings['stm_dir'], 'ds_stm_' + stack_meta['stack_id'] + '.zarr')
-    ds_stm.to_zarr(fileout, mode='w')
+    ds_stm.to_zarr(fileout, mode='a')
 
     print('Saving stack_data into an HDF file ...')
     export_to_hdf(dataset_name = ['parcel_id', 'cpx_coh'],
