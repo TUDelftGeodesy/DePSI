@@ -320,7 +320,7 @@ def _idx_within_distance(coords_ref, coords_others, min_dist):
         return None
 
 
-def detect_side_lobes(stm, max_pixel_dist, max_correlation):
+def detect_side_lobes(stm, max_pixel_dist, min_correlation):
     """Detect and mask side-lobe points based on the phase correlation between points.
 
     It first finds points on the same range and azimuth and only considers points close by. Then it
@@ -332,7 +332,7 @@ def detect_side_lobes(stm, max_pixel_dist, max_correlation):
       An input stm must include 'range', 'azimuth', 'pnt_idx', 'sd_complex', and 'nmad_full'.
     max_pixel_dist : (float)
       The maximum allowed spatial distance (in pixels) between points to be considered potential side-lobes.
-    max_correlation : (float)
+    min_correlation : (float)
       The minimum correlation threshold to classify points as side-lobes. 0 means no correlation, 1 is maximum
       correlation
 
@@ -347,7 +347,8 @@ def detect_side_lobes(stm, max_pixel_dist, max_correlation):
     range_vals = stm["range"].data
     azimuth_vals = stm["azimuth"].data
     sd_complex = stm["sd_complex"].data
-    nmad_full_vals = stm["nmad_full"].data
+    amplitude_vals = stm["sd_amplitude"].data
+    # nmad_full_vals = stm["nmad_full"].data
     nr_epochs = len(stm.time)
 
     point_idx = stm["pnt_idx"].values
@@ -383,21 +384,25 @@ def detect_side_lobes(stm, max_pixel_dist, max_correlation):
 
         for point2 in potential_side_lobe_idx:
             if point2 != point and point2 not in side_lobes:  # Skip the current and already detected side-lobe points
-                dd_complex = _compute_dd_correlation(
+                dd_complex = _compute_dd_for_correlation(
                     sd_complex[point, :], sd_complex[point2, :]
                 )  # Compute DD between the two points
                 corr = _calculate_phase_correlation(
                     dd_complex, nr_epochs
                 )  # Check the phase difference between two points and compute correlation
 
-                if corr >= max_correlation:  # The  point with the lowest amplitude will be detected as the side-lobe
-                    nmad_p1 = nmad_full_vals[point]
-                    nmad_p2 = nmad_full_vals[point2]
+                if (
+                    corr >= min_correlation
+                ):  # The  point with the lowest mean amplitude will be detected as the side-lobe
+                    mean_ampl_p1 = np.mean(amplitude_vals[point, :])
+                    mean_ampl_p2 = np.mean(amplitude_vals[point2, :])
 
-                    if nmad_p2 < nmad_p1:
-                        side_lobes.add(point)  # point 2 has the lowest amplitude, so it is dected as the side-lobe
+                    if mean_ampl_p2 < mean_ampl_p1:
+                        side_lobes.add(
+                            point2
+                        )  # point 2 has the lowest mean amplitude, so it is dected as the side-lobe
                     else:
-                        side_lobes.add(point2)  # point 1 has the lowest amplitude, so it is dected as the side-lobe
+                        side_lobes.add(point)  # point 1 has the lowest mean amplitude, so it is dected as the side-lobe
 
     # Make an array of the set
     side_lobes_array = np.array(list(side_lobes))
@@ -432,7 +437,7 @@ def _calculate_phase_correlation(dd_complex, nr_epochs):
     return corr
 
 
-def _compute_dd_correlation(complex_p1, complex_p2):
+def _compute_dd_for_correlation(complex_p1, complex_p2):
     """Compute the complex double-difference (DD) between two complex-valued time series.
 
     This function calculates the element-wise product of the complex conjugate of the first time series (`complex_p1`)
