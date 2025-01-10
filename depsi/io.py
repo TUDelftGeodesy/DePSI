@@ -297,7 +297,7 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
     """
     # check if the input is valid
     assert os.path.exists(filename), f"The requested file {filename} does not exist!"
-    assert np.all([type(date) is datetime for date in dates]), "Not all dates are of type datetime.datetime!"
+    assert np.all([isinstance(date, datetime) for date in dates]), "Not all dates are of type datetime.datetime!"
 
     assert np.all(
         [requested_data_column in ALLOWED_KNMI_DATA_COLUMNS for requested_data_column in requested_data_columns]
