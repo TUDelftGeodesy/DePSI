@@ -456,7 +456,8 @@ def _compute_dd_for_correlation(complex_p1, complex_p2):
 
     Returns
     -------
-    np.ndarray: An array of complex values representing the phase differences (double differences)
+    np.ndarray
+        An array of complex values representing the phase differences (double differences)
                 between the two input time series.
     """
     complex_conj_p1 = np.conj(complex_p1)
