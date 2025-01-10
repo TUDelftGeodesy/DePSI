@@ -74,7 +74,8 @@ lint.select = [
   "PLE",  # Pylint error https://github.com/charliermarsh/ruff#error-ple
 ]
 lint.ignore = [
-"D100", "D101", "D104", "D105", "D106", "D107", "D203", "D213", "D413"
+"D100", "D101", "D104", "D105", "D106", "D107", "D203", "D213", "D413",
+"N806" # Allow capital letters in variables
 ] # docstring style
 
 line-length = 120
