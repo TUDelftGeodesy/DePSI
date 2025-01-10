@@ -384,7 +384,8 @@ def detect_side_lobes(stm: xr.Dataset, max_pixel_dist: float, min_correlation: f
         potential_side_lobe_idx = potential_side_lobe_idx.compute() if isinstance(potential_side_lobe_idx, da.Array) else potential_side_lobe_idx
 
         for point2 in potential_side_lobe_idx:
-            if point2 != point and point2 not in side_lobes:  # Skip the current and already detected side-lobe points
+            # Skip the current and already detected side-lobe points
+            if point2 != point and point2 not in side_lobes:  
                 dd_complex = _compute_dd_for_correlation(
                     sd_complex[point, :], sd_complex[point2, :]
                 )  # Compute DD between the two points
