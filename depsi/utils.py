@@ -172,13 +172,13 @@ def crop_slc_spacetime(
       - lon -> the longitude of the pixels
     aoi_filename: str | None
       full path to the AoI shapefile, expects .shp format. Set to None if no crop in space is requested.
-    start_date : datetime | str
-      the start date of the crop, in one of four formats:
+    start_date : datetime | str | None
+      the start date of the crop, in one of three formats:
       - datetime object
       - str object, formatted as YYYYMMDD
       - None, no cropping in time requested
-    end_date : datetime | str | int
-      the end date of the crop, in one of three formats:
+    end_date : datetime | str | int | None
+      the end date of the crop, in one of four formats:
       - datetime object
       - str object, formatted as YYYYMMDD
       - int object, which is interpreted as the number of images intended in the crop (including the start date). If

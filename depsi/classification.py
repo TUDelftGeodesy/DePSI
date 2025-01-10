@@ -1,10 +1,13 @@
 """Functions for scatterer selection related operations."""
 
+from datetime import datetime
 from typing import Literal
 
 import numpy as np
 import xarray as xr
 from scipy.spatial import KDTree
+
+from depsi.utils import crop_slc_spacetime
 
 
 def ps_selection(
@@ -13,6 +16,8 @@ def ps_selection(
     method: Literal["nad", "nmad"] = "nad",
     output_chunks: int = 10000,
     mem_persist: bool = False,
+    ps_selection_start_date: datetime | str | None = None,
+    ps_selection_end_date: datetime | str | int | None = None,
 ) -> xr.Dataset:
     """Select Persistent Scatterers (PS) from an SLC stack, and return a Space-Time Matrix.
 
@@ -38,6 +43,19 @@ def ps_selection(
         Chunk size in the `space` dimension, by default 10000
     mem_persist : bool, optional
         If true persist the NAD or NMAD in memory, by default False.
+    ps_selection_start_date : datetime | str | None
+      the start date of the time window to be used for the ps_selection, in one of three formats:
+      - datetime object
+      - str object, formatted as YYYYMMDD
+      - None, no cropping in time requested
+    ps_selection_end_date : datetime | str | int | None
+      the end date of the time window to be used for the ps_selection, in one of four formats:
+      - datetime object
+      - str object, formatted as YYYYMMDD
+      - int object, which is interpreted as the number of images intended in the crop (including the start date). If
+        more images are requested than exist since the start date, all images from start_date until the last image
+        are provided.
+      - None, no cropping in time requested
 
 
     Returns
@@ -57,16 +75,36 @@ def ps_selection(
     # Calculate selection mask
     match method:
         case "nad":
-            nad = xr.map_blocks(
-                _nad_block, slcs["amplitude"], template=slcs["amplitude"].isel(time=0).drop_vars("time")
-            )
+            if ps_selection_start_date is not None:
+                selection_crop = crop_slc_spacetime(
+                    slcs, start_date=ps_selection_start_date, end_date=ps_selection_end_date
+                )
+                nad = xr.map_blocks(
+                    _nad_block,
+                    selection_crop["amplitude"],
+                    template=selection_crop["amplitude"].isel(time=0).drop_vars("time"),
+                )
+            else:
+                nad = xr.map_blocks(
+                    _nad_block, slcs["amplitude"], template=slcs["amplitude"].isel(time=0).drop_vars("time")
+                )
             nad = nad.compute() if mem_persist else nad
             slcs = slcs.assign(pnt_nad=nad)
             mask = nad < threshold
         case "nmad":
-            nmad = xr.map_blocks(
-                _nmad_block, slcs["amplitude"], template=slcs["amplitude"].isel(time=0).drop_vars("time")
-            )
+            if ps_selection_start_date is not None:
+                selection_crop = crop_slc_spacetime(
+                    slcs, start_date=ps_selection_start_date, end_date=ps_selection_end_date
+                )
+                nmad = xr.map_blocks(
+                    _nmad_block,
+                    selection_crop["amplitude"],
+                    template=selection_crop["amplitude"].isel(time=0).drop_vars("time"),
+                )
+            else:
+                nmad = xr.map_blocks(
+                    _nmad_block, slcs["amplitude"], template=slcs["amplitude"].isel(time=0).drop_vars("time")
+                )
             nmad = nmad.compute() if mem_persist else nmad
             slcs = slcs.assign(pnt_nmad=nmad)
             mask = nmad < threshold
