@@ -12,6 +12,7 @@ from depsi.utils import _orbit_fit
 # Define constants
 SC_N_PATTERN = r"\s+([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
 SPEED_OF_LIGHT = 299792458.0  # m/s
+ALLOWED_KNMI_DATA_COLUMNS = ["TG", "TN", "TX", "RH", "RXH", "EV24"]
 
 
 def read_metadata(resfile, mode="raw", **kwargs):
@@ -298,13 +299,12 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
     assert os.path.exists(filename), f"The requested file {filename} does not exist!"
     assert np.all([type(date) is datetime for date in dates]), "Not all dates are of type datetime.datetime!"
 
-    allowed_data_columns = ["TG", "TN", "TX", "RH", "RXH", "EV24"]
     assert np.all(
-        [requested_data_column in allowed_data_columns for requested_data_column in requested_data_columns]
+        [requested_data_column in ALLOWED_KNMI_DATA_COLUMNS for requested_data_column in requested_data_columns]
     ), (
         f"Invalid requested data column detected in"
         f"{requested_data_columns}, allowed are "
-        f"{allowed_data_columns}. See documentation"
+        f"{ALLOWED_KNMI_DATA_COLUMNS}. See documentation"
         f" for explanation on abbreviations."
     )
 
