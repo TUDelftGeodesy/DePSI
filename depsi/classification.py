@@ -380,7 +380,8 @@ def detect_side_lobes(stm: xr.Dataset, max_pixel_dist: float, min_correlation: f
             )
         )[0]
 
-        potential_side_lobe_idx = np.union1d(idx_range, idx_azimuth).compute()
+        potential_side_lobe_idx = np.union1d(idx_range, idx_azimuth)
+        potential_side_lobe_idx = potential_side_lobe_idx.compute() if isinstance(potential_side_lobe_idx, da.Array) else potential_side_lobe_idx
 
         for point2 in potential_side_lobe_idx:
             if point2 != point and point2 not in side_lobes:  # Skip the current and already detected side-lobe points
