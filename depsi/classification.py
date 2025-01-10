@@ -449,7 +449,7 @@ def _compute_dd_for_correlation(complex_p1, complex_p2):
 
     Parameters
     ----------
-    complex_p1 : (np.ndarray)
+    complex_p1 : np.ndarray
       A complex-valued array representing the first time series.
     complex_p2 : (np.ndarray)
       A complex-valued array representing the second time series.
