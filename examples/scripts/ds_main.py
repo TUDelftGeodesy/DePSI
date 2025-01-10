@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import sarxarray
+import xarray as xr
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append('/Users/ylumbangaol/Documents/S3/software/caroline_dev/DePSI_group/depsi/')
@@ -24,7 +25,7 @@ def main():
     ## Identify stacks and variables
     settings, stack_meta_list = identify_stacks(settings)
 
-    ## ## Interferogram formation
+    ## Iterate tracks
     for i in range(settings['num_tracks']):
         ## Read stack metadata
         stack_meta = stack_meta_list[i]
@@ -45,6 +46,10 @@ def main():
 
         ## DS selection
         ds_stm = ds_selection(settings, slc_stack, stack_meta)
+
+        ## Merge ps and ds stm
+        psds_stm = xr.concat([ps_stm, ds_stm], dim='space')
+        print(psds_stm)
         
         print('To be continued ...')
 
