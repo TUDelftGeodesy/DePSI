@@ -1,0 +1,58 @@
+site_name: "DePSI: Delft PS-InSAR processing package"
+repo_url: https://github.com/TUDelftGeodesy/DePSI
+repo_name: DePSI
+
+nav:
+  - Getting started: 
+    - About DePSI: index.md
+  - Usage:
+    - SLC methods: usages/slc.md
+  - API Reference: api_reference.md
+  - Developer Guide: dev_guide.md
+
+
+theme:
+  name: material
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+      primary: blue
+      accent: white
+
+    # Palette toggle for dark mode
+    - scheme: slate
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+      primary: black
+      accent: pink
+  features:
+    - navigation.instant
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - content.code.copy
+  
+plugins:
+- mkdocs-jupyter:
+      include_source: True
+- search
+- mkdocstrings:
+    handlers:
+      python:
+        options:
+          docstring_style: numpy
+          docstring_options:
+            ignore_init_summary: no
+          merge_init_into_class: yes
+          show_submodules: no
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+
+extra:
+  generator: false
