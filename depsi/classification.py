@@ -328,19 +328,19 @@ def detect_side_lobes(stm: xr.Dataset, max_pixel_dist: float, min_correlation: f
 
     Parameters
     ----------
-    stm : (xarray.Dataset)
+    stm : xarray.Dataset
       An input stm must include 'range', 'azimuth', 'pnt_idx', 'sd_complex', and 'nmad_full'.
-    max_pixel_dist : (float)
+    max_pixel_dist : float
       The maximum allowed spatial distance (in pixels) between points to be considered potential side-lobes.
-    min_correlation : (float)
+    min_correlation : float
       The minimum correlation threshold to classify points as side-lobes. 0 means no correlation, 1 is maximum
       correlation
 
     Returns
     -------
-    side_lobes_array : (np.ndarray)
+    side_lobes_array : np.ndarray
       An array containing the indices of the detected side-lobe points.
-    mask_side_lobes : (np.ndarray)
+    mask_side_lobes : np.ndarray
       A boolean mask where 'False' indicates detected side-lobe points.
     """
     # Lazy load variables
