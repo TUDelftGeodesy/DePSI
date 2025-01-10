@@ -81,6 +81,8 @@ def assign_id_pixel(settings, slc_stack, stack_meta):
     ## Load variables
     nlines  = stack_meta['nlines']
     npixels = stack_meta['npixels']
+    az      = slc_stack['azimuth'].values
+    rg      = slc_stack['range'].values
     lon     = slc_stack['lon'].values
     lat     = slc_stack['lat'].values
     pts     = np.vstack((lon.flatten(), lat.flatten())).T
@@ -88,8 +90,10 @@ def assign_id_pixel(settings, slc_stack, stack_meta):
     ## Allocate empty variable
     pixel_id    = np.empty(shape=(nlines*npixels))
     pixel_id[:] = np.nan
-    centroid    = []
     parcel_id   = []
+    centroid    = []
+    az_centroid = []
+    rg_centroid = []
 
     ## Assign parcel_id to each pixel
     f_aux = settings['parcel_shapefile']
@@ -102,15 +106,13 @@ def assign_id_pixel(settings, slc_stack, stack_meta):
         if s.is_valid and s.is_simple:
             if s.geom_type == 'Polygon':
                 coords = list(s.exterior.coords)
-                r      = sg.LinearRing(coords)
-                poly   = mpl.path.Path(coords)
-                mask   = poly.contains_points(pts)
             elif s.geom_type == 'MultiPolygon':
                 item   = s.geoms[0]
                 coords = list(item.exterior.coords)
-                r      = sg.LinearRing(coords)
-                poly   = mpl.path.Path(coords)
-                mask   = poly.contains_points(pts)
+            r      = sg.LinearRing(coords)
+            poly   = mpl.path.Path(coords)
+            mask   = poly.contains_points(pts)
+            mask2d = mask.reshape(nlines, npixels)
 
         if np.count_nonzero(mask) >= settings['ds_min_cells']:
             mask_id           = np.argwhere(mask == True)
@@ -118,6 +120,10 @@ def assign_id_pixel(settings, slc_stack, stack_meta):
             center            = sg.Polygon(r).centroid
             centroid.append([center.coords.xy[0][0], center.coords.xy[1][0]])
             parcel_id.append(int(feature['properties']['id']))
+
+            mask2d_id = np.argwhere(mask2d == True)
+            az_centroid.append(np.median(az[np.unique(mask2d_id[:,0])]).astype(int))
+            rg_centroid.append(np.median(rg[np.unique(mask2d_id[:,1])]).astype(int))
         
         ## Counter
         if np.mod(j, round(len(features)/(len(features)/15))) == 0:
@@ -131,11 +137,14 @@ def assign_id_pixel(settings, slc_stack, stack_meta):
     ds_stm = xr.Dataset(
         data_vars = dict(
             pnt_class = (["space"], np.repeat(3, parcel_id.size)),
-            pnt_id = (["space"], parcel_id)
+            pnt_id = (["space"], parcel_id),
         ),
         coords = dict(
-            lat = ("space", centroid[:,1]),
-            lon = ("space", centroid[:,0]),
+            space = (["space"], np.arange(parcel_id.size)),
+            lat = (["space"], centroid[:,1]),
+            lon = (["space"], centroid[:,0]),
+            azimuth = (["space"], az_centroid),
+            range = (["space"], rg_centroid),
         )
     )
     fileout = os.path.join(settings['stm_dir'], 'ds_stm_' + stack_meta['stack_id'] + '.zarr')
@@ -251,9 +260,9 @@ def multilooking(settings, slc_stack, stack_meta, pixel_id, ds_stm):
     print('Update ds_stm file ...')
     ds_stm["time"] = [datetime.strptime(str(date_int), '%Y%m%d') for date_int in slc_dates]
     ds_stm = ds_stm.assign(
-        nlooks = (["space"], nlooks),
+        pnt_nlooks = (["space"], nlooks),
         mean_amp = (["space", "time"], mean_amp),
-        amp_disp = (["space"], amp_disp),
+        pnt_ampdisp = (["space"], amp_disp),
         dc_coh = (["space", "time"], dc_coh),
         esm_phase = (["space", "time"], esm_phase),
     )
