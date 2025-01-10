@@ -320,7 +320,7 @@ def _idx_within_distance(coords_ref, coords_others, min_dist):
         return None
 
 
-def detect_side_lobes(stm, max_pixel_dist, min_correlation):
+def detect_side_lobes(stm: xr.Dataset, max_pixel_dist: float, min_correlation: float) -> tuple[np.ndarray]:
     """Detect and mask side-lobe points based on the phase correlation between points.
 
     It first finds points on the same range and azimuth and only considers points close by. Then it
