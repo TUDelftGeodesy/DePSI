@@ -165,7 +165,9 @@ def crop_slc_spacetime(
     ----------
     slcs : xr.Dataset
       the SLC stack to be cropped. Requires at least the following coordinates or variables:
+      In case of a crop in time:
       - time -> the dates of the images
+      In case of a crop in space:
       - lat -> the latitude of the pixels
       - lon -> the longitude of the pixels
     aoi_filename: str | None
@@ -179,8 +181,9 @@ def crop_slc_spacetime(
       the end date of the crop, in one of three formats:
       - datetime object
       - str object, formatted as YYYYMMDD
-      - int object, which is interpreted as the number of days intended in the crop (including the start date). If
-        more images are requested than exist, all images from start_date until the last image are provided.
+      - int object, which is interpreted as the number of images intended in the crop (including the start date). If
+        more images are requested than exist since the start date, all images from start_date until the last image
+        are provided.
       - None, no cropping in time requested
 
     Returns
@@ -205,12 +208,12 @@ def crop_slc_spacetime(
         - end_date is not of type datetime | str | int | None
     """
     # Check the input
-    for axis in ["lat", "lon", "time"]:
-        assert axis in slcs.keys(), f"Expected axis {axis} in SLCs but it is not present!"
 
     if aoi_filename is not None:
         assert os.path.exists(aoi_filename), f"The file {aoi_filename} does not exist!"
         assert aoi_filename.split(".")[-1] == "shp", f"The provided file {aoi_filename} is not of .shp type!"
+        for axis in ["lat", "lon"]:
+            assert axis in slcs.keys(), f"Expected axis {axis} in SLCs but it is not present!"
 
     # convert the input to a timezone-aware datetime object
     if isinstance(start_date, str):
@@ -247,6 +250,9 @@ def crop_slc_spacetime(
 
     # TIME CROP
     if format_start_date is not None and format_end_date is not None:
+        # first the last assertion
+        assert "time" in slcs.keys(), f"Expected axis {axis} in SLCs but it is not present!"
+
         fmt_dates = np.array([_npdatetime64_to_datetime(date) for date in slcs["time"].values])
         time_mask = (format_start_date <= fmt_dates) & (fmt_dates <= format_end_date)
         slcs = slcs.sel(time=slcs["time"].values[time_mask])

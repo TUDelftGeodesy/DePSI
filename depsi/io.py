@@ -347,7 +347,7 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
     return datewise_data
 
 
-def read_slc_stack(filename: str):
+def read_slc_stack(filename: str) -> xr.Dataset:
     """Read a zarr stack of SLCs into a xarray.Dataset.
 
     Reads a zarr archive, and converts it to an xarray dataset compatible with the point selection functions.
