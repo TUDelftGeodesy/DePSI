@@ -433,7 +433,8 @@ def _calculate_phase_correlation(dd_complex, nr_epochs):
 
     Returns
     -------
-    float: A correlation value between 0 and 1, representing the phase similarity of the two time series.
+    float
+        A correlation value between 0 and 1, representing the phase similarity of the two time series.
     """
     corr = np.abs(np.sum(np.exp(1j * (np.angle(dd_complex))))) / nr_epochs
     return corr
