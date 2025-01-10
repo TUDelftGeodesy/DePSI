@@ -1,0 +1,886 @@
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.optimize import curve_fit
+
+import depsi.deformation_models as dm
+import depsi.estimation as est
+
+
+def _compute_dd(sd_complex_i, sd_complex_j, sd_quality_i, sd_quality_j, plot, dates, mother_idx):
+    """Compute the Double-Difference (DD) phase observation given complex time series of points i and j.
+
+    Point i serves as the reference point and is subtracted from point j:
+    - `sd_complex_conj_i = sd_complex_i.conj()`
+    - `dd_arc = sd_complex_j * sd_complex_conj_i`
+
+    The function also calculates the diagonal of the Variance-Covariance Matrix (VCM) of the DD phase
+    (`Q_yy_diagonal_sigma`), which represents the standard deviation (sigma) of the DD phase quality.
+
+    Optionally, it can generate a plot of the wrapped DD phase values over time.
+
+    Parameters
+    ----------
+    sd_complex_i : np.ndarray
+        Complex time series of the reference point i. Shape (n, ).
+    sd_complex_j : np.ndarray
+        Complex time series of point j. Shape (n, ).
+    sd_quality_i : np.ndarray
+        Quality values (sigma) of the single-difference (SD) phase for point i. Shape (n, ).
+    sd_quality_j : np.ndarray
+        Quality values (sigma) of the single-difference (SD) phase for point j. Shape (n, ).
+    plot : int
+        If set to 1, generates a plot of the DD phase values over time.
+    dates : np.ndarray
+        Array of dates corresponding to the time series. Shape (n, ).
+    mother_idx : int
+        Index of the 'mother' value in the DD phase series to highlight in the plot.
+
+    Returns
+    -------
+    tuple
+        - dd_arc : np.ndarray
+          Double-difference (DD) phase observations. Shape (n, ).
+        - Q_yy_diagonal_sigma : np.ndarray
+          Diagonal values of the Variance-Covariance Matrix (VCM) of the DD phases. Shape (n, ).
+
+    Example
+    -------
+    >>> dd_arc, Q_yy_diagonal_sigma = _compute_dd(sd_complex_i, sd_complex_j,
+                                                    sd_quality_i, sd_quality_j, plot, dates, mother_idx)
+    """
+    sd_complex_conj_i = sd_complex_i.conj()  # Compute the complex conjugate for the reference point i
+    dd_arc = sd_complex_j * sd_complex_conj_i
+
+    # Compute the diagonal of the VCM of the dd phases
+    Q_yy_diagonal_sigma = np.sqrt((sd_quality_i) ** 2 + (sd_quality_j) ** 2)
+
+    if plot == 1:
+        plt.figure()
+        plt.plot(dates, np.angle(dd_arc), ".", label="DD obs")
+        plt.plot(dates[mother_idx], np.angle(dd_arc[mother_idx]), ".", markersize=15, label="Mother DD value")
+        plt.ylabel("Wrapped DD phase values [rad]")
+        plt.xlabel("Dates")
+        plt.legend()
+
+    return dd_arc, Q_yy_diagonal_sigma
+
+
+def _unwrap_phases_filter(filter_length, arc_dd, phase_arc, jump):
+    """Filter and unwrap double-difference (DD) arc phase observations in the complex domain.
+
+    This function filters the real and imaginary components of the DD arc observations, computes the filtered phase
+    (angle), and unwraps the phase based on the filtered function. It simplifies the detection of 2π jumps and applies
+    corrections to produce an unwrapped phase time series.
+
+    Parameters
+    ----------
+    filter_length : int
+        Length of the moving average filter used to smooth the real and imaginary components of the arc observation.
+    arc_dd : np.ndarray
+        Double-difference arc observations in the complex domain. Shape (n, ).
+    phase_arc : np.ndarray
+        Wrapped phase observations for the arc. Shape (n, ).
+    jump : float
+        Threshold as a fraction of 2π used to detect and correct phase jumps during unwrapping.
+
+    Returns
+    -------
+    tuple
+        - phase_arc_unwrap : np.ndarray
+          Unwrapped phase observations for the arc. Shape (n, ).
+        - pi_diff : np.ndarray
+          Integer multiple of 2π differences between the unwrapped filtered phase and the original phase. Shape (n, ).
+        - filtered_phase_wrap : np.ndarray
+          Filtered and wrapped phase observations. Shape (n, ).
+        - filter_real : np.ndarray
+          Filtered real component of the arc observations. Shape (n, ).
+        - filter_imag : np.ndarray
+          Filtered imaginary component of the arc observations. Shape (n, ).
+
+    Notes
+    -----
+    - The function applies a moving average filter to smooth the real and imaginary parts of the input arc observations.
+    - The filtered phase is used to detect 2π phase jumps, and a correction is applied to unwrap the phase.
+    - Corrections are based on the difference between the original phase and the unwrapped filtered phase.
+    """
+    ## Filter in Re and Im domain to detect ambiguity levels easily
+    filter_real = np.convolve(arc_dd.real, np.ones(filter_length) / filter_length, mode="same")
+    filter_imag = np.convolve(arc_dd.imag, np.ones(filter_length) / filter_length, mode="same")
+    complex_filtered = filter_real + filter_imag * 1j
+    filtered_phase_wrap = np.angle(complex_filtered)
+
+    # Detect 2pi jumps in the filtered double difference and calculate shift of time series
+    abs_diff = np.zeros(len(filtered_phase_wrap) - 1)
+    for k in range(len(filtered_phase_wrap) - 1):
+        abs_diff[k] = filtered_phase_wrap[k + 1] - filtered_phase_wrap[k]
+
+    shift = np.zeros(len(arc_dd))
+    for k in range(len(abs_diff) - 1):
+        if abs_diff[k] < -jump * 2 * np.pi or abs_diff[k] > jump * 2 * np.pi:
+            if abs_diff[k] < -jump * 2 * np.pi:
+                shift[k + 1 :] = shift[k + 1 :] + 2 * np.pi
+            if abs_diff[k] > jump * 2 * np.pi:
+                shift[k + 1 :] = shift[k + 1 :] - 2 * np.pi
+        else:
+            shift[k + 1 : 0] = 0
+
+    # Unwrap the filtered phase function
+    filtered_phase_unwrap = filtered_phase_wrap + shift
+
+    # Unwrap the DD phase observation for the arc based on the unwraped filtered function
+    # Correct for integer pi values differences between the filtered unwraped function and the DD observations
+    pi_diff = np.around((phase_arc - filtered_phase_unwrap) / (2 * np.pi), 0)
+    phase_arc_unwrap = phase_arc - 2 * np.pi * pi_diff
+
+    return phase_arc_unwrap, pi_diff, filtered_phase_wrap, filter_real, filter_imag
+
+
+def _scipy_fit_partition_2nd_order_bounds(breakpoints, x_data, arc_obs, initial_guess, bounds, vcm):
+    """Estimate the parameters for an arc using a partitioned second-order polynomial fit.
+
+    This function splits the time series of the arc observations into multiple partitions at the specified breakpoints.
+    For each partition, a 2nd order polynomial is fit, and the function ensures that the time series is continuous
+    at the breakpoints. The fitting process uses the `curve_fit` function with specified bounds and variance-covariance
+    matrix (vcm).
+
+    Parameters
+    ----------
+    breakpoints : list of int
+        Indices where the time series is divided into partitions.
+    x_data : np.ndarray
+        The input data for the model, typically including time-related variables. Shape (m, n).
+    arc_obs : np.ndarray
+        The observed arc, including both real and imaginary parts. Shape (m,).
+    initial_guess : np.ndarray
+        Initial guess for the unknown parameters. Shape (n,).
+    bounds : tuple of (lower_bounds, upper_bounds)
+        The bounds for the parameters during fitting. Each bound is an array of length n.
+    vcm : np.ndarray
+        The variance-covariance matrix of the observations. Shape (m, m).
+
+    Returns
+    -------
+    estimated_params : np.ndarray
+        The estimated parameters after fitting. Shape (n,).
+    pcov : np.ndarray
+        The covariance matrix of the estimated parameters. Shape (n, n).
+
+    """
+
+    def _model_arc_2nd_order(x_data, *model_params, bkps=breakpoints):
+        """Model for an arc using a second-order polynomial for each partition in the time series.
+
+        The arc time series is divided into partitions at the specified breakpoints, and for each partition, a 2nd
+        polynomial is fit. The model accounts for amplitude variations, displacement, cross range, and temperature.
+
+        Parameters
+        ----------
+        x_data : np.ndarray
+            The input data for the model, including time (`t`), temperature (`T`), and CR (`cr2ph`). Shape (m, n).
+        model_params : list of float
+            The parameters for the model. These include amplitude, displacement model parameters, and cross range
+            and temperature. The exact number and order of parameters depend on the number of breakpoints.
+        bkps : list of int, optional
+            Breakpoints at which the time series is divided into partitions. Default is `breakpoints`.
+
+        Returns
+        -------
+        np.ndarray
+            The modeled arc, which includes both the real and imaginary parts of the arc observations.
+            Shape (2 * m,).
+        """
+        t, temp, cr2ph = x_data
+
+        # Define the amplitude per segment
+        aa = model_params[0 : len(bkps)]
+
+        # Define the parameters for the displacement model (third order polynomial)
+        intercept = model_params[len(bkps)]
+        p1 = model_params[len(bkps) + 1 : 2 * len(bkps) + 1]
+        p2 = model_params[2 * len(bkps) + 1 : 3 * len(bkps) + 1]
+
+        # Define parameters for the cross range and temperature
+        height = model_params[-2]
+        expansion = model_params[-1]
+
+        # Define the displacement phase and ampltiudes (they vary per partition)
+        displ = np.zeros(len(t))
+        ampl = np.zeros(len(t))
+
+        # c is the start of a new segment
+        c = 0
+        for i in range(len(bkps)):
+            # Define till what index the function should go (which is the end of the partition)
+            idx = int(bkps[i]) + 1
+
+            # Define the displacement values
+            displ[c:idx] = intercept - (p1[i] * t[c] + p2[i] * t[c] ** 2) + (p1[i] * t[c:idx] + p2[i] * t[c:idx] ** 2)
+            ampl[c:idx] = aa[i]
+
+            # Define the 'intercept' of the new partition (that is the end of the next partition)
+            intercept = displ[idx - 1]
+
+            # c is the starting point of a new partition
+            c = idx - 1
+
+        # Define the Real complex observation
+        real_part = ampl * np.cos(height * cr2ph + expansion * temp + displ)
+        imag_part = ampl * np.sin(height * cr2ph + expansion * temp + displ)
+        return np.append(real_part, imag_part)
+
+    estimated_params, pcov = curve_fit(
+        f=_model_arc_2nd_order,
+        xdata=x_data,
+        ydata=arc_obs,
+        p0=initial_guess,
+        bounds=bounds,
+        sigma=vcm,
+        absolute_sigma=True,
+    )
+
+    return estimated_params, pcov
+
+
+def _model_arc_partitions_2nd_order_phases(x_data, model_params):
+    """Calculate the forward model of the total, displacement, cross range, and thermal phase for an arc.
+
+    The function divides the time series into different partitions. For each partition, a 2nd order polynomial is used.
+
+    Parameters
+    ----------
+    x_data : tuple
+        Contains the following elements:
+        - bkps (list of int): Breakpoints that divide the time series into partitions.
+        - t (np.ndarray): Time data for the arc.
+        - temp (np.ndarray): Temperature data for the arc.
+        - cr2ph (np.ndarray): Cross-range data for the arc.
+    model_params : list of float
+        Model parameters for the arc:
+        - Amplitudes per segment (A).
+        - Displacement model parameters (intercept, p1, p2).
+        - Parameters for cross-range (H) and temperature (expansion).
+
+    Returns
+    -------
+    tuple
+        Contains the following elements:
+        - phase_total (np.ndarray): The total phase (displacement + cross range + thermal).
+        - phase_thermal (np.ndarray): The thermal phase.
+        - phase_cross_range (np.ndarray): The cross-range phase.
+        - phase_displacement (np.ndarray): The displacement phase.
+        - real_part (np.ndarray): The real part of the arc observation.
+        - imag_part (np.ndarray): The imaginary part of the arc observation.
+    """
+    bkps, t, temp, cr2ph = x_data
+
+    # Define the amplitude per segment
+    aa = model_params[0 : len(bkps)]
+
+    # Define the parameters for the displacement model (third order polynomial)
+    intercept = model_params[len(bkps)]
+    p1 = model_params[len(bkps) + 1 : 2 * len(bkps) + 1]
+    p2 = model_params[2 * len(bkps) + 1 : 3 * len(bkps) + 1]
+
+    # Define parameters for the cross range and temperature
+    height = model_params[-2]
+    expansion = model_params[-1]
+
+    # Define the displacement phase and ampltiudes (they vary per partition)
+    displ = np.zeros(len(t))
+    ampl = np.zeros(len(t))
+
+    # c is the start of a new segment
+    c = 0
+    for i in range(len(bkps)):
+        # Define till what index the function should go (which is the end of the partition)
+        idx = int(bkps[i]) + 1
+
+        # Define the displacement values
+        displ[c:idx] = intercept - (p1[i] * t[c] + p2[i] * t[c] ** 2) + (p1[i] * t[c:idx] + p2[i] * t[c:idx] ** 2)
+        ampl[c:idx] = aa[i]
+
+        # Define the 'intercept' of the new partition (that is the end of the next partition)
+        intercept = displ[idx - 1]
+
+        # c is the starting point of a new partition
+        c = idx - 1
+
+    # Define the Real complex observation
+    real_part = ampl * np.cos(height * cr2ph + expansion * temp + displ)
+    imag_part = ampl * np.sin(height * cr2ph + expansion * temp + displ)
+
+    # Define the phases
+    phase_thermal = expansion * temp
+    phase_cross_range = height * cr2ph
+    phase_displacement = displ
+    phase_total = phase_thermal + phase_cross_range + phase_displacement
+
+    return phase_total, phase_thermal, phase_cross_range, phase_displacement, real_part, imag_part
+
+
+def _unwrap_phases(observed_phase, estimated_phase):
+    """Unwrap the observed phases based on modeled/estimated phase.
+
+    This function corrects phase jumps by adjusting the observed phase values with respect to the estimated phase.
+
+    Parameters
+    ----------
+    observed_phase : np.ndarray
+        The observed phase values (typically in radians).
+    estimated_phase : np.ndarray
+        The estimated or modeled phase values based on the model parameters.
+
+    Returns
+    -------
+    np.ndarray
+        The unwrapped phase values, which are corrected to account for phase wrapping.
+    """
+    pi_diff = np.around((estimated_phase - observed_phase) / (2 * np.pi), 0)
+    phase_unwrap = observed_phase + 2 * np.pi * pi_diff
+
+    return phase_unwrap
+
+
+def _compute_residuals_per_partition_stm(y_arc, y_est, Q_dd, bkps):
+    """Compute the RMSE of the residuals per partition.
+
+    This function can be used to compare values with a predefined Qdd matrix.
+
+    Parameters
+    ----------
+    y_arc : np.ndarray
+        The observed (real) arc values (should be in a flattened array).
+    y_est : np.ndarray
+        The estimated arc values (should be in a flattened array).
+    Q_dd : np.ndarray
+        The variance-covariance matrix (Q_dd) of the residuals.
+    bkps : list or np.ndarray
+        Breakpoints indicating where the arc is divided into different partitions.
+
+    Returns
+    -------
+    tuple
+        - rmse_segment (list): List of RMSE values computed per segment.
+        - std_est_segment (list): List of standard deviations of the residuals per segment.
+        - q_per_segment (list): List of standard deviations from the Q_dd matrix for each partition.
+    """
+    start = 0
+    rmse_segment = []
+    std_est_segment = []
+    q_per_segment = []
+
+    y_arc = y_arc.flatten()
+    y_est = y_est.flatten()
+
+    for i in range(len(bkps)):
+        # If / else statement omdat mother index nog in bkpnts zit. Maar met DD is die er inmiddels uit
+        n = bkps[i] - start
+
+        rmse_s = np.sqrt((np.sum((y_arc[start : bkps[i]] - y_est[start : bkps[i]]) ** 2)) / n)
+        std_s = np.sqrt(np.var(y_arc[start : bkps[i]] - y_est[start : bkps[i]]))
+        q_per_segment = np.sqrt(Q_dd[start, start])
+
+        rmse_segment.append(rmse_s)
+        std_est_segment.append(std_s)
+        q_per_segment.append(q_per_segment)
+
+        start = bkps[i]
+
+    return rmse_segment, std_est_segment, q_per_segment
+
+
+def arc_estimation_control_network(
+    arcs_to_analyse,
+    bounds,
+    mother_idx,
+    m2ph,
+    years,
+    dates,
+    temp,
+    sd_complex,
+    slc_quality,
+    cr2ph,
+    ampl_ts,
+    bkps_stm,
+    mean_ampl_sd,
+    sigma_ampl_sd,
+    mad_ampl_sd,
+    median_ampl_sd,
+    rdx,
+    rdy,
+    filter_length_complex=30,
+    jump_percentage_2pi=0.85,
+    vcm_complex_method="mad_median",
+    test_stochastics=0,
+    print_output=0,
+):
+    """Estimate parameters for arcs in a control network based on input time series and geodetic measurements.
+
+    This function performs a series of computations for each arc in the control network,
+    including variance-covariance matrix computation, double-difference phase estimation, and parameter fitting
+    in both the phase and complex domains. The results of these calculations are stored in structured dictionaries.
+
+    Parameters
+    ----------
+    arcs_to_analyse : list of tuples
+        List of arcs, where each arc is defined as a tuple (i, j) representing indices of two points.
+    bounds : tuple of lists
+        Bounds for parameter estimation in the format (lower_bounds, upper_bounds).
+    mother_idx : int
+        Index of the "mother" point, serving as a reference in double-difference phase calculations.
+    m2ph : float
+        Conversion factor from meters to phase.
+    years : numpy.ndarray
+        Array of decimal years corresponding to the time series epochs.
+    dates : numpy.ndarray
+        Array of date indices or timestamps corresponding to the time series.
+    temp : numpy.ndarray
+        Array of temperature values for thermal expansion modeling.
+    sd_complex : numpy.ndarray
+        Complex-valued standard deviations of the signal for all points.
+    slc_quality : numpy.ndarray
+        Quality metric for single-look complex (SLC) data.
+    cr2ph : numpy.ndarray
+        Cross-range to phase conversion factors for the points.
+    ampl_ts : numpy.ndarray
+        Amplitude time series for each point.
+    bkps_stm : numpy.ndarray
+        Breakpoints for state transition modeling.
+    mean_ampl_sd : numpy.ndarray
+        Mean amplitudes for each point, used in variance modeling.
+    sigma_ampl_sd : numpy.ndarray
+        Standard deviations of amplitudes for each point.
+    mad_ampl_sd : numpy.ndarray
+        Median absolute deviations (MAD) of amplitudes.
+    median_ampl_sd : numpy.ndarray
+        Median amplitudes for each point.
+    rdx : numpy.ndarray
+        X-coordinates of the points in the control network.
+    rdy : numpy.ndarray
+        Y-coordinates of the points in the control network.
+    filter_length_complex : int, optional
+        Length of the filter for phase unwrapping (default: 30).
+    jump_percentage_2pi : float, optional
+        Threshold for unwrapping phase jumps in terms of 2π (default: 0.85).
+    vcm_complex_method : str, optional
+        Method for variance-covariance matrix estimation in the complex domain.
+        Options are "sigma_mean" or "mad_median" (default: "mad_median").
+    test_stochastics : int, optional
+        Flag for performing stochastic testing (default: 0).
+    print_output : int, optional
+        Flag for enabling or disabling print statements (default: 0).
+
+    Returns
+    -------
+    results : dict
+        Dictionary containing results for each arc, including:
+            - 'unwrap_phases_arc': Unwrapped phases for each arc.
+            - 'sigma_phases_arc': Phase variances for each arc.
+            - 'estimated_phase': Estimated phases for each arc.
+            - 'estimated_displ_phase': Displacement-related phases for each arc.
+            - 'estimated_thermal': Estimated thermal expansion coefficients.
+            - 'estimated_cross_range': Estimated cross-range components.
+            - 'estimated_cross_range_sigma': Uncertainties of cross-range estimates.
+            - 'estimated_thermal_sigma': Uncertainties of thermal estimates.
+            - 'estimated_thermal_phase': Thermal-related phases for each arc.
+            - 'estimated_cross_range_phase': Cross-range related phases for each arc.
+            - 'cr2ph_arcs': Cross-range-to-phase conversion factors for each arc.
+            - 'succeeded_arcs': List of arcs where parameter estimation succeeded.
+
+    stochastic_results : dict, optional
+        Dictionary containing stochastic testing results (if `test_stochastics=1`), including:
+            - 'q_per_partition': Quality metrics for each partition.
+            - 'std_residuals_partition': Standard deviations of residuals for each partition.
+            - 'rmse_residuals_partition': RMSE of residuals for each partition.
+            - 'mean_sigma_post_arc': Mean post-fit sigma values for each arc.
+            - 'mean_a_priori_sigma_arc': Mean a priori sigma values for each arc.
+            - 'arc_length': Lengths of the arcs.
+            - 'mean_sigma_p_i': Mean quality metrics for the first point in each arc.
+            - 'mean_sigma_p_j': Mean quality metrics for the second point in each arc.
+
+    Notes
+    -----
+    1. The function uses deterministic assignment for the CR component, setting it to zero for one of the points.
+    2. The estimation process includes fallback mechanisms to handle cases where optimal parameters cannot be found.
+    3. Requires external utility functions for phase unwrapping, functional model construction, and lsq estimation.
+
+    Raises
+    ------
+    ValueError
+        If an unknown `vcm_complex_method` is specified.
+    RuntimeError, ValueError
+        If parameter estimation fails for an arc during optimization.
+    """
+    # If we want to do some tests on the stochastics
+    if test_stochastics == 1:
+        stochastic_results = {
+            "q_per_partition": [],
+            "std_residuals_partition": [],
+            "rmse_residuals_partition": [],
+            "mean_sigma_post_arc": [],
+            "mean_a_priori_sigma_arc": [],
+            "arc_length": [],
+            "mean_sigma_p_i": [],
+            "mean_sigma_p_j": [],
+        }
+
+    # Dictionary to store results
+    results = {
+        "unwrap_phases_arc": [],
+        "sigma_phases_arc": [],
+        "estimated_phase": [],
+        "estimated_displ_phase": [],
+        "estimated_thermal": [],
+        "estimated_cross_range": [],
+        "estimated_cross_range_sigma": [],
+        "estimated_thermal_sigma": [],
+        "estimated_thermal_phase": [],
+        "estimated_cross_range_phase": [],
+        "cr2ph_arcs": [],
+        "succeeded_arcs": [],
+    }
+
+    # Counting needed for saving data
+    p = 0
+
+    for a in arcs_to_analyse:
+        pnt_i_idx, pnt_j_idx = a
+
+        print(f"idx pnt i: {pnt_i_idx}")
+        print(f"idx pnt j: {pnt_j_idx}")
+
+        # Extract information of the two points of the arc
+        sd_complex_i = sd_complex[pnt_i_idx, :]
+        slc_quality_i = slc_quality[pnt_i_idx, :]
+        ampl_i = ampl_ts[pnt_i_idx, :]
+        bkps_stm_i = bkps_stm[pnt_i_idx, :]
+        sigma_ampl_sd_i = sigma_ampl_sd[pnt_i_idx, :]
+        mean_ampl_sd_i = mean_ampl_sd[pnt_i_idx, :]
+        mad_ampl_sd_i = mad_ampl_sd[pnt_i_idx, :]
+        median_ampl_sd_i = median_ampl_sd[pnt_i_idx, :]
+        rdx_i = rdx[pnt_i_idx]
+        rdy_i = rdy[pnt_i_idx]
+
+        sd_complex_j = sd_complex[pnt_j_idx, :]
+        slc_quality_j = slc_quality[pnt_j_idx, :]
+        cr2ph_j = cr2ph[pnt_j_idx]
+        bkps_stm_j = bkps_stm[pnt_j_idx, :]
+        sigma_ampl_sd_j = sigma_ampl_sd[pnt_j_idx, :]
+        mean_ampl_sd_j = mean_ampl_sd[pnt_j_idx, :]
+        mad_ampl_sd_j = mad_ampl_sd[pnt_j_idx, :]
+        median_ampl_sd_j = median_ampl_sd[pnt_j_idx, :]
+        rdx_j = rdx[pnt_j_idx]
+        rdy_j = rdy[pnt_j_idx]
+
+        ########AA####################################################################
+        ################### 1. Extract information for the ARC #######################
+        ##############################################################################
+        # Compute the arc length
+        arc_length = np.sqrt((rdx_i - rdx_j) ** 2 + (rdy_i - rdy_j) ** 2)
+
+        # Extract the breakpoints for the arc
+        bkps_arc_stm = bkps_stm_i + bkps_stm_j
+
+        # Define the indexes of the breakpoints for the arc
+        bkps = [index for index, value in enumerate(bkps_arc_stm) if value > 0]
+        bkps.append(len(dates) - 1)
+
+        # The value for the cross range component is cr2ph of point j, since we deterministically set the
+        # cross-range component of point i to zero
+        cr2ph_arc = cr2ph_j
+
+        ##############################################################################
+        ################ 2. Compute the DD phases for the arc ########################
+        ##############################################################################
+
+        # point i is the reference point and is subtracted from point j:
+        dd_arc, Q_yy_diagonal = _compute_dd(
+            sd_complex_i, sd_complex_j, slc_quality_i, slc_quality_j, 0, dates, mother_idx
+        )
+
+        # Compute the variance covariance matrix of the DD based on the NMAD for the arc
+        Q_yy = np.identity(len(dates)) * Q_yy_diagonal**2
+        Q_yy_inv = np.linalg.inv(Q_yy)
+
+        ##############################################################################
+        ############## 3. Estimate parameters in the phase domain ####################
+        ##############################################################################
+        """
+        This step is required to get proper intial estimates for the parameter estimation in the complex domain     
+        """
+        # Unwrap the phases based on the filtered real and imaginary part
+        phase_arc_unwrap, _, _, _, _ = _unwrap_phases_filter(
+            filter_length_complex, dd_arc, np.angle(dd_arc), jump_percentage_2pi
+        )
+
+        ######### Contruct the A matrices for functional model
+        # Compute different columns for the A matrices and construct to one A matrix
+        A_cr = dm.a_cross_range(cr2ph_arc)
+        A_lin = dm.a_linear(years)
+        A_temp = dm.a_temperature(temp)
+        A_arc = np.column_stack((A_cr, A_temp, A_lin))
+
+        # Define the observation vector for the arc, which is based on the 'unwrapped' phase based on the filter
+        y_arc = np.reshape(phase_arc_unwrap, (len(phase_arc_unwrap), 1))
+
+        # Estimate parameters in the phase domain
+        x_hat_arc_ph, Q_x_hat_arc_ph = est.blue_q_yy_inv(A_arc, y_arc, Q_yy_inv)
+
+        ##############################################################################
+        ############### 4. VCM IN COMPLEX DOMAIN #####################################
+        ##############################################################################
+        """
+        Here we will compute the VCM for the complex domain. 
+        VCM it is possible to choose between the mean and sigma or mad and median amplitude per segment. 
+        """
+
+        # Estimate the DD sigma
+        if vcm_complex_method == "sigma_mean":
+            sigma_dd = np.abs(mean_ampl_sd_i * mean_ampl_sd_j) * np.sqrt(
+                (sigma_ampl_sd_i / mean_ampl_sd_i) ** 2 + (sigma_ampl_sd_j / mean_ampl_sd_j) ** 2
+            )
+
+        elif vcm_complex_method == "mad_median":
+            sigma_dd = np.abs(median_ampl_sd_i * median_ampl_sd_j) * np.sqrt(
+                (mad_ampl_sd_i * 1.4826 / median_ampl_sd_i) ** 2 + (mad_ampl_sd_j * 1.4826 / median_ampl_sd_j) ** 2
+            )
+        else:
+            raise ValueError(
+                f"You specified an unknown vcm complex method. The method -- {vcm_complex_method} -- does not exist"
+            )
+
+        # Compute VCM in the complex domain
+        sigma_complex = np.append(
+            sigma_dd, sigma_dd
+        )  # Real and Imag are stacked together since we use both of the observations
+        Q_dd_cmplx = np.identity(len(sigma_complex))
+        np.fill_diagonal(Q_dd_cmplx, sigma_complex**2)
+
+        ##############################################################################
+        ############### 5. PARAMETER ESTIMATION COMPLEX DOMAIN #######################
+        ##############################################################################
+        # Complex data preparation for the arc
+        re_arc = dd_arc.real
+        im_arc = dd_arc.imag
+        arc_obs = np.append(re_arc, im_arc)
+
+        # Combine all the independent variables in one independent variable
+        x_data = bkps, years, temp, cr2ph_arc
+        xx_data = years, temp, cr2ph_arc
+
+        ######### CREATE INITIAL VALUE ARRAYS ######
+        x0_2_p = np.zeros(3 * len(bkps) + 3)  # Create empty array for the bounds
+        x0_2_p[0 : len(bkps)] = np.ones(len(bkps)) * np.max(re_arc)  # The amplitude to be estimated
+        x0_2_p[len(bkps) + 1] = x_hat_arc_ph[
+            2, 0
+        ]  # Interception of the dispalcement polynomial. We use estimated values in the phase domain
+        x0_2_p[len(bkps) + 1 : 2 * len(bkps) + 1] = (
+            np.ones(len(bkps)) * x_hat_arc_ph[3, 0]
+        )  # Value related displacement velocity in the displacement polynomial
+        x0_2_p[2 * len(bkps) + 1 : 3 * len(bkps) + 1] = np.zeros(
+            len(bkps)
+        )  # Value related to the second compont of the dispalcement polynomial
+        x0_2_p[-2] = x_hat_arc_ph[0, 0]  # Cross range
+        x0_2_p[-1] = x_hat_arc_ph[1, 0]  # Thermal expansion
+
+        ######### DEFINE BOUNDS ######
+        (
+            amp_lower,
+            a_lower,
+            b_lower,
+            c_lower,
+            cr_lower,
+            exp_lower,
+            amp_upper,
+            a_upper,
+            b_upper,
+            c_upper,
+            cr_upper,
+            exp_upper,
+        ) = bounds
+
+        # define bounds for second order polynomial with partitions
+        bounds_upper_2_p = np.ones(len(bkps) * 3 + 3)
+        bounds_upper_2_p[0 : len(bkps)] = amp_upper
+        bounds_upper_2_p[len(bkps)] = a_upper
+        bounds_upper_2_p[len(bkps) + 1 : 2 * len(bkps) + 1] = np.ones(len(bkps)) * b_upper
+        bounds_upper_2_p[2 * len(bkps) + 1 : 3 * len(bkps) + 1] = np.ones(len(bkps)) * c_upper
+        bounds_upper_2_p[-2] = cr_upper
+        bounds_upper_2_p[-1] = exp_upper
+
+        bounds_lower_2_p = np.ones(len(bkps) * 3 + 3)
+        bounds_lower_2_p[0 : len(bkps)] = amp_lower
+        bounds_lower_2_p[len(bkps)] = a_lower
+        bounds_lower_2_p[len(bkps) + 1 : 2 * len(bkps) + 1] = np.ones(len(bkps)) * b_lower
+        bounds_lower_2_p[2 * len(bkps) + 1 : 3 * len(bkps) + 1] = np.ones(len(bkps)) * c_lower
+        bounds_lower_2_p[-2] = cr_lower
+        bounds_lower_2_p[-1] = exp_lower
+
+        bounds_2_p = (list(bounds_lower_2_p), list(bounds_upper_2_p))
+
+        #################### Curvefit 2nd order, partitions, BOUNDS  ####################
+        # Estimate the unknown parameters:
+        try:
+            x_hat_2_p_b, pcov_2_p_b = _scipy_fit_partition_2nd_order_bounds(
+                bkps, xx_data, arc_obs, x0_2_p, bounds_2_p, Q_dd_cmplx
+            )
+        except (RuntimeError, ValueError):
+            print(f"Optimal parameters not found. Skipping arc {(pnt_i_idx, pnt_j_idx)}")
+
+            # Lengte tijdseries
+            ts_length = len(ampl_i)
+
+            # Fill everything with nans
+            ts_length = len(ampl_i)
+            results["unwrap_phases_arc"].append(
+                np.full(
+                    [
+                        ts_length,
+                    ],
+                    np.nan,
+                )
+            )
+            results["sigma_phases_arc"].append(
+                np.full(
+                    [
+                        ts_length,
+                    ],
+                    np.nan,
+                )
+            )
+            results["estimated_phase"].append(
+                np.full(
+                    [
+                        ts_length,
+                    ],
+                    np.nan,
+                )
+            )
+            results["estimated_displ_phase"].append(
+                np.full(
+                    [
+                        ts_length,
+                    ],
+                    np.nan,
+                )
+            )
+            results["estimated_thermal"].append(np.nan)
+            results["estimated_cross_range"].append(np.nan)
+            results["estimated_cross_range_sigma"].append(np.nan)
+            results["estimated_thermal_sigma"].append(np.nan)
+            results["estimated_thermal_phase"].append(
+                np.full(
+                    [
+                        ts_length,
+                    ],
+                    np.nan,
+                )
+            )
+            results["estimated_cross_range_phase"].append(
+                np.full(
+                    [
+                        ts_length,
+                    ],
+                    np.nan,
+                )
+            )
+            results["cr2ph_arcs"].append(
+                np.full(
+                    [
+                        ts_length,
+                    ],
+                    np.nan,
+                )
+            )
+            results["succeeded_arcs"].append((np.nan, np.nan))
+
+            if test_stochastics == 1:
+                stochastic_results["q_per_partition"].append(np.nan)
+                stochastic_results["std_residuals_partition"].append(np.nan)
+                stochastic_results["rmse_residuals_partition"].append(np.nan)
+                stochastic_results["mean_sigma_post_arc"].append(np.nan)
+                stochastic_results["mean_a_priori_sigma_arc"].append(np.mean(Q_yy_diagonal))
+                stochastic_results["arc_length"].append(arc_length)
+                stochastic_results["mean_sigma_p_i"].append(np.mean(slc_quality_i))
+                stochastic_results["mean_sigma_p_j"].append(np.mean(slc_quality_j))
+
+        else:
+            # Estimate the phases:
+            (
+                phase_est_2_p_b,
+                phase_th_2_p_b,
+                phase_cross_range_2_p_b,
+                phase_disp_2_p_b,
+                real_part_2_p_b,
+                imag_part_2_p_b,
+            ) = _model_arc_partitions_2nd_order_phases(x_data, x_hat_2_p_b)
+            # Unwrap the observed phases:
+            phase_unwrap_2_p_b = _unwrap_phases(np.angle(dd_arc), phase_est_2_p_b)
+            # Estimate 'residual' phase:
+            phase_res_2_p_b = phase_unwrap_2_p_b - phase_est_2_p_b
+
+            # Add the results for the arc to the dictionary
+            results["unwrap_phases_arc"].append(phase_unwrap_2_p_b)
+            results["sigma_phases_arc"].append(Q_yy_diagonal)
+            results["estimated_phase"].append(phase_est_2_p_b)
+            results["estimated_displ_phase"].append(phase_disp_2_p_b)
+            results["estimated_thermal"].append(x_hat_2_p_b[-1] * 1000 / m2ph)
+            results["estimated_cross_range"].append(x_hat_2_p_b[-2])
+            results["estimated_cross_range_sigma"].append(np.sqrt(pcov_2_p_b[-2, -2]))
+            results["estimated_thermal_sigma"].append(np.sqrt(pcov_2_p_b[-1, -1]) * 1000 / m2ph)
+            results["estimated_thermal_phase"].append(phase_th_2_p_b)
+            results["estimated_cross_range_phase"].append(phase_cross_range_2_p_b)
+            results["cr2ph_arcs"].append(cr2ph_arc)
+            results["succeeded_arcs"].append((pnt_i_idx, pnt_j_idx))
+            # Get the dictionaries in the right shape and format
+            # results = flatten_arrays_in_dict(results)
+
+            if test_stochastics == 1:
+                rmse_res_segment, std_res_segment, q_per_part = _compute_residuals_per_partition_stm(
+                    phase_unwrap_2_p_b, phase_est_2_p_b, Q_yy, bkps
+                )
+                stochastic_results["q_per_partition"].append(q_per_part)
+                stochastic_results["std_residuals_partition"].append(std_res_segment)
+                stochastic_results["rmse_residuals_partition"].append(rmse_res_segment)
+                stochastic_results["mean_sigma_post_arc"].append(np.std(phase_res_2_p_b))
+                stochastic_results["mean_a_priori_sigma_arc"].append(np.mean(Q_yy_diagonal))
+                stochastic_results["arc_length"].append(arc_length)
+                stochastic_results["mean_sigma_p_i"].append(np.mean(slc_quality_i))
+                stochastic_results["mean_sigma_p_j"].append(np.mean(slc_quality_j))
+
+                # Get the dictionaries in the right shape and format
+                # stochastic_results = flatten_arrays_in_dict(stochastic_results)
+
+            if print_output == 1:
+                print(
+                    "Estimated cross_range (phase domain NMAD):",
+                    np.around(x_hat_arc_ph[0, 0], 2),
+                    "+/-",
+                    np.around((np.sqrt(Q_x_hat_arc_ph[0, 0])) / (-1 * m2ph), 2),
+                )
+                print(
+                    "Estimated cross_range (2nd order + partitions and bounds):",
+                    np.around(x_hat_2_p_b[-2], 2),
+                    "+/-",
+                    np.around((np.sqrt(pcov_2_p_b[-2, -2])) / (-1 * m2ph), 2),
+                )
+                print(
+                    "Estimated thermal expansion (phase domain NMAD):",
+                    np.around(x_hat_arc_ph[1, 0] * 1000 / m2ph, 4),
+                    "+/-",
+                    np.around(np.sqrt(Q_x_hat_arc_ph[1, 1]) * 1000 / m2ph, 2),
+                )
+                print(
+                    "Estimated thermal expansion (2nd order + partitions and bounds):",
+                    np.around(x_hat_2_p_b[-1] * 1000 / m2ph, 4),
+                    np.around(np.sqrt(pcov_2_p_b[-1, -1]) * 1000 / m2ph, 2),
+                )
+                print("")
+                print("")
+
+        p = p + 1
+
+    # tranform from list to np array
+    results = {key: np.array(value) for key, value in results.items()}
+
+    return results
