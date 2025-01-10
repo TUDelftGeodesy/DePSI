@@ -320,7 +320,7 @@ def _idx_within_distance(coords_ref, coords_others, min_dist):
         return None
 
 
-def detect_side_lobes(stm, max_pixel_dist, min_correlation):
+def detect_side_lobes(stm: xr.Dataset, max_pixel_dist: float, min_correlation: float) -> tuple[np.ndarray]:
     """Detect and mask side-lobe points based on the phase correlation between points.
 
     It first finds points on the same range and azimuth and only considers points close by. Then it
@@ -328,19 +328,19 @@ def detect_side_lobes(stm, max_pixel_dist, min_correlation):
 
     Parameters
     ----------
-    stm : (xarray.Dataset)
+    stm : xarray.Dataset
       An input stm must include 'range', 'azimuth', 'pnt_idx', 'sd_complex', and 'nmad_full'.
-    max_pixel_dist : (float)
+    max_pixel_dist : float
       The maximum allowed spatial distance (in pixels) between points to be considered potential side-lobes.
-    min_correlation : (float)
+    min_correlation : float
       The minimum correlation threshold to classify points as side-lobes. 0 means no correlation, 1 is maximum
       correlation
 
     Returns
     -------
-    side_lobes_array : (np.ndarray)
+    side_lobes_array : np.ndarray
       An array containing the indices of the detected side-lobe points.
-    mask_side_lobes : (np.ndarray)
+    mask_side_lobes : np.ndarray
       A boolean mask where 'False' indicates detected side-lobe points.
     """
     # Lazy load variables
@@ -348,7 +348,6 @@ def detect_side_lobes(stm, max_pixel_dist, min_correlation):
     azimuth_vals = stm["azimuth"].data
     sd_complex = stm["sd_complex"].data
     amplitude_vals = stm["sd_amplitude"].data
-    # nmad_full_vals = stm["nmad_full"].data
     nr_epochs = len(stm.time)
 
     point_idx = stm["pnt_idx"].values
