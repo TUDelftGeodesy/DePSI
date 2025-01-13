@@ -268,7 +268,7 @@ def read_metadata(resfile, mode="raw", **kwargs):
     return datewise_metadata
 
 
-def read_weather_data(filename: str, dates: list, requested_data_columns: tuple = ("TG", "RH")):
+def read_weather_data(filename: str, dates: list, requested_data_columns: tuple = ("TG", "RH")) -> dict:
     """Read columns of a KNMI weather data file at specific dates into a dictionary.
 
     The weather file is downloadable from https://www.knmi.nl/nederland-nu/klimatologie/daggegevens . Values that are
