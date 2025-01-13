@@ -3,11 +3,12 @@
 from datetime import datetime
 from typing import Literal
 
+import dask.array as da
 import numpy as np
 import xarray as xr
 from scipy.spatial import KDTree
 
-from depsi.utils import crop_slc_spacetime
+from depsi.utils import _npdatetime64_to_datetime, crop_slc_spacetime
 
 
 def ps_selection(
@@ -84,10 +85,12 @@ def ps_selection(
                     selection_crop["amplitude"],
                     template=selection_crop["amplitude"].isel(time=0).drop_vars("time"),
                 )
+                ps_selection_times = selection_crop["time"].values
             else:
                 nad = xr.map_blocks(
                     _nad_block, slcs["amplitude"], template=slcs["amplitude"].isel(time=0).drop_vars("time")
                 )
+                ps_selection_times = []
             nad = nad.compute() if mem_persist else nad
             slcs = slcs.assign(pnt_nad=nad)
             mask = nad < threshold
@@ -101,10 +104,12 @@ def ps_selection(
                     selection_crop["amplitude"],
                     template=selection_crop["amplitude"].isel(time=0).drop_vars("time"),
                 )
+                ps_selection_times = selection_crop["time"].values
             else:
                 nmad = xr.map_blocks(
                     _nmad_block, slcs["amplitude"], template=slcs["amplitude"].isel(time=0).drop_vars("time")
                 )
+                ps_selection_times = []
             nmad = nmad.compute() if mem_persist else nmad
             slcs = slcs.assign(pnt_nmad=nmad)
             mask = nmad < threshold
@@ -153,16 +158,62 @@ def ps_selection(
         }
     )
 
+    # add incremental NAD / NMAD
+    stacked_imgs = []
+    for date in stm_masked["time"].values:
+        if date in ps_selection_times:
+            start_date = ps_selection_start_date
+            end_date = ps_selection_end_date
+        else:
+            start_date = _npdatetime64_to_datetime(stm_masked["time"].values[0])
+            end_date = _npdatetime64_to_datetime(date)
+        current_crop = crop_slc_spacetime(stm_masked, start_date=start_date, end_date=end_date)
+        match method:
+            case "nad":
+                nad = xr.map_blocks(
+                    _nad_block,
+                    current_crop["amplitude"],
+                    template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
+                )
+                stacked_imgs.append(nad)
+            case "nmad":
+                nmad = xr.map_blocks(
+                    _nmad_block,
+                    current_crop["amplitude"],
+                    template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
+                )
+                stacked_imgs.append(nmad)
+            case _:
+                raise NotImplementedError
+    incremental_nad_nmad = da.vstack(stacked_imgs).T
+    match method:
+        case "nad":
+            stm_masked_inc = stm_masked.assign({"incremental_nad": (["space", "time"], incremental_nad_nmad)})
+        case "nmad":
+            stm_masked_inc = stm_masked.assign({"incremental_nad": (["space", "time"], incremental_nad_nmad)})
+        case _:
+            raise NotImplementedError
+
+    # Rechunk is needed because after calculating incremental NAD/NMAD, the chunksize will be inconsistant
+    stm_masked_inc = stm_masked_inc.chunk(
+        {
+            "space": output_chunks,
+            "time": -1,
+        }
+    )
+
     # Compute NAD or NMAD if mem_persist is True
     # This only evaluate a very short task graph, since NAD or NMAD is already in memory
     if mem_persist:
         match method:
             case "nad":
-                stm_masked["pnt_nad"] = stm_masked["pnt_nad"].compute()
+                for key in ["pnt_nad", "inremental_nad"]:
+                    stm_masked_inc[key] = stm_masked[key].compute()
             case "nmad":
-                stm_masked["pnt_nmad"] = stm_masked["pnt_nmad"].compute()
+                for key in ["pnt_nmad", "inremental_nmad"]:
+                    stm_masked_inc[key] = stm_masked[key].compute()
 
-    return stm_masked
+    return stm_masked_inc
 
 
 def network_stm_selection(
