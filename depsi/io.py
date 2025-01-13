@@ -292,7 +292,7 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
     Returns
     -------
     dict
-    Dictionary with as keys the requested dates, as argument a dictionary with as keys requested columns, as argument
+        Dictionary with as keys the requested dates, as argument a dictionary with as keys requested columns, as argument
     value
     """
     # check if the input is valid
