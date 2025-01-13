@@ -292,8 +292,8 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
     Returns
     -------
     dict
-        Dictionary with as keys the requested dates, as argument a dictionary with as keys requested columns, as argument
-    value
+        Dictionary with as keys the requested dates, as argument a dictionary with as keys requested columns, as
+    argument the value
     """
     # check if the input is valid
     assert os.path.exists(filename), f"The requested file {filename} does not exist!"
@@ -309,37 +309,30 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
     )
 
     # read the file, and add a datetime column to the Pandas Dataframe
-    weather_data = pd.read_csv(filename, sep=",", skiprows=51)
+    weather_data = pd.read_csv(filename, sep=",", skiprows=51, skipinitialspace=True)
     weather_data["DateTime"] = weather_data.iloc[:, 1].apply(lambda x: pd.to_datetime(str(x), format="%Y%m%d"))
-    headers = [col.strip() for col in weather_data.columns]
 
     # generate the output by looping over the requested dates and columns
     datewise_data = {}
     for date in dates:
         datewise_data[date] = {}
         # get the data at that date
-        date_data = weather_data[weather_data.iloc[:, headers.index("DateTime")] == date]
         for data_column in requested_data_columns:
-            value = date_data.iloc[:, headers.index(data_column)].values[0]
-            if type(value) is str:
-                value = value.strip()
+            value = weather_data[weather_data["DateTime"] == date][data_column].values[0]
             # convert the value to the correct units
-            match data_column:
-                case "TG" | "TN" | "TX" | "EV24":  # provided in 0.1 deg C or 0.1 mm
-                    match value:
-                        case "":
-                            datewise_data[date][data_column] = np.nan
-                        case _:
-                            datewise_data[date][data_column] = int(value) / 10
-                case "RH" | "RXH":  # provided in 0.1 mm, where -1 indicates < 0.05 mm
-                    match value:
-                        case -1:  # turn values smaller than 0.05 mm to 0
-                            datewise_data[date][data_column] = 0.0
-                        case "":
-                            datewise_data[date][data_column] = np.nan
-                        case _:  # otherwise, divide by 10
-                            datewise_data[date][data_column] = int(value) / 10
-                case _:
-                    raise NotImplementedError(f"Unknown requested column {data_column}!")
+            if np.isnan(value):
+                datewise_data[date][data_column] = np.nan
+            else:
+                match data_column:
+                    case "TG" | "TN" | "TX" | "EV24":  # provided in 0.1 deg C or 0.1 mm
+                        datewise_data[date][data_column] = int(value) / 10
+                    case "RH" | "RXH":  # provided in 0.1 mm, where -1 indicates < 0.05 mm
+                        match value:
+                            case -1:  # turn values smaller than 0.05 mm to 0
+                                datewise_data[date][data_column] = 0.0
+                            case _:  # otherwise, divide by 10
+                                datewise_data[date][data_column] = int(value) / 10
+                    case _:
+                        raise NotImplementedError(f"Unknown requested column {data_column}!")
 
     return datewise_data
