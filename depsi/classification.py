@@ -5,6 +5,7 @@ from typing import Literal
 
 import dask.array as da
 import numpy as np
+import pyproj
 import xarray as xr
 from scipy.spatial import KDTree
 
@@ -19,6 +20,7 @@ def ps_selection(
     mem_persist: bool = False,
     ps_selection_start_date: datetime | str | None = None,
     ps_selection_end_date: datetime | str | int | None = None,
+    do_rd_coordinate_conversion: bool = False,
 ) -> xr.Dataset:
     """Select Persistent Scatterers (PS) from an SLC stack, and return a Space-Time Matrix.
 
@@ -44,19 +46,22 @@ def ps_selection(
         Chunk size in the `space` dimension, by default 10000
     mem_persist : bool, optional
         If true persist the NAD or NMAD in memory, by default False.
-    ps_selection_start_date : datetime | str | None
+    ps_selection_start_date : datetime | str | None, optional
       the start date of the time window to be used for the ps_selection, in one of three formats:
       - datetime object
       - str object, formatted as YYYYMMDD
-      - None, no cropping in time requested
-    ps_selection_end_date : datetime | str | int | None
+      - None, no cropping in time requested for the ps_selection (default)
+    ps_selection_end_date : datetime | str | int | None, optional
       the end date of the time window to be used for the ps_selection, in one of four formats:
       - datetime object
       - str object, formatted as YYYYMMDD
       - int object, which is interpreted as the number of images intended in the crop (including the start date). If
         more images are requested than exist since the start date, all images from start_date until the last image
         are provided.
-      - None, no cropping in time requested
+      - None, no cropping in time requested for the ps_selection (default)
+    do_rd_coordinate_conversion: bool, optional
+      boolean to trigger coordinate conversion from latitude/longitude (WGS84) to RD_X/RD_Y (Rijksdriehoek). This only
+      makes sense for AoIs located in the Netherlands. Defaults to False.
 
 
     Returns
@@ -190,7 +195,7 @@ def ps_selection(
         case "nad":
             stm_masked_inc = stm_masked.assign({"incremental_nad": (["space", "time"], incremental_nad_nmad)})
         case "nmad":
-            stm_masked_inc = stm_masked.assign({"incremental_nad": (["space", "time"], incremental_nad_nmad)})
+            stm_masked_inc = stm_masked.assign({"incremental_nmad": (["space", "time"], incremental_nad_nmad)})
         case _:
             raise NotImplementedError
 
@@ -201,6 +206,26 @@ def ps_selection(
             "time": -1,
         }
     )
+
+    # Add RD coordinates if requested
+    if do_rd_coordinate_conversion:
+        wgs84 = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:28992", always_xy=True).transform
+        # Convert Lat and Lon to RD-coordinates
+        rd_x, rd_y = wgs84(stm_masked_inc["lon"], stm_masked_inc["lat"])
+
+        # Add RD coordinates to the dataset
+        stm_masked_inc = stm_masked_inc.assign({"rd_x": (["space"], rd_x)})
+        stm_masked_inc = stm_masked_inc.assign({"rd_y": (["space"], rd_y)})
+
+    # Add extra time coordinate variables for time intervals since first image
+    days = np.array(
+        [
+            (_npdatetime64_to_datetime(date) - _npdatetime64_to_datetime(stm_masked["time"].values[0])).days
+            for date in stm_masked["time"].values
+        ]
+    )
+    stm_masked_inc = stm_masked_inc.assign({"days_since_first_img": (["time"], days)})
+    stm_masked_inc = stm_masked_inc.assign({"years_since_first_img": (["time"], days / 365.2425)})
 
     # Compute NAD or NMAD if mem_persist is True
     # This only evaluate a very short task graph, since NAD or NMAD is already in memory
