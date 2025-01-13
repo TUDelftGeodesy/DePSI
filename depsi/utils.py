@@ -251,7 +251,7 @@ def crop_slc_spacetime(
     # TIME CROP
     if format_start_date is not None and format_end_date is not None:
         # first the last assertion
-        assert "time" in slcs.keys(), f"Expected axis {axis} in SLCs but it is not present!"
+        assert "time" in slcs.keys(), "Expected axis 'time' in SLCs but it is not present!"
 
         fmt_dates = np.array([_npdatetime64_to_datetime(date) for date in slcs["time"].values])
         time_mask = (format_start_date <= fmt_dates) & (fmt_dates <= format_end_date)
