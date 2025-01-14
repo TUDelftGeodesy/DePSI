@@ -7,7 +7,7 @@ sys.path.append('/project/caroline/Share/users/caroline-admin/crop_groningen_zar
 from depsi.utils import crop_slc_spacetime
 
 # The path where the SLCs are saved
-slc_path = '/project/caroline/Share/zarr_stacks/nl_groningen_s1_dsc_t037.zarr'
+slc_path = '/project/caroline/Share/zarr_stacks/nl_groningen_s1_dsc_t037/nl_groningen_s1_dsc_t037.zarr'
 
 # The path where the cropped SLC is to be saved
 slc_save_path = \
