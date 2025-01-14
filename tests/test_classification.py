@@ -11,7 +11,7 @@ from depsi.classification import _idx_within_distance, _nad_block, _nmad_block, 
 rng = np.random.default_rng(42)
 
 
-def test_ps_seletion_nad():
+def test_ps_selection_nad():
     slcs = xr.Dataset(
         data_vars={"amplitude": (("azimuth", "range", "time"), np.ones((10, 10, 10)))},
         coords={"azimuth": np.arange(10), "range": np.arange(10), "time": np.arange(10)},
@@ -27,7 +27,7 @@ def test_ps_seletion_nad():
     assert isinstance(res["pnt_nad"].data, da.core.Array)
 
 
-def test_ps_seletion_nmad():
+def test_ps_selection_nmad():
     slcs = xr.Dataset(
         data_vars={"amplitude": (("azimuth", "range", "time"), np.ones((10, 10, 10)))},
         coords={"azimuth": np.arange(10), "range": np.arange(10), "time": np.arange(10)},
@@ -43,7 +43,7 @@ def test_ps_seletion_nmad():
     assert isinstance(res["pnt_nmad"].data, da.core.Array)
 
 
-def test_ps_seletion_nad_mempersist():
+def test_ps_selection_nad_mempersist():
     """When mem_persist=True, results should be a numpy array."""
     slcs = xr.Dataset(
         data_vars={"amplitude": (("azimuth", "range", "time"), np.ones((10, 10, 10)))},
@@ -53,7 +53,7 @@ def test_ps_seletion_nad_mempersist():
     assert isinstance(res["pnt_nad"].data, np.ndarray)
 
 
-def test_ps_seletion_nmad_mempersist():
+def test_ps_selection_nmad_mempersist():
     """When mem_persist=True, results should be a numpy array."""
     slcs = xr.Dataset(
         data_vars={"amplitude": (("azimuth", "range", "time"), np.ones((10, 10, 10)))},
@@ -63,7 +63,7 @@ def test_ps_seletion_nmad_mempersist():
     assert isinstance(res["pnt_nmad"].data, np.ndarray)
 
 
-def test_ps_seletion_not_implemented():
+def test_ps_selection_not_implemented():
     slcs = xr.Dataset(
         data_vars={"amplitude": (("azimuth", "range", "time"), np.ones((10, 10, 10)))},
         coords={"azimuth": np.arange(10), "range": np.arange(10), "time": np.arange(10)},
