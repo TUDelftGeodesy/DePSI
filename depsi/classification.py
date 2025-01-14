@@ -2,6 +2,7 @@
 
 from typing import Literal
 
+import dask as da
 import numpy as np
 import xarray as xr
 from scipy.spatial import KDTree
@@ -379,7 +380,12 @@ def detect_side_lobes(stm: xr.Dataset, max_pixel_dist: float, min_correlation: f
             )
         )[0]
 
-        potential_side_lobe_idx = np.union1d(idx_range, idx_azimuth).compute()
+        potential_side_lobe_idx = np.union1d(idx_range, idx_azimuth)
+        potential_side_lobe_idx = (
+            potential_side_lobe_idx.compute()
+            if isinstance(potential_side_lobe_idx, da.Array)
+            else potential_side_lobe_idx
+        )
 
         for point2 in potential_side_lobe_idx:
             if point2 != point and point2 not in side_lobes:  # Skip the current and already detected side-lobe points
@@ -401,7 +407,9 @@ def detect_side_lobes(stm: xr.Dataset, max_pixel_dist: float, min_correlation: f
                             point2
                         )  # point 2 has the lowest mean amplitude, so it is detected as the side-lobe
                     else:
-                        side_lobes.add(point)  # point 1 has the lowest mean amplitude, so it is detected as the side-lobe
+                        side_lobes.add(
+                            point
+                        )  # point 1 has the lowest mean amplitude, so it is detected as the side-lobe
 
     # Make an array of the set
     side_lobes_array = np.array(list(side_lobes))
@@ -430,7 +438,8 @@ def _calculate_phase_correlation(dd_complex, nr_epochs):
 
     Returns
     -------
-    float: A correlation value between 0 and 1, representing the phase similarity of the two time series.
+    float
+        A correlation value between 0 and 1, representing the phase similarity of the two time series.
     """
     corr = np.abs(np.sum(np.exp(1j * (np.angle(dd_complex))))) / nr_epochs
     return corr
@@ -445,15 +454,15 @@ def _compute_dd_for_correlation(complex_p1, complex_p2):
 
     Parameters
     ----------
-    complex_p1 : (np.ndarray)
+    complex_p1 : np.ndarray
       A complex-valued array representing the first time series.
-    complex_p2 : (np.ndarray)
+    complex_p2 : np.ndarray
       A complex-valued array representing the second time series.
 
     Returns
     -------
-    np.ndarray: An array of complex values representing the phase differences (double differences)
-                between the two input time series.
+    np.ndarray
+        An array of complex values representing the phase differences (double differences)
     """
     complex_conj_p1 = np.conj(complex_p1)
     dd_complex = complex_conj_p1 * complex_p2
