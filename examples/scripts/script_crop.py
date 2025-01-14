@@ -2,7 +2,7 @@ import sys
 
 import xarray as xr
 
-sys.path.append('/project/caroline/Share/users/caroline-admin/crop_groningen_zarr_stack/DePSI_group/depsi/')
+sys.path.append('/project/caroline/Share/users/caroline-admin/crop_groningen_zarr_stack/DePSI_group/')
 
 from depsi.utils import crop_slc_spacetime
 
@@ -23,5 +23,5 @@ stack = xr.open_zarr(slc_path)
 cropped_stack = crop_slc_spacetime(stack,
                                    aoi_filename=aoi_file)
 
-
+# Save the cropped stack
 cropped_stack.to_zarr(slc_save_path, mode="w")
