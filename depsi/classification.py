@@ -401,7 +401,7 @@ def detect_side_lobes(stm: xr.Dataset, max_pixel_dist: float, min_correlation: f
                             point2
                         )  # point 2 has the lowest mean amplitude, so it is detected as the side-lobe
                     else:
-                        side_lobes.add(point)  # point 1 has the lowest mean amplitude, so it is dected as the side-lobe
+                        side_lobes.add(point)  # point 1 has the lowest mean amplitude, so it is detected as the side-lobe
 
     # Make an array of the set
     side_lobes_array = np.array(list(side_lobes))
