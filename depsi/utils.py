@@ -1,10 +1,12 @@
 import os
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import geopandas
 import numpy as np
 import pytz
 import xarray as xr
+
+UTC = timezone.utc
 
 
 def _orbit_fit(orbit, verbose=0, der=True):
