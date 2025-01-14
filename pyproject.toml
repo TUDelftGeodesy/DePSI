@@ -3,7 +3,7 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pydepsi"
+name = "depsi"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
@@ -35,6 +35,7 @@ dev = [
     "pycodestyle",
     "pre-commit",
     "ruff",
+    "graphviz",
 ]
 docs = [
     "mkdocs",
@@ -48,7 +49,7 @@ demo = [
 ]
 
 [tool.setuptools]
-packages = ["pydepsi"]
+packages = ["depsi"]
 
 [tool.pytest.ini_options]
 minversion = "6.0"
@@ -59,7 +60,7 @@ testpaths = [
 
 [tool.coverage.run]
 branch = true
-source = ["pydepsi"]
+source = ["depsi"]
 
 [tool.ruff]
 lint.select = [
@@ -73,7 +74,8 @@ lint.select = [
   "PLE",  # Pylint error https://github.com/charliermarsh/ruff#error-ple
 ]
 lint.ignore = [
-"D100", "D101", "D104", "D105", "D106", "D107", "D203", "D213", "D413"
+"D100", "D101", "D104", "D105", "D106", "D107", "D203", "D213", "D413",
+"N803", "N806" # Allow capital letters in variables
 ] # docstring style
 
 line-length = 120

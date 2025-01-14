@@ -1,45 +1,24 @@
-# PyDePSI (Tentative name)
 
-This is repository is WIP, where we are developing a Python package for inteferometric SAR processing. The software will be inspired by the MATLAB software DePSI, but implemented in Python and include recent developments in the field.
+# DePSI
 
-## Installation for development
+DePSI (van Leijen, 2014) is an open source software for processing Persistent Scatterer Interferometry (PS-InSAR) data, originally implemented in MATLAB. From 2024, TUDelft and Netherlands eScience Center are collaborating to develop a Python version of DePSI, with recent advances in PS-InSAR. 
 
-It is assumed that you have `mamba` installed. If not, you can find the installation instructions [here](https://mamba.readthedocs.io/en/latest/installation/mamba-installation.html). Other package managers like `conda` or `venv` can be used as well.
+## Developer Guide
 
-Clone this repository and `cd` into it:
-
-```bash
-git clone git@github.com:MotionbyLearning/PyDePSI.git
-cd PyDePSI
-```
-
-Create a new conda environment (here we give an example name `pydepsi-dev`) with `mamba`.:
-
-```bash
-mamba create -c conda-forge -n pydepsi-dev python=3.12
-```
-
-Here we use Python 3.12 since we aim to support python 3.10 and above.
-
-Activate the environment:
-
-```bash
-mamba activate pydepsi-dev
-```
-
-Install this package in development mode:
-
-```bash
-pip install -e ".[dev,docs]"
-```
-
-In the end, install the pre-commit hooks:
-```bash
-pre-commit install
-```
+Please refer to the [Developer Guide](docs/dev_guide.md) for installation instructions, testing, and other development-related information.
 
 ## Useful reading material
 
 - [Python packaging user guide](https://packaging.python.org/)
 - [Testing in Python](https://docs.kedro.org/en/stable/development/automated_testing.html)
 - [Code formatting and linting](https://docs.kedro.org/en/stable/development/linting.html)
+
+## License
+
+Copyright (c) 2023 - 2025, Netherlands eScience Center & Delft University of Technology
+
+Apache Software License 2.0
+
+## References
+
+[1] Van Leijen, Frederik Johannes. "Persistent scatterer interferometry based on geodetic estimation theory." (2014).
