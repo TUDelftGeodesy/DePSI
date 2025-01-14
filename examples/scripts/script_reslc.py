@@ -187,7 +187,7 @@ if __name__ == "__main__":
     else:
         # Append in time dimension if the zarr already exists
         # Otherwise, a new zarr will be created
-        slcs_output.to_zarr(path_output_slcs, mode="a", append_dim="time") 
+        slcs_output.to_zarr(path_output_slcs, append_dim="time") 
 
     # Close the client when finishing
     client.close()
