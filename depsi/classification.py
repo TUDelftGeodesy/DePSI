@@ -9,7 +9,10 @@ import pyproj
 import xarray as xr
 from scipy.spatial import KDTree
 
+from depsi.point_quality import _estimate_breakpoints
 from depsi.utils import _npdatetime64_to_datetime, crop_slc_spacetime
+
+REQUIRED_BREAKPOINT_KEYS = ["db_segmentation", "search_method", "cost_function", "min_obs_partition"]
 
 
 def ps_selection(
@@ -20,7 +23,10 @@ def ps_selection(
     mem_persist: bool = False,
     ps_selection_start_date: datetime | str | None = None,
     ps_selection_end_date: datetime | str | int | None = None,
+    recalibration_jump_size: int = 10,
     do_rd_coordinate_conversion: bool = False,
+    do_breakpoint_analysis: bool = False,
+    breakpoint_kwargs: dict | None = None,
 ) -> xr.Dataset:
     """Select Persistent Scatterers (PS) from an SLC stack, and return a Space-Time Matrix.
 
@@ -37,7 +43,7 @@ def ps_selection(
         Input SLC stack. It should have the following dimensions: ("azimuth", "range", "time").
         There should be a `amplitude` variable in the dataset.
     threshold : float
-        Threshold value for selection.
+        Threshold value for selection for "nad" / "nmad".
     method : Literal["nad", "nmad"], optional
         Method of selection, by default "nad".
         - "nad": Normalized Amplitude Dispersion
@@ -59,9 +65,21 @@ def ps_selection(
         more images are requested than exist since the start date, all images from start_date until the last image
         are provided.
       - None, no cropping in time requested for the ps_selection (default)
+    recalibration_jump_size: int, optional
+      the number of images that the recalibration NAD / NMAD variables remains constant. Will start after the
+      initialization epoch (if ps_selection_start_date and ps_selection_end_date are not None). Defaults to 10.
     do_rd_coordinate_conversion: bool, optional
       boolean to trigger coordinate conversion from latitude/longitude (WGS84) to RD_X/RD_Y (Rijksdriehoek). This only
       makes sense for AoIs located in the Netherlands. Defaults to False.
+    do_breakpoint_analysis: bool, optional
+      boolean to trigger the breakpoint analysis. Defaults to False.
+    breakpoint_kwargs: dict | None, optional
+      the keyword arguments required for the breakpoint analysis. Required if do_breakpoint_analysis is set to True.
+      Formatted as a dictionary with required keys:
+      - db_segmentation: True or False, whether or not to do partitioning in dB. Advised False
+      - search_method: 'pelt' or 'binseg'. Advised 'pelt'
+      - cost_function: 'l#' with # replaced by 0-3. Advised 'l2'
+      - min_obs_partition: integer. Advised min 0.5 years converted to # images, for Sentinel-1 27 (6 day interval)
 
 
     Returns
@@ -74,6 +92,13 @@ def ps_selection(
     NotImplementedError
         Raised when an unsupported method is provided.
     """
+    if do_breakpoint_analysis:
+        assert breakpoint_kwargs is not None, "Breakpoint analysis requested without keyword arguments!"
+        assert isinstance(breakpoint_kwargs, dict), f"breakpoint_kwargs should be dict but is {type(breakpoint_kwargs)}"
+        assert np.all(
+            [key in breakpoint_kwargs.keys() for key in REQUIRED_BREAKPOINT_KEYS]
+        ), f"Keys {REQUIRED_BREAKPOINT_KEYS} are required but received {breakpoint_kwargs.keys()}!"
+
     # Make sure there is no temporal chunk
     # since later a block function assumes all temporal data is available in a spatial block
     slcs = slcs.chunk({"time": -1})
@@ -163,15 +188,23 @@ def ps_selection(
         }
     )
 
-    # add incremental NAD / NMAD
-    stacked_imgs = []
+    # add incremental and recalibration NAD / NMAD
+    incremental_imgs = []
+    recalibration_imgs = []
+    recalibration_idx = -1  # start at -1 so that the first addition will trigger a reset of the data layer
+    recalibration_data_layer = None
     for date in stm_masked["time"].values:
-        if date in ps_selection_times:
+        if date in ps_selection_times:  # only gets triggered in case there is an initialization epoch for the duration
+            # of the initialization epoch
             start_date = ps_selection_start_date
             end_date = ps_selection_end_date
+            recalibration_idx = 0
         else:
             start_date = _npdatetime64_to_datetime(stm_masked["time"].values[0])
             end_date = _npdatetime64_to_datetime(date)
+            recalibration_idx += 1  # add, and do modulo the jump size, so that it will be 0 every time a new image
+            # should be loaded
+            recalibration_idx %= recalibration_jump_size
         current_crop = crop_slc_spacetime(stm_masked, start_date=start_date, end_date=end_date)
         match method:
             case "nad":
@@ -180,22 +213,33 @@ def ps_selection(
                     current_crop["amplitude"],
                     template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
                 )
-                stacked_imgs.append(nad)
+                incremental_imgs.append(nad)
+                if recalibration_idx == 0:
+                    recalibration_data_layer = nad.copy()
             case "nmad":
                 nmad = xr.map_blocks(
                     _nmad_block,
                     current_crop["amplitude"],
                     template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
                 )
-                stacked_imgs.append(nmad)
+                incremental_imgs.append(nmad)
+                if recalibration_idx == 0:
+                    recalibration_data_layer = nmad.copy()
             case _:
                 raise NotImplementedError
-    incremental_nad_nmad = da.vstack(stacked_imgs).T
+
+        recalibration_imgs.append(recalibration_data_layer.copy())
+
+    # format the images, and add them to the data array
+    incremental_nad_nmad = da.vstack(incremental_imgs).T
+    recalibration_nad_nmad = da.vstack(recalibration_imgs).T
     match method:
         case "nad":
             stm_masked_inc = stm_masked.assign({"incremental_nad": (["space", "time"], incremental_nad_nmad)})
+            stm_masked_inc = stm_masked_inc.assign({"recalibration_nad": (["space", "time"], recalibration_nad_nmad)})
         case "nmad":
             stm_masked_inc = stm_masked.assign({"incremental_nmad": (["space", "time"], incremental_nad_nmad)})
+            stm_masked_inc = stm_masked_inc.assign({"recalibration_nmad": (["space", "time"], recalibration_nad_nmad)})
         case _:
             raise NotImplementedError
 
@@ -226,6 +270,17 @@ def ps_selection(
     )
     stm_masked_inc = stm_masked_inc.assign({"days_since_first_img": (["time"], days)})
     stm_masked_inc = stm_masked_inc.assign({"years_since_first_img": (["time"], days / 365.2425)})
+
+    if do_breakpoint_analysis:
+        breakpoints, partition_identifiers = _estimate_breakpoints(
+            stm_masked_inc["amplitude"],
+            breakpoint_kwargs["db_segmentation"],
+            breakpoint_kwargs["search_method"],
+            breakpoint_kwargs["cost_function"],
+            breakpoint_kwargs["min_obs_partition"],
+        )
+        stm_masked_inc = stm_masked_inc.assign({"breakpoints": (["space", "time"], breakpoints)})
+        stm_masked_inc = stm_masked_inc.assign({"partition_id": (["space", "time"], partition_identifiers)})
 
     # Compute NAD or NMAD if mem_persist is True
     # This only evaluate a very short task graph, since NAD or NMAD is already in memory

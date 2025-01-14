@@ -10,6 +10,7 @@ dependencies = [
     "matplotlib",
     "sarxarray",
     "stmtools",
+    "ruptures",
 ]
 description = "Python package for interferometric synthetic aperture radar (InSAR) data processing."
 readme = "README.md"
