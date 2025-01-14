@@ -1,12 +1,17 @@
 import os
-from datetime import datetime, timezone
+
+try:
+    from datetime import UTC, datetime
+except ImportError:  # UTC can only be imported from Python 3.11 onwards
+    from datetime import datetime, timezone
+
+    UTC = timezone.utc
+    DeprecationWarning("UTC import is only supported from Python 3.11 onwards. Please upgrade your system.")
 
 import geopandas
 import numpy as np
 import pytz
 import xarray as xr
-
-UTC = timezone.utc
 
 
 def _orbit_fit(orbit, verbose=0, der=True):
