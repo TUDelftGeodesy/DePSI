@@ -23,5 +23,8 @@ stack = xr.open_zarr(slc_path)
 cropped_stack = crop_slc_spacetime(stack,
                                    aoi_filename=aoi_file)
 
+# Rechunk the output
+cropped_stack = cropped_stack.chunk({"azimuth": 1000, "range": 1000, "time": -1})
+
 # Save the cropped stack
 cropped_stack.to_zarr(slc_save_path, mode="w")
