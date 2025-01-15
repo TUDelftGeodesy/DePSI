@@ -635,3 +635,78 @@ def test_succeeded_arcs_control_network(
             network_check = 0
 
     return network_check, arcs_updated_network_sorted, ref_pnt
+
+
+def ordered_arcs_new_point_and_control_network(
+    rdx_new_point,
+    rdy_new_point,
+    slc_quality_new_point,
+    new_point_idx,
+    rdx_control,
+    rdy_control,
+    slc_quality_control,
+    control_idx,
+    dist_to_quality,
+):
+    """Generate a sorted array of unique arcs between a 'new_point' and the control network.
+
+    This function computes arcs between a new point and control points, evaluating each arc based on
+    a combination of spatial distance and SLC quality. The arcs are sorted from best to worst, where "best"
+    is determined by the lowest combined quality and distance value.
+
+    The function:
+    1. Computes the Euclidean distance between the new point and the control points.
+    2. Calculates the arc quality time series for each arc.
+    3. Combines the distance and maximum quality for each arc to define an overall quality value.
+    4. Sorts the arcs by quality values from best (lowest) to worst (highest).
+    5. Constructs a sorted array of arcs, ensuring the control point appears first in each arc.
+
+    Args:
+    ----
+        rdx_new_point (xarray.DataArray): x-coordinate of the new point.
+        rdy_new_point (xarray.DataArray): y-coordinate of the new point.
+        slc_quality_new_point (xarray.DataArray): Array of SLC quality time series for the new point.
+        new_point_idx (xarray.DataArray): Index of the new point.
+        rdx_control (xarray.DataArray): x-coordinates of the control points.
+        rdy_control (xarray.DataArray): y-coordinates of the control points.
+        slc_quality_control (xarray.DataArray): Array of SLC quality time series for the control points.
+        control_idx (xarray.DataArray): Indices of the control points.
+        dist_to_quality (float): Conversion factor to scale distance relative to quality.
+
+    Returns:
+    -------
+        tuple:
+            - arcs (numpy.ndarray): A sorted array of arcs, where each row contains a control point
+              followed by the new point.
+            - sorted_quality_values (numpy.ndarray): Sorted quality values corresponding to the arcs.
+    """
+    # Stack the coordinates of the new point and the control points
+    coords_new_point = np.vstack((rdx_new_point, rdy_new_point)).T
+    coords_control = np.vstack((rdx_control, rdy_control)).T
+
+    # Distance matrix between the new point and the control points
+    dist_matrix = distance_matrix(coords_new_point, coords_control).squeeze()
+
+    # # Compute the quality matrix for new point (pnt i) and the grondlag points (point j)
+    slc_quality_j = slc_quality_control.values  # Quality values of the control points
+    slc_quality_i = np.expand_dims(slc_quality_new_point.values, axis=0)  # Make sure the dimensions match
+    slc_quality_i = np.repeat(slc_quality_i, repeats=slc_quality_j.shape[0], axis=0)
+
+    # Compute arc quality time series (which is a function of the slc_quality of point i and point j)
+    arc_quality_ts = np.sqrt(slc_quality_i**2 + slc_quality_j**2)
+    arc_quality_max = np.max(arc_quality_ts, axis=1)  # Compute the maximum value
+
+    # Combine distance and quality
+    arc_quality_dist_max = arc_quality_max + dist_matrix * dist_to_quality
+
+    # Sort the arcs and compute the indices of the control points (since point i, the new_point, is in all arcs)
+    sorted_control = np.argsort(arc_quality_dist_max)
+    sorted_control_idx = control_idx.values[sorted_control]  # sort the indices of the control points as well
+    sorted_quality_values = np.sort(arc_quality_dist_max)
+
+    # Compute the arcs between the new_point and the control points. Make sure that the control_points comes first
+    arcs = np.zeros((len(sorted_control_idx), 2), dtype=int)
+    arcs[:, 0] = sorted_control_idx  # grondslag points
+    arcs[:, 1] = new_point_idx.values  # new_point
+
+    return arcs, sorted_quality_values
