@@ -18,7 +18,6 @@ from dask_jobqueue import SLURMCluster
 import sarxarray
 from datetime import datetime
 
-
 from depsi.slc import ifg_to_slc
 from depsi.io import read_metadata
 
@@ -47,7 +46,7 @@ reading_chunks = (4000, 4000)  # Reading chunks (azimuth, range) from binary
 
 # Output config
 overwrite_zarr = False  # Flag for zarr overwrite
-writing_chunks = {"azimuth":4000, "range":4000, "time": 1} # Writing chunks to zarr, (azimuth, range, time)
+writing_chunks = {"azimuth": 4000, "range": 4000, "time": 1} # Writing chunks to zarr, (azimuth, range, time)
 path_output_slcs = Path("./nl_veenweiden_s1_dsc_t037.zarr")  # Output path for SLCs
 path_figure = Path("./figure")  # Output path for figure
 path_figure.mkdir(exist_ok=True) # Make figure directory if not exists
@@ -130,7 +129,7 @@ if __name__ == "__main__":
     ifgs = ifgs.assign({"h2ph": ifgs_h2ph['h2ph'].astype(np.float32)}) # Add h2ph to ifgs
     ifgs['time'] = [datetime.strptime(file.parts[-2], '%Y%m%d') for file in f_ifgs] # Add time coords to ifgs
 
-    # Lazy loading mother SLC 
+    # Lazy loading mother (formerly referred as the "master") SLC 
     mother = sarxarray.from_binary([f_mother_slc], 
                                    shape,
                                    dtype=dtype_slc_ifg,
