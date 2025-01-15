@@ -37,7 +37,7 @@ def main():
 
         ## PS selection
         ps_stm = ps_selection(slcs=slc_stack,
-                              threshold=settings['ps_threshold'],
+                              threshold = settings['ps_threshold'],
                               method = settings['ps_method'],
                               output_chunks = 500,
                               )
@@ -45,7 +45,18 @@ def main():
         ps_stm.to_zarr(fileout, mode='w')
 
         ## DS selection
-        ds_stm = ds_selection(settings, slc_stack, stack_meta)
+        ds_stm = ds_selection(
+            slc_stack,
+            stack_id = stack_meta["stack_id"],
+            nlines = stack_meta["nlines"],
+            npixels = stack_meta["npixels"],
+            slc_dates = stack_meta["slc_dates"],
+            master_date = stack_meta["master_date"],
+            ds_min_cells = settings["ds_min_cells"],
+            path_to_shapefile = settings["parcel_shapefile"],
+            path_to_stm = settings["stm_dir"],
+            path_to_pe = settings["phase_est_dir"],
+        )
 
         ## Merge ps and ds stm
         psds_stm = xr.concat([ps_stm, ds_stm], dim='space')
