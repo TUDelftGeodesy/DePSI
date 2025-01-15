@@ -7,10 +7,14 @@ on:
   push:
     branches: [ "dev" ]
   pull_request:
+    # This defines types for both draft and regular PR
+    # This is needed to trigger the workflow when converting a draft PR into a regular PR
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [ "dev" ]
 
 jobs:
   build:
+    # This disables all types for draft PR
     if: github.event.pull_request.draft == false
     runs-on: ${{ matrix.os }}
     strategy:
