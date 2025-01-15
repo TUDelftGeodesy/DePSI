@@ -4,6 +4,8 @@
 name: Build and pytest
 
 on:
+  push:
+    branches: [ "dev" ]
   pull_request:
     branches: [ "dev" ]
 
