@@ -8,7 +8,7 @@ on:
     branches: [ "dev" ]
   pull_request:
     # This defines types for both draft and regular PR
-    # This is needed to trigger the workflow when converting a draft PR into a regular PR
+    # "ready_for_review" is the trigger when converting a draft PR into a regular PR
     types: [opened, synchronize, reopened, ready_for_review]
     branches: [ "dev" ]
 
