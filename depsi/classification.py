@@ -9,10 +9,11 @@ import pyproj
 import xarray as xr
 from scipy.spatial import KDTree
 
-from depsi.point_quality import _estimate_breakpoints
+from depsi.point_quality import _detect_outliers, _estimate_breakpoints
 from depsi.utils import _npdatetime64_to_datetime, crop_slc_spacetime
 
 REQUIRED_PARTITIONING_KEYS = ["db_segmentation", "search_method", "cost_function", "min_obs_partition"]
+REQUIRED_OUTLIER_DETECTION_KEYS = ["db_outlier_detection", "window_size", "n_sigma"]
 
 
 def ps_selection(
@@ -27,6 +28,8 @@ def ps_selection(
     do_rd_coordinate_conversion: bool = False,
     do_partitioning: bool = False,
     partitioning_kwargs: dict | None = None,
+    do_outlier_detection: bool = False,
+    outlier_detection_kwargs: dict | None = None,
 ) -> xr.Dataset:
     """Select Persistent Scatterers (PS) from an SLC stack, and return a Space-Time Matrix.
 
@@ -80,6 +83,14 @@ def ps_selection(
       - search_method: 'pelt' or 'binseg'. Advised 'pelt'
       - cost_function: 'l#' with # replaced by 0-3. Advised 'l2'
       - min_obs_partition: integer. Advised min 0.5 years converted to # images, for Sentinel-1 27 (6 day interval)
+    do_outlier_detection: bool, optional
+      boolean to trigger the outlier detection. Defaults to False.
+    outlier_detection_kwargs: dict | None, optional
+      the keyword arguments required for the outlier detection. Required if do_outlier_detection is set to True.
+      Formatted as a dictionary with required keys:
+      - db_outlier_detection: True or False, whether or not to do outlier detection in dB. Advised True
+      - window_size: window size of the hampel filter used for detection. Advised 15
+      - n_sigma: number of standard deviations difference required before outlier is detected. Advised 3
 
 
     Returns
@@ -100,6 +111,15 @@ def ps_selection(
         assert np.all(
             [key in partitioning_kwargs.keys() for key in REQUIRED_PARTITIONING_KEYS]
         ), f"Keys {REQUIRED_PARTITIONING_KEYS} are required but received {partitioning_kwargs.keys()}!"
+
+    if do_outlier_detection:
+        assert outlier_detection_kwargs is not None, "Outlier detection requested without keyword arguments!"
+        assert isinstance(
+            outlier_detection_kwargs, dict
+        ), f"outlier_detection_kwargs should be dict but is {type(outlier_detection_kwargs)}"
+        assert np.all(
+            [key in outlier_detection_kwargs.keys() for key in REQUIRED_OUTLIER_DETECTION_KEYS]
+        ), f"Keys {REQUIRED_OUTLIER_DETECTION_KEYS} are required but received {outlier_detection_kwargs.keys()}!"
 
     # Make sure there is no temporal chunk
     # since later a block function assumes all temporal data is available in a spatial block
@@ -326,12 +346,26 @@ def ps_selection(
             0.01907808 + 1.2852969 * partition_nmad + 1.90052824 * partition_nmad**2 + 11.60677721 * partition_nmad**3
         )
 
+        # Save to the STM
         stm_masked_inc = stm_masked_inc.assign({"partition_nmad": (["space", "time"], partition_nmad)})
         stm_masked_inc = stm_masked_inc.assign({"partition_nmad_quality": (["space", "time"], quality_nmad)})
         stm_masked_inc = stm_masked_inc.assign({"partition_nmad_mean_cloud": (["space", "time"], mean_cloud_nmad)})
         stm_masked_inc = stm_masked_inc.assign({"partition_nad": (["space", "time"], partition_nad)})
         stm_masked_inc = stm_masked_inc.assign({"partition_nad_quality": (["space", "time"], quality_nad)})
         stm_masked_inc = stm_masked_inc.assign({"partition_nad_mean_cloud": (["space", "time"], mean_cloud_nad)})
+
+    if do_outlier_detection:
+        outliers = xr.map_blocks(
+            _detect_outliers,
+            stm_masked_inc["amplitude"],
+            kwargs={
+                "db_outlier_detection": outlier_detection_kwargs["db_outlier_detection"],
+                "window_size": outlier_detection_kwargs["window_size"],
+                "n_sigma": outlier_detection_kwargs["n_sigma"],
+            },
+            template=stm_masked_inc["amplitude"],
+        )
+        stm_masked_inc = stm_masked_inc.assign({"outliers": (["space", "time"], outliers.data)})
 
     # Compute NAD or NMAD if mem_persist is True
     # This only evaluate a very short task graph, since NAD or NMAD is already in memory

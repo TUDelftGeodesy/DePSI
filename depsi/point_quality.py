@@ -204,3 +204,55 @@ def _binseg_single_point(amplitude_ts: xr.Dataset, cost_model: str, size: int) -
     breakpoints_xarray.data = da.array(breakpoints_list).reshape(amplitude_computed.shape)
 
     return breakpoints_xarray
+
+
+def _detect_outliers(
+    amplitude_array: xr.DataArray, db_outlier_detection: bool = True, window_size: int = 15, n_sigma: int = 3
+) -> xr.Dataset:
+    """Detect outliers based on a hampel filter.
+
+    Parameters
+    ----------
+    amplitude_array: xr.DataArray
+      DataArray containing the amplitude values
+    db_outlier_detection: bool, optional
+      whether or not to do outlier detection in dB. Default and advised True
+    window_size: int, optional
+      window size of the hampel filter used for detection. Default 15
+    n_sigma: int, optional
+      number of standard deviations difference required before outlier is detected. Default 3
+
+
+    Returns
+    -------
+    xr.Dataset
+      A boolean dataset with True indicating an outlier detected for that point at that epoch
+
+    """
+    match db_outlier_detection:
+        case True:
+            amplitude_ts = 10 * np.log10(amplitude_array)
+        case False:
+            amplitude_ts = amplitude_array
+        case _:
+            raise ValueError(f"db_outlier_detection should be boolean but is {db_outlier_detection}!")
+
+    # Set up the filter value using a hampel filter with the window size
+    filter_value = np.zeros((amplitude_ts.shape[0], amplitude_ts.shape[1], window_size))
+    for count, shift in enumerate(range(-(window_size - 1) // 2, (window_size - 1) // 2 + 1)):
+        filter_value[:, :, count] = np.roll(amplitude_ts, shift, axis=1)
+    # Calculate the critical value
+    x0 = np.median(filter_value, axis=2)
+    critical_value = (
+        1.4826 * n_sigma * np.median(np.abs(filter_value - x0.reshape((x0.shape[0], x0.shape[1], 1))), axis=2)
+    )
+    # Detect the outliers
+    outliers = np.abs(amplitude_ts - x0) > critical_value
+    # Since np.roll rolls over the end to the start, the first part and last part of the outliers array is based on
+    # disconnected data. We turn these to False.
+    outliers[:, : (window_size - 1) // 2] = False
+    outliers[:, -(window_size - 1) // 2 :] = False
+    outliers_xarray = amplitude_ts.copy()
+    outliers_xarray.name = "breakpoints"
+    outliers_xarray.data = outliers
+    return outliers_xarray
