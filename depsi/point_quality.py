@@ -67,16 +67,18 @@ def _estimate_breakpoints(
         case _:
             raise ValueError(f"search_method should be 'pelt' or 'binseg' but is {search_method}!")
 
-    # breakpoints_computed = breakpoints.values
+    # Compute the breakpoints (necessary for the identifiers since the chunking breaks)
+    computed_breakpoints = breakpoints.values
     # to compute statistics per partition we need to assign each partition a unique identifier.
     # This consists of two parts:
     # 1. a cumulative sum over the entire breakpoint True/False array. This will increase the identifier by 1 for each
     # breakpoint encountered.
     # 2. a point index to increase the identifier by 1 at the start of each new point. Otherwise the last partition of
     # point 1 and the first partition of point 2 will have the same identifier.
-    breakpoints_idx_p1 = da.cumsum(breakpoints.data).reshape(breakpoints.shape).rechunk(breakpoints.chunks)
-    point_idx = da.arange(0, breakpoints.shape[0]).reshape((breakpoints.shape[0], 1))
-    point_idx = da.hstack([point_idx for _ in range(breakpoints.shape[1])]).rechunk(breakpoints.chunks)
+    breakpoints.data = computed_breakpoints
+    breakpoints_idx_p1 = np.cumsum(breakpoints.data).reshape(breakpoints.shape)
+    point_idx = np.arange(0, breakpoints.shape[0]).reshape((breakpoints.shape[0], 1))
+    point_idx = np.hstack([point_idx for _ in range(breakpoints.shape[1])])
     breakpoints_idx = breakpoints_idx_p1 + point_idx
 
     return breakpoints, breakpoints_idx

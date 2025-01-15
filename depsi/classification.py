@@ -12,7 +12,7 @@ from scipy.spatial import KDTree
 from depsi.point_quality import _estimate_breakpoints
 from depsi.utils import _npdatetime64_to_datetime, crop_slc_spacetime
 
-REQUIRED_BREAKPOINT_KEYS = ["db_segmentation", "search_method", "cost_function", "min_obs_partition"]
+REQUIRED_PARTITIONING_KEYS = ["db_segmentation", "search_method", "cost_function", "min_obs_partition"]
 
 
 def ps_selection(
@@ -25,8 +25,8 @@ def ps_selection(
     ps_selection_end_date: datetime | str | int | None = None,
     recalibration_jump_size: int = 10,
     do_rd_coordinate_conversion: bool = False,
-    do_breakpoint_analysis: bool = False,
-    breakpoint_kwargs: dict | None = None,
+    do_partitioning: bool = False,
+    partitioning_kwargs: dict | None = None,
 ) -> xr.Dataset:
     """Select Persistent Scatterers (PS) from an SLC stack, and return a Space-Time Matrix.
 
@@ -71,12 +71,12 @@ def ps_selection(
     do_rd_coordinate_conversion: bool, optional
       boolean to trigger coordinate conversion from latitude/longitude (WGS84) to RD_X/RD_Y (Rijksdriehoek). This only
       makes sense for AoIs located in the Netherlands. Defaults to False.
-    do_breakpoint_analysis: bool, optional
+    do_partitioning: bool, optional
       boolean to trigger the breakpoint analysis. Defaults to False.
-    breakpoint_kwargs: dict | None, optional
+    partitioning_kwargs: dict | None, optional
       the keyword arguments required for the breakpoint analysis. Required if do_breakpoint_analysis is set to True.
       Formatted as a dictionary with required keys:
-      - db_segmentation: True or False, whether or not to do partitioning in dB. Advised False
+      - db_partitioning: True or False, whether or not to do partitioning in dB. Advised False
       - search_method: 'pelt' or 'binseg'. Advised 'pelt'
       - cost_function: 'l#' with # replaced by 0-3. Advised 'l2'
       - min_obs_partition: integer. Advised min 0.5 years converted to # images, for Sentinel-1 27 (6 day interval)
@@ -92,12 +92,14 @@ def ps_selection(
     NotImplementedError
         Raised when an unsupported method is provided.
     """
-    if do_breakpoint_analysis:
-        assert breakpoint_kwargs is not None, "Breakpoint analysis requested without keyword arguments!"
-        assert isinstance(breakpoint_kwargs, dict), f"breakpoint_kwargs should be dict but is {type(breakpoint_kwargs)}"
+    if do_partitioning:
+        assert partitioning_kwargs is not None, "Breakpoint analysis requested without keyword arguments!"
+        assert isinstance(
+            partitioning_kwargs, dict
+        ), f"breakpoint_kwargs should be dict but is {type(partitioning_kwargs)}"
         assert np.all(
-            [key in breakpoint_kwargs.keys() for key in REQUIRED_BREAKPOINT_KEYS]
-        ), f"Keys {REQUIRED_BREAKPOINT_KEYS} are required but received {breakpoint_kwargs.keys()}!"
+            [key in partitioning_kwargs.keys() for key in REQUIRED_PARTITIONING_KEYS]
+        ), f"Keys {REQUIRED_PARTITIONING_KEYS} are required but received {partitioning_kwargs.keys()}!"
 
     # Make sure there is no temporal chunk
     # since later a block function assumes all temporal data is available in a spatial block
@@ -122,7 +124,7 @@ def ps_selection(
                 )
                 ps_selection_times = []
             nad = nad.compute() if mem_persist else nad
-            slcs = slcs.assign(pnt_nad=nad)
+            slcs = slcs.assign(selection_nad=nad)
             mask = nad < threshold
         case "nmad":
             if ps_selection_start_date is not None:
@@ -141,7 +143,7 @@ def ps_selection(
                 )
                 ps_selection_times = []
             nmad = nmad.compute() if mem_persist else nmad
-            slcs = slcs.assign(pnt_nmad=nmad)
+            slcs = slcs.assign(selection_nmad=nmad)
             mask = nmad < threshold
         case _:
             raise NotImplementedError
@@ -188,63 +190,72 @@ def ps_selection(
         }
     )
 
+    # add full timeseries NAD and NMAD
+    nad = xr.map_blocks(
+        _nad_block, stm_masked["amplitude"], template=stm_masked["amplitude"].isel(time=0).drop_vars("time")
+    )
+    nmad = xr.map_blocks(
+        _nmad_block, stm_masked["amplitude"], template=stm_masked["amplitude"].isel(time=0).drop_vars("time")
+    )
+    stm_masked = stm_masked.assign({"full_ts_nmad": (["space"], nmad.data)})
+    stm_masked = stm_masked.assign({"full_ts_nad": (["space"], nad.data)})
+
     # add incremental and recalibration NAD / NMAD
-    incremental_imgs = []
-    recalibration_imgs = []
-    recalibration_idx = -1  # start at -1 so that the first addition will trigger a reset of the data layer
-    recalibration_data_layer = None
-    for date in stm_masked["time"].values:
-        if date in ps_selection_times:  # only gets triggered in case there is an initialization epoch for the duration
-            # of the initialization epoch
-            start_date = ps_selection_start_date
-            end_date = ps_selection_end_date
-            recalibration_idx = 0
-        else:
-            start_date = _npdatetime64_to_datetime(stm_masked["time"].values[0])
-            end_date = _npdatetime64_to_datetime(date)
-            recalibration_idx += 1  # add, and do modulo the jump size, so that it will be 0 every time a new image
-            # should be loaded
-            recalibration_idx %= recalibration_jump_size
-        current_crop = crop_slc_spacetime(stm_masked, start_date=start_date, end_date=end_date)
-        match method:
+    for loop_method in ["nmad", "nad"]:
+        incremental_imgs = []
+        recalibration_imgs = []
+        recalibration_idx = -1  # start at -1 so that the first addition will trigger a reset of the data layer
+        recalibration_data_layer = None
+        for date in stm_masked["time"].values:
+            if (
+                date in ps_selection_times
+            ):  # only gets triggered in case there is an initialization epoch for the duration
+                # of the initialization epoch
+                start_date = ps_selection_start_date
+                end_date = ps_selection_end_date
+                recalibration_idx = 0
+            else:
+                start_date = _npdatetime64_to_datetime(stm_masked["time"].values[0])
+                end_date = _npdatetime64_to_datetime(date)
+                recalibration_idx += 1  # add, and do modulo the jump size, so that it will be 0 every time a new image
+                # should be loaded
+                recalibration_idx %= recalibration_jump_size
+            current_crop = crop_slc_spacetime(stm_masked, start_date=start_date, end_date=end_date)
+            match loop_method:
+                case "nad":
+                    nad = xr.map_blocks(
+                        _nad_block,
+                        current_crop["amplitude"],
+                        template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
+                    )
+                    incremental_imgs.append(nad)
+                    if recalibration_idx == 0:
+                        recalibration_data_layer = nad.copy()
+                case "nmad":
+                    nmad = xr.map_blocks(
+                        _nmad_block,
+                        current_crop["amplitude"],
+                        template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
+                    )
+                    incremental_imgs.append(nmad)
+                    if recalibration_idx == 0:
+                        recalibration_data_layer = nmad.copy()
+
+            recalibration_imgs.append(recalibration_data_layer.copy())
+
+        # format the images, and add them to the data array
+        incremental_nad_nmad = da.vstack(incremental_imgs).T
+        recalibration_nad_nmad = da.vstack(recalibration_imgs).T
+        match loop_method:
             case "nad":
-                nad = xr.map_blocks(
-                    _nad_block,
-                    current_crop["amplitude"],
-                    template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
-                )
-                incremental_imgs.append(nad)
-                if recalibration_idx == 0:
-                    recalibration_data_layer = nad.copy()
+                stm_masked = stm_masked.assign({"incremental_nad": (["space", "time"], incremental_nad_nmad)})
+                stm_masked = stm_masked.assign({"recalibration_nad": (["space", "time"], recalibration_nad_nmad)})
             case "nmad":
-                nmad = xr.map_blocks(
-                    _nmad_block,
-                    current_crop["amplitude"],
-                    template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
-                )
-                incremental_imgs.append(nmad)
-                if recalibration_idx == 0:
-                    recalibration_data_layer = nmad.copy()
-            case _:
-                raise NotImplementedError
-
-        recalibration_imgs.append(recalibration_data_layer.copy())
-
-    # format the images, and add them to the data array
-    incremental_nad_nmad = da.vstack(incremental_imgs).T
-    recalibration_nad_nmad = da.vstack(recalibration_imgs).T
-    match method:
-        case "nad":
-            stm_masked_inc = stm_masked.assign({"incremental_nad": (["space", "time"], incremental_nad_nmad)})
-            stm_masked_inc = stm_masked_inc.assign({"recalibration_nad": (["space", "time"], recalibration_nad_nmad)})
-        case "nmad":
-            stm_masked_inc = stm_masked.assign({"incremental_nmad": (["space", "time"], incremental_nad_nmad)})
-            stm_masked_inc = stm_masked_inc.assign({"recalibration_nmad": (["space", "time"], recalibration_nad_nmad)})
-        case _:
-            raise NotImplementedError
+                stm_masked = stm_masked.assign({"incremental_nmad": (["space", "time"], incremental_nad_nmad)})
+                stm_masked = stm_masked.assign({"recalibration_nmad": (["space", "time"], recalibration_nad_nmad)})
 
     # Rechunk is needed because after calculating incremental NAD/NMAD, the chunksize will be inconsistant
-    stm_masked_inc = stm_masked_inc.chunk(
+    stm_masked_inc = stm_masked.chunk(
         {
             "space": output_chunks,
             "time": -1,
@@ -271,26 +282,78 @@ def ps_selection(
     stm_masked_inc = stm_masked_inc.assign({"days_since_first_img": (["time"], days)})
     stm_masked_inc = stm_masked_inc.assign({"years_since_first_img": (["time"], days / 365.2425)})
 
-    if do_breakpoint_analysis:
+    if do_partitioning:
         breakpoints, partition_identifiers = _estimate_breakpoints(
             stm_masked_inc["amplitude"],
-            breakpoint_kwargs["db_segmentation"],
-            breakpoint_kwargs["search_method"],
-            breakpoint_kwargs["cost_function"],
-            breakpoint_kwargs["min_obs_partition"],
+            partitioning_kwargs["db_segmentation"],
+            partitioning_kwargs["search_method"],
+            partitioning_kwargs["cost_function"],
+            partitioning_kwargs["min_obs_partition"],
         )
-        stm_masked_inc = stm_masked_inc.assign({"breakpoints": (["space", "time"], breakpoints)})
+        stm_masked_inc = stm_masked_inc.assign({"breakpoints": (["space", "time"], breakpoints.data)})
         stm_masked_inc = stm_masked_inc.assign({"partition_id": (["space", "time"], partition_identifiers)})
+
+        # persist the amplitude values to memory to facilitate IO during the groups
+        groups = stm_masked_inc["amplitude"]
+        groups.data = groups.values
+        groups = groups.groupby(stm_masked_inc["partition_id"])
+
+        # Calculate the partition NAD and NMAD
+        partition_nad_nmad = groups.map(_compute_grouped_nad_nmad)
+        partition_nmad = partition_nad_nmad["partition_nmad"].data
+        partition_nad = partition_nad_nmad["partition_nad"].data
+
+        # calculate the quality metrics
+        # these are empirical relations for a cubic function to relate the NAD to mean cloud (50%) and quality (95%)
+        mean_cloud_nad = (
+            -7.65752941e-03
+            + 1.33360757e00 * partition_nad
+            + -3.18428074e00 * partition_nad**2
+            + 9.35392564e00 * partition_nad**3
+        )
+        quality_nad = (
+            -0.03222335 + 2.02221987 * partition_nad + -5.76342934 * partition_nad**2 + 14.47118093 * partition_nad**3
+        )
+
+        # these are empirical relations for a cubic function to relate the NMAD to mean cloud (50%) and quality (95%)
+        mean_cloud_nmad = (
+            -1.44869469e-02
+            + 2.00028682e00 * partition_nmad
+            + -5.23271341e00 * partition_nmad**2
+            + 2.11111801e01 * partition_nmad**3
+        )
+        quality_nmad = (
+            0.01907808 + 1.2852969 * partition_nmad + 1.90052824 * partition_nmad**2 + 11.60677721 * partition_nmad**3
+        )
+
+        stm_masked_inc = stm_masked_inc.assign({"partition_nmad": (["space", "time"], partition_nmad)})
+        stm_masked_inc = stm_masked_inc.assign({"partition_nmad_quality": (["space", "time"], quality_nmad)})
+        stm_masked_inc = stm_masked_inc.assign({"partition_nmad_mean_cloud": (["space", "time"], mean_cloud_nmad)})
+        stm_masked_inc = stm_masked_inc.assign({"partition_nad": (["space", "time"], partition_nad)})
+        stm_masked_inc = stm_masked_inc.assign({"partition_nad_quality": (["space", "time"], quality_nad)})
+        stm_masked_inc = stm_masked_inc.assign({"partition_nad_mean_cloud": (["space", "time"], mean_cloud_nad)})
 
     # Compute NAD or NMAD if mem_persist is True
     # This only evaluate a very short task graph, since NAD or NMAD is already in memory
     if mem_persist:
         match method:
             case "nad":
-                for key in ["pnt_nad", "inremental_nad"]:
+                for key in [
+                    "selection_nad",
+                    "incremental_nmad",
+                    "incremental_nad",
+                    "recalibration_nad",
+                    "recalibration_nmad",
+                ]:
                     stm_masked_inc[key] = stm_masked[key].compute()
             case "nmad":
-                for key in ["pnt_nmad", "inremental_nmad"]:
+                for key in [
+                    "selection_nmad",
+                    "incremental_nmad",
+                    "incremental_nad",
+                    "recalibration_nad",
+                    "recalibration_nmad",
+                ]:
                     stm_masked_inc[key] = stm_masked[key].compute()
 
     return stm_masked_inc
@@ -460,6 +523,31 @@ def _nmad_block(amp: xr.DataArray) -> xr.DataArray:
     nmad = mad / (median_amplitude + np.finfo(amp.dtype).eps)  # Normalized Median Absolute Deviation
 
     return nmad
+
+
+def _compute_grouped_nad_nmad(amp: xr.DataArray) -> xr.DataArray:
+    """Compute the NAD and NMAD on a partition basis.
+
+    Parameters
+    ----------
+    amp: xr.DataArray
+      a DataArray containing the amplitude values of a single partition, loaded into memory
+
+    Returns
+    -------
+    xr.DataArray
+      the same DataArray, with in the coordinates the calculated NAD and NMAD value in the same shape as the partition.
+
+    """
+    data = amp.data
+    nad = np.std(data) / (np.mean(data) + np.finfo(data.dtype).eps)
+    median = np.median(data)
+    mad = np.median(np.abs(data - median))
+    nmad = mad / (median + np.finfo(data.dtype).eps)
+
+    amp["partition_nad"] = (amp.dims, np.ones_like(data) * nad)
+    amp["partition_nmad"] = (amp.dims, np.ones_like(data) * nmad)
+    return amp
 
 
 def _idx_within_distance(coords_ref, coords_others, min_dist):
