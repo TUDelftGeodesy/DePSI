@@ -12,71 +12,91 @@ import xarray as xr
 from scipy import stats
 
 
-def ds_selection(settings, slc_stack, stack_meta):
+def ds_selection(
+    slc_stack,
+    stack_id,
+    nlines,
+    npixels,
+    slc_dates,
+    master_date,
+    ds_min_cells,
+    path_to_shapefile,
+    path_to_stm,
+    path_to_pe,
+):
     """Function to read slc stack, identify id pixel, perform multilooking,
     and estimate equivalent single mother phase.
 
     Parameters
     ----------
-    settings : dict
-        Contains parameters for analysis.
     slc_stack : xr.Dataset
         SLC stack with three variables: (complex, amplitude, phase)
         and two coordinates: space (lat, lon, azimuth, range) and time.
-    stack_meta : dict
-        Contains information of the corresponding stack.
+    stack_id : str
+        Equals to track id (e.g. s1_asc_t088)
+    nlines : int
+        Number of lines (azimuth).
+    npixels : int
+        Number of pixels (range).
+    slc_dates : list
+        List of integer of slc dates in the format yyyyMMdd.
+    master_date : int
+        Master date in the format yyyyMMdd.
+    ds_min_cells : int
+        Minimum number of radar pixels inside a parcel polygon.
+    path_to_shapefile : str
+        Path to parcel shapefile with attributes int_id, cropcode, soilcode, knmi_id.
+    path_to_stm : str
+        Path to STM directory.
+    path_to_pe : str
+        Path to parcel phase estimation directory.
 
     Returns
     -------
     ds_stm : xr.Dataset
         Selected DS as virtial PS in the form of STM with two variables: space and time.
-    TODO: explicit input parameters
-    """  # noqa: D205, D401
+    """  # noqa: D401, D205
     ## Assign id pixel
     print(
         "Check whether radar pixel_id has been assigned according to parcels.\n \
         If not, assign pixel_id first before parcel phase estimation."
     )
-    filename = os.path.join(settings["phase_est_dir"], "id_pixel_" + stack_meta["stack_id"] + ".h5")
+    filename = os.path.join(path_to_pe, "id_pixel_" + stack_id + ".h5")
 
     if os.path.isfile(filename):
-        print(
-            "Radar pixel_id has been assigned, load pixel_id from {} ...".format(
-                "id_pixel_" + stack_meta["stack_id"] + ".h5"
-            )
-        )
+        print("Radar pixel_id has been assigned, load pixel_id from {} ...".format("id_pixel_" + stack_id + ".h5"))
         with h5py.File(filename, "r") as f:
             pixel_id = f["pixel_id"][()]
-        ds_stm = xr.open_zarr(os.path.join(settings["stm_dir"], "ds_stm_" + stack_meta["stack_id"] + ".zarr"))
+        ds_stm = xr.open_zarr(os.path.join(path_to_stm, "ds_stm_" + stack_id + ".zarr"))
 
     else:
         print("Assigning radar pixel_id to the corresponding parcel ...")
         pixel_id, ds_stm = assign_id_pixel(
             slc_stack,
-            nlines=stack_meta["nlines"],
-            npixels=stack_meta["npixels"],
-            path_to_shapefile=settings["parcel_shapefile"],
-            ds_min_cells=settings["ds_min_cells"],
+            nlines,
+            npixels,
+            path_to_shapefile,
+            ds_min_cells,
         )
 
-        fileout = os.path.join(settings["stm_dir"], "ds_stm_" + stack_meta["stack_id"] + ".zarr")
+        fileout = os.path.join(path_to_stm, "ds_stm_" + stack_id + ".zarr")
         ds_stm.to_zarr(fileout)
 
         print("Saving pixel_id into an HDF file ...")
         export_to_hdf(
             dataset_name=["pixel_id"],
             dataset=[pixel_id],
-            out_dir=settings["phase_est_dir"],
-            filename="id_pixel_" + stack_meta["stack_id"],
+            out_dir=path_to_pe,
+            filename="id_pixel_" + stack_id,
         )
 
     ## Parcel phase estimation
     print("Check if esm phase has been estimated.")
-    filename = os.path.join(settings["phase_est_dir"], "stack_data_" + stack_meta["stack_id"] + ".h5")
+    filename = os.path.join(path_to_pe, "stack_data_" + stack_id + ".h5")
 
     if os.path.isfile(filename):
         print("ESM phases have been estimated. Load STM DS ...")
-        ds_stm = xr.open_zarr(os.path.join(settings["stm_dir"], "ds_stm_" + stack_meta["stack_id"] + ".zarr"))
+        ds_stm = xr.open_zarr(os.path.join(path_to_stm, "ds_stm_" + stack_id + ".zarr"))
 
     else:
         print("Multilooking and ESM phase estimation ...")
@@ -84,20 +104,20 @@ def ds_selection(settings, slc_stack, stack_meta):
             slc_stack,
             pixel_id,
             ds_stm,
-            slc_dates=stack_meta["slc_dates"],
-            master_date=stack_meta["master_date"],
+            slc_dates,
+            master_date,
             ds_shp_test=False,
         )
 
-        fileout = os.path.join(settings["stm_dir"], "ds_stm_" + stack_meta["stack_id"] + ".zarr")
+        fileout = os.path.join(path_to_stm, "ds_stm_" + stack_id + ".zarr")
         ds_stm.to_zarr(fileout, mode="a")
 
         print("Saving stack_data into an HDF file ...")
         export_to_hdf(
             dataset_name=["parcel_id", "cpx_coh"],
             dataset=[parcel_id, cpx_coh],
-            out_dir=settings["phase_est_dir"],
-            filename="stack_data_" + stack_meta["stack_id"],
+            out_dir=path_to_pe,
+            filename="stack_data_" + stack_id,
         )
 
     return ds_stm
