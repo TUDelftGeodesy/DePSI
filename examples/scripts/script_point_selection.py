@@ -19,7 +19,7 @@ last_date = datetime(2025, 9, 1)
 first_date = datetime(2014, 1, 1)
 
 # PS Selection based on initialization
-start_date_ps_selection = datetime(2014, 1, 1)
+start_date_ps_selection = datetime(2017, 1, 1)
 initialization_length = 50
 
 # Recalibrated NAD and NMAD settings

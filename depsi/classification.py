@@ -99,7 +99,6 @@ def ps_selection(
       - datetime object
       - str object, formatted as YYYYMMDD
 
-
     Returns
     -------
     xr.Dataset
@@ -112,6 +111,8 @@ def ps_selection(
         - azimuth: azimuth coordinate of the PS
         - range: range coordinate of the PS
         with attributes:
+        - ps_selection_start_date: the epoch of the first image used for the PS selection
+        - ps_selection_end_date: the epoch of the last image used for the PS selection
         - sd_mother: the epoch of the mother used for the single differences
         with variables:
         - h2ph (space, time): the height to phase conversion
@@ -124,15 +125,17 @@ def ps_selection(
         - full_ts_nad (space): the Normalized Amplitude Dispersion of the PS
         - full_ts_nmad (space): the Normalized Median Amplitude Dispersion of the PS
         - incremental_nad (space, time): the NAD of all images up to and including that epoch (initialization epochs
-            will yield the initialization period NAD if selected)
+            will yield the initialization period NAD if selected). If ps_selection_start_date is not None, images
+            before ps_selection_start_date will yield 0
         - incremental_nmad (space, time): the NMAD of all images up to and including that epoch (initialization epochs
-            will yield the initialization period NMAD if selected)
+            will yield the initialization period NMAD if selected). If ps_selection_start_date is not None, images
+            before ps_selection_start_date will yield 0
         - recalibration_nad (space, time): the NAD of all images up to and including the last recalibration epoch
             (dictated by recalibration_jump_size, initialization epochs will yield the initialization period NAD if
-            selected)
+            selected). If ps_selection_start_date is not None, images before ps_selection_start_date will yield 0
         - recalibration_nmad (space, time): the NMAD of all images up to and including the last recalibration epoch
             (dictated by recalibration_jump_size, initialization epochs will yield the initialization period NMAD if
-            selected)
+            selected). If ps_selection_start_date is not None, images before ps_selection_start_date will yield 0
         - sd_h2ph (space, time): single difference height to phase conversion with respect to single_difference_mother
         - sd_complex (space, time): single difference complex phasor with respect to single_difference_mother
         - sd_amplitude_unnormalized (space, time): single difference complex phasor amplitude to
@@ -295,6 +298,25 @@ def ps_selection(
     )
     stm_masked = stm_masked.assign({"full_ts_nmad": (["space"], nmad.data)})
     stm_masked = stm_masked.assign({"full_ts_nad": (["space"], nad.data)})
+    if ps_selection_start_date is None:
+        start_date = _npdatetime64_to_datetime(stm_masked["time"].values[0])
+        end_date = _npdatetime64_to_datetime(stm_masked["time"].values[-1])
+
+        stm_masked.attrs["ps_selection_start_date"] = "{}{:0>2d}{:0>2d}".format(
+            start_date.year, start_date.month, start_date.day
+        )
+        stm_masked.attrs["ps_selection_end_date"] = "{}{:0>2d}{:0>2d}".format(
+            end_date.year, end_date.month, end_date.day
+        )
+    else:
+        start_date = _npdatetime64_to_datetime(ps_selection_times[0])
+        end_date = _npdatetime64_to_datetime(ps_selection_times[-1])
+        stm_masked.attrs["ps_selection_start_date"] = "{}{:0>2d}{:0>2d}".format(
+            start_date.year, start_date.month, start_date.day
+        )
+        stm_masked.attrs["ps_selection_end_date"] = "{}{:0>2d}{:0>2d}".format(
+            end_date.year, end_date.month, end_date.day
+        )
 
     # add incremental and recalibration NAD / NMAD
     for loop_method in ["nmad", "nad"]:
@@ -312,11 +334,10 @@ def ps_selection(
                     end_date = ps_selection_end_date
                     recalibration_idx = 0
                 else:
-                    start_date = ps_selection_start_date
+                    start_date = _npdatetime64_to_datetime(ps_selection_times[0])
                     end_date = _npdatetime64_to_datetime(date)
-                    recalibration_idx += (
-                        1  # add, and do modulo the jump size, so that it will be 0 every time a new image
-                    )
+                    recalibration_idx += 1
+                    # add, and do modulo the jump size, so that it will be 0 every time a new image
                     # should be loaded
                     recalibration_idx %= recalibration_jump_size
                     if start_date > end_date:
