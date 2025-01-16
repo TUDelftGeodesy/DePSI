@@ -383,7 +383,7 @@ def detect_side_lobes(stm: xr.Dataset, max_pixel_dist: float, min_correlation: f
         potential_side_lobe_idx = np.union1d(idx_range, idx_azimuth)
         potential_side_lobe_idx = (
             potential_side_lobe_idx.compute()
-            if isinstance(potential_side_lobe_idx, da.Array)
+            if isinstance(potential_side_lobe_idx, da.array.Array)
             else potential_side_lobe_idx
         )
 
