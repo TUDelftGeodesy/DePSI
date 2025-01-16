@@ -256,3 +256,57 @@ def _detect_outliers(
     outliers_xarray.name = "breakpoints"
     outliers_xarray.data = outliers
     return outliers_xarray
+
+
+def _nad_nmad_quality_metrics(
+    nad_nmad: xr.DataArray, input_mode: Literal["nad", "nmad"], output_mode: Literal["mean", "2sigma"] = "2sigma"
+) -> xr.DataArray:
+    """Estimate the quality metrics for NAD and NMAD.
+
+    These are empirical relations for a cubic function to relate the NMAD and NAD to mean cloud (50%, mean)
+    and quality (95%, 2sigma).
+
+    Parameters
+    ----------
+    nad_nmad: xr.DataArray
+        Input array with NAD or NMAD values
+    input_mode: Literal["nad", "nmad"]
+        Type of data in the input array
+    output_mode: Literal["mean", "2sigma"], optional
+        Type of quality metric requested. Default 2sigma.
+
+    Returns
+    -------
+    xr.DataArray
+        DataArray with the quality metrics
+    """
+    match input_mode:
+        case "nad":
+            match output_mode:
+                case "mean":
+                    output = (
+                        -7.65752941e-03
+                        + 1.33360757e00 * nad_nmad
+                        + -3.18428074e00 * nad_nmad**2
+                        + 9.35392564e00 * nad_nmad**3
+                    )
+                case "2sigma":
+                    output = -0.03222335 + 2.02221987 * nad_nmad + -5.76342934 * nad_nmad**2 + 14.47118093 * nad_nmad**3
+                case _:
+                    raise ValueError(f"Unknown output_mode {output_mode}")
+        case "nmad":
+            match output_mode:
+                case "mean":
+                    output = (
+                        -1.44869469e-02
+                        + 2.00028682e00 * nad_nmad
+                        + -5.23271341e00 * nad_nmad**2
+                        + 2.11111801e01 * nad_nmad**3
+                    )
+                case "2sigma":
+                    output = 0.01907808 + 1.2852969 * nad_nmad + 1.90052824 * nad_nmad**2 + 11.60677721 * nad_nmad**3
+                case _:
+                    raise ValueError(f"Unknown output_mode {output_mode}")
+        case _:
+            raise ValueError(f"Unknown input_mode {input_mode}")
+    return output

@@ -6,13 +6,14 @@ from typing import Literal
 import dask.array as da
 import numpy as np
 import pyproj
+import pytz
 import xarray as xr
 from scipy.spatial import KDTree
 
-from depsi.point_quality import _detect_outliers, _estimate_breakpoints
+from depsi.point_quality import _detect_outliers, _estimate_breakpoints, _nad_nmad_quality_metrics
 from depsi.utils import _npdatetime64_to_datetime, crop_slc_spacetime
 
-REQUIRED_PARTITIONING_KEYS = ["db_segmentation", "search_method", "cost_function", "min_obs_partition"]
+REQUIRED_PARTITIONING_KEYS = ["db_partitioning", "search_method", "cost_function", "min_obs_partition"]
 REQUIRED_OUTLIER_DETECTION_KEYS = ["db_outlier_detection", "window_size", "n_sigma"]
 
 
@@ -30,6 +31,7 @@ def ps_selection(
     partitioning_kwargs: dict | None = None,
     do_outlier_detection: bool = False,
     outlier_detection_kwargs: dict | None = None,
+    single_difference_mother: datetime | str = "auto",
 ) -> xr.Dataset:
     """Select Persistent Scatterers (PS) from an SLC stack, and return a Space-Time Matrix.
 
@@ -91,17 +93,91 @@ def ps_selection(
       - db_outlier_detection: True or False, whether or not to do outlier detection in dB. Advised True
       - window_size: window size of the hampel filter used for detection. Advised 15
       - n_sigma: number of standard deviations difference required before outlier is detected. Advised 3
+    single_difference_mother: datetime | str
+      the date to be used as the mother image for the single difference computations, in one of three formats:
+      - 'auto' : will detect the mother image in the input SLC dataset, and use that epoch.
+      - datetime object
+      - str object, formatted as YYYYMMDD
 
 
     Returns
     -------
     xr.Dataset
-        Selected STM, in form of an xarray.Dataset with two dimensions: (space, time).
+        Selected STM, in form of an xarray.Dataset with dimensions:
+        - space ( # PS selected)
+        - time ( # epochs of input dataset)
+        with coordinates:
+        - time: epoch in np.datetime64 format
+        - space: index of the PS
+        - azimuth: azimuth coordinate of the PS
+        - range: range coordinate of the PS
+        with attributes:
+        - sd_mother: the epoch of the mother used for the single differences
+        with variables:
+        - h2ph (space, time): the height to phase conversion
+        - lat (space): latitude of the PS
+        - lon (space): longitude of the PS
+        - complex (space, time): the complex value of the PS at each epoch
+        - amplitude (space, time): the amplitude of the PS at each epoch
+        - phase (space, time): the phase of the PS at each epoch
+        - selection_nad / selection_nmad (space): the value used for selection of the PS, dependent on method
+        - full_ts_nad (space): the Normalized Amplitude Dispersion of the PS
+        - full_ts_nmad (space): the Normalized Median Amplitude Dispersion of the PS
+        - incremental_nad (space, time): the NAD of all images up to and including that epoch (initialization epochs
+            will yield the initialization period NAD if selected)
+        - incremental_nmad (space, time): the NMAD of all images up to and including that epoch (initialization epochs
+            will yield the initialization period NMAD if selected)
+        - recalibration_nad (space, time): the NAD of all images up to and including the last recalibration epoch
+            (dictated by recalibration_jump_size, initialization epochs will yield the initialization period NAD if
+            selected)
+        - recalibration_nmad (space, time): the NMAD of all images up to and including the last recalibration epoch
+            (dictated by recalibration_jump_size, initialization epochs will yield the initialization period NMAD if
+            selected)
+        - sd_h2ph (space, time): single difference height to phase conversion with respect to single_difference_mother
+        - sd_complex (space, time): single difference complex phasor with respect to single_difference_mother
+        - sd_amplitude_unnormalized (space, time): single difference complex phasor amplitude to
+            single_difference_mother, not normalized
+        - sd_phase (space, time): single difference phase with respect to single_difference_mother
+        - days_since_first_img (time): number of days since the first image
+        - years_since_first_img (time): number of years since the first image (assuming 365.2425 days per year)
+        - classification_flag (space): 1 for all selected PS
+        If do_rd_coordinate_conversion is set to True:
+        - rd_x (space): Rijksdriehoek x coordinate if requested (only recommended in the Netherlands)
+        - rd_y (space): Rijksdriehoek y coordinate if requested (only recommended in the Netherlands)
+        If do_partitioning is set to True:
+        - breakpoints (space, time): boolean array of the breakpoint locations
+        - partition_id (space, time): unique identifier for each partition
+        - partition_nmad (space, time): NMAD calculated per partition
+        - partition_nmad_quality (space, time): NMAD per partition converted to standard deviation using mean + 2 sigma
+        - partition_nad (space, time): NAD calculated per partition
+        - partition_sd_amplitude_sigma (space, time): standard deviation of the unnormalized single difference
+            amplitude per partition
+        - partition_sd_amplitude_mean (space, time): mean of the unnormalized single difference
+            amplitude per partition
+        - partition_sd_amplitude_median (space, time): median of the unnormalized single difference
+            amplitude per partition
+        - partition_sd_mad (space, time): Median Absolute Deviation of the unnormalized single difference
+            amplitude per partition
+        If do_outlier_detection is set to True:
+        - outliers (space, time): boolean array, where True indicates an outlier detected based on the
+            outlier_detection_kwargs and a hampel filter
 
     Raises
     ------
     NotImplementedError
         Raised when an unsupported method is provided.
+    AssertionError
+        Raised when:
+        - do_partitioning is True but partitioning_kwargs is not provided
+        - Keywords are missing in partitioning_kwargs
+        - partitioning_kwargs is not a dictionary
+        - do_outlier_detection is True but outlier_detection_kwargs is not provided
+        - Keywords are missing in outlier_detection_kwargs
+        - outlier_detection_kwargs is not a dictionary
+    ValueError
+        Raised when:
+        - single_difference_mother is of an unsupported format
+        - the date provided to single_difference_mother is not in the input stack
     """
     if do_partitioning:
         assert partitioning_kwargs is not None, "Breakpoint analysis requested without keyword arguments!"
@@ -227,19 +303,31 @@ def ps_selection(
         recalibration_idx = -1  # start at -1 so that the first addition will trigger a reset of the data layer
         recalibration_data_layer = None
         for date in stm_masked["time"].values:
-            if (
-                date in ps_selection_times
-            ):  # only gets triggered in case there is an initialization epoch for the duration
-                # of the initialization epoch
-                start_date = ps_selection_start_date
-                end_date = ps_selection_end_date
-                recalibration_idx = 0
+            if ps_selection_start_date is not None:
+                if (
+                    date in ps_selection_times
+                ):  # only gets triggered in case there is an initialization epoch for the duration
+                    # of the initialization epoch
+                    start_date = ps_selection_start_date
+                    end_date = ps_selection_end_date
+                    recalibration_idx = 0
+                else:
+                    start_date = ps_selection_start_date
+                    end_date = _npdatetime64_to_datetime(date)
+                    recalibration_idx += (
+                        1  # add, and do modulo the jump size, so that it will be 0 every time a new image
+                    )
+                    # should be loaded
+                    recalibration_idx %= recalibration_jump_size
+                    if start_date > end_date:
+                        end_date = start_date  # will always be 0 as they are equal
             else:
                 start_date = _npdatetime64_to_datetime(stm_masked["time"].values[0])
                 end_date = _npdatetime64_to_datetime(date)
                 recalibration_idx += 1  # add, and do modulo the jump size, so that it will be 0 every time a new image
                 # should be loaded
                 recalibration_idx %= recalibration_jump_size
+
             current_crop = crop_slc_spacetime(stm_masked, start_date=start_date, end_date=end_date)
             match loop_method:
                 case "nad":
@@ -282,6 +370,66 @@ def ps_selection(
         }
     )
 
+    # Compute the single differences
+    # Identify the mother image
+    if isinstance(single_difference_mother, datetime):
+        format_mother_date = datetime(
+            single_difference_mother.year, single_difference_mother.month, single_difference_mother.day, tzinfo=pytz.UTC
+        )
+        mother_index = [
+            idx
+            for idx, date in enumerate(stm_masked_inc["time"].values)
+            if format_mother_date == _npdatetime64_to_datetime(date)
+        ]
+    elif isinstance(single_difference_mother, str):
+        if single_difference_mother == "auto":
+            mother_index = np.where(abs(stm_masked_inc["h2ph"]).sum(axis=0).values == 0)[0]
+        elif len(single_difference_mother) == 8:
+            format_mother_date = datetime(
+                eval(single_difference_mother[:4]),
+                eval(single_difference_mother[4:6].lstrip("0")),
+                eval(single_difference_mother[6:].lstrip("0")),
+                tzinfo=pytz.UTC,
+            )
+            mother_index = [
+                idx
+                for idx, date in enumerate(stm_masked_inc["time"].values)
+                if format_mother_date == _npdatetime64_to_datetime(date)
+            ]
+        else:
+            raise ValueError(f'Cannot parse {single_difference_mother}, not of type "auto" or "YYYYMMDD"!')
+    else:
+        raise ValueError(f"Unknown format {type(single_difference_mother)} for single_difference_mother!")
+    if len(mother_index) == 0:
+        raise ValueError(
+            f"Cannot find provided mother date {single_difference_mother}, "
+            f"please provide a date that is part of the stack! Possible dates: "
+            f"{stm_masked_inc.time.values}"
+        )
+    sd_mother_index = mother_index[0]  # 0 in case somehow more than 1 image is detected
+    # In that case we take the first image that was detected, as this is expected
+    sd_mother = _npdatetime64_to_datetime(stm_masked_inc["time"].values[sd_mother_index])
+
+    # Format the single difference mother, and save it to the STM
+    sd_mother_formatted = "{}{:0>2d}{:0>2d}".format(sd_mother.year, sd_mother.month, sd_mother.day)
+    stm_masked_inc.attrs["sd_mother"] = sd_mother_formatted
+
+    # calculate the h2ph single difference (= daughter - mother)
+    sd_h2ph = stm_masked_inc["h2ph"] - stm_masked_inc["h2ph"][:, sd_mother_index]
+    stm_masked_inc = stm_masked_inc.assign({"sd_h2ph": (["space", "time"], sd_h2ph.data)})
+
+    # calculate the complex single difference, the amplitude, and the phase
+    mother_comp = stm_masked_inc["complex"][:, sd_mother_index].conj()
+    sd_complex_transposed = stm_masked_inc["complex"].transpose() * mother_comp
+    sd_complex = sd_complex_transposed.transpose()
+    sd_phase = da.angle(sd_complex)
+    sd_amplitude_unnormalized = da.abs(sd_complex)
+    stm_masked_inc = stm_masked_inc.assign({"sd_complex": (["space", "time"], sd_complex.data)})
+    stm_masked_inc = stm_masked_inc.assign(
+        {"sd_amplitude_unnormalized": (["space", "time"], sd_amplitude_unnormalized.data)}
+    )
+    stm_masked_inc = stm_masked_inc.assign({"sd_phase": (["space", "time"], sd_phase.data)})
+
     # Add RD coordinates if requested
     if do_rd_coordinate_conversion:
         wgs84 = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:28992", always_xy=True).transform
@@ -305,7 +453,7 @@ def ps_selection(
     if do_partitioning:
         breakpoints, partition_identifiers = _estimate_breakpoints(
             stm_masked_inc["amplitude"],
-            partitioning_kwargs["db_segmentation"],
+            partitioning_kwargs["db_partitioning"],
             partitioning_kwargs["search_method"],
             partitioning_kwargs["cost_function"],
             partitioning_kwargs["min_obs_partition"],
@@ -318,41 +466,37 @@ def ps_selection(
         groups.data = groups.values
         groups = groups.groupby(stm_masked_inc["partition_id"])
 
+        groups_sd = stm_masked_inc["sd_amplitude_unnormalized"]
+        groups_sd.data = groups_sd.values
+        groups_sd = groups_sd.groupby(stm_masked_inc["partition_id"])
+
         # Calculate the partition NAD and NMAD
-        partition_nad_nmad = groups.map(_compute_grouped_nad_nmad)
-        partition_nmad = partition_nad_nmad["partition_nmad"].data
-        partition_nad = partition_nad_nmad["partition_nad"].data
+        partition_stats = groups.map(_compute_partition_nad_nmad_amp_stats)
+        partition_nmad = partition_stats["partition_nmad"].data
+        partition_nad = partition_stats["partition_nad"].data
+
+        partition_stats_sd = groups_sd.map(_compute_partition_nad_nmad_amp_stats)
 
         # calculate the quality metrics
-        # these are empirical relations for a cubic function to relate the NAD to mean cloud (50%) and quality (95%)
-        mean_cloud_nad = (
-            -7.65752941e-03
-            + 1.33360757e00 * partition_nad
-            + -3.18428074e00 * partition_nad**2
-            + 9.35392564e00 * partition_nad**3
-        )
-        quality_nad = (
-            -0.03222335 + 2.02221987 * partition_nad + -5.76342934 * partition_nad**2 + 14.47118093 * partition_nad**3
-        )
 
-        # these are empirical relations for a cubic function to relate the NMAD to mean cloud (50%) and quality (95%)
-        mean_cloud_nmad = (
-            -1.44869469e-02
-            + 2.00028682e00 * partition_nmad
-            + -5.23271341e00 * partition_nmad**2
-            + 2.11111801e01 * partition_nmad**3
-        )
-        quality_nmad = (
-            0.01907808 + 1.2852969 * partition_nmad + 1.90052824 * partition_nmad**2 + 11.60677721 * partition_nmad**3
-        )
+        quality_nmad = _nad_nmad_quality_metrics(partition_nmad, "nmad", "2sigma")
 
         # Save to the STM
         stm_masked_inc = stm_masked_inc.assign({"partition_nmad": (["space", "time"], partition_nmad)})
         stm_masked_inc = stm_masked_inc.assign({"partition_nmad_quality": (["space", "time"], quality_nmad)})
-        stm_masked_inc = stm_masked_inc.assign({"partition_nmad_mean_cloud": (["space", "time"], mean_cloud_nmad)})
         stm_masked_inc = stm_masked_inc.assign({"partition_nad": (["space", "time"], partition_nad)})
-        stm_masked_inc = stm_masked_inc.assign({"partition_nad_quality": (["space", "time"], quality_nad)})
-        stm_masked_inc = stm_masked_inc.assign({"partition_nad_mean_cloud": (["space", "time"], mean_cloud_nad)})
+        stm_masked_inc = stm_masked_inc.assign(
+            {"partition_sd_amplitude_sigma": (["space", "time"], partition_stats_sd["partition_amp_std"].data)}
+        )
+        stm_masked_inc = stm_masked_inc.assign(
+            {"partition_sd_amplitude_mean": (["space", "time"], partition_stats_sd["partition_amp_mean"].data)}
+        )
+        stm_masked_inc = stm_masked_inc.assign(
+            {"partition_sd_amplitude_median": (["space", "time"], partition_stats_sd["partition_amp_median"].data)}
+        )
+        stm_masked_inc = stm_masked_inc.assign(
+            {"partition_sd_mad": (["space", "time"], partition_stats_sd["partition_amp_mad"].data)}
+        )
 
     if do_outlier_detection:
         outliers = xr.map_blocks(
@@ -366,6 +510,11 @@ def ps_selection(
             template=stm_masked_inc["amplitude"],
         )
         stm_masked_inc = stm_masked_inc.assign({"outliers": (["space", "time"], outliers.data)})
+
+    # Add the classification flag
+    stm_masked_inc = stm_masked_inc.assign(
+        {"classification_flag": (["space"], np.ones_like(stm_masked_inc.space.values).astype(np.int8))}
+    )
 
     # Compute NAD or NMAD if mem_persist is True
     # This only evaluate a very short task graph, since NAD or NMAD is already in memory
@@ -559,8 +708,8 @@ def _nmad_block(amp: xr.DataArray) -> xr.DataArray:
     return nmad
 
 
-def _compute_grouped_nad_nmad(amp: xr.DataArray) -> xr.DataArray:
-    """Compute the NAD and NMAD on a partition basis.
+def _compute_partition_nad_nmad_amp_stats(amp: xr.DataArray) -> xr.DataArray:
+    """Compute the NAD and NMAD and the amplitude statistics on a partition basis.
 
     Parameters
     ----------
@@ -574,13 +723,19 @@ def _compute_grouped_nad_nmad(amp: xr.DataArray) -> xr.DataArray:
 
     """
     data = amp.data
-    nad = np.std(data) / (np.mean(data) + np.finfo(data.dtype).eps)
+    std = np.std(data)
+    mean = np.mean(data)
+    nad = std / (mean + np.finfo(data.dtype).eps)
     median = np.median(data)
     mad = np.median(np.abs(data - median))
     nmad = mad / (median + np.finfo(data.dtype).eps)
 
     amp["partition_nad"] = (amp.dims, np.ones_like(data) * nad)
     amp["partition_nmad"] = (amp.dims, np.ones_like(data) * nmad)
+    amp["partition_amp_std"] = (amp.dims, np.ones_like(data) * std)
+    amp["partition_amp_mean"] = (amp.dims, np.ones_like(data) * mean)
+    amp["partition_amp_mad"] = (amp.dims, np.ones_like(data) * mad)
+    amp["partition_amp_median"] = (amp.dims, np.ones_like(data) * median)
     return amp
 
 
