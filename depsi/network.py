@@ -166,7 +166,7 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
 
 
 def get_ordered_arcs(stm, x_ref_search, y_ref_search, buffer_radius_ref, dist_to_quality, n_max_arcs):
-    """Get ordered arcs based on quality given a particular search area.
+    """Get a list with ordered arcs based on pnt quality and a search area.
 
     Args:
     ----
@@ -201,20 +201,20 @@ def get_ordered_arcs(stm, x_ref_search, y_ref_search, buffer_radius_ref, dist_to
     for _, arc in arcs_and_quality:
         arcs.append(arc)
 
-    # Maak een dictionary van kwaliteit voor de arcs in de eerste lijst (arcs_and_quality_selection)
+    # Create a dictionary with the quality of the arcs
     quality_dict = {tuple(sorted(arc[1])): arc[0] for arc in arcs_and_quality}
 
     return arcs, arcs_and_quality, quality_dict
 
 
 def find_points_within_buffer(x_coords, y_coords, x_pnts, y_pnts, buffer_radius):
-    """Find all points located within a specified buffer radius around a given point or multiple points.
+    """Find all points located within a specified buffer radius around a given location.
 
     This function determines which points in a set of coordinates are located within a defined buffer
     distance around one or more specified points.
 
     The function:
-    1. Converts the input x and y coordinates of the reference points to arrays if they are not already.
+    1. Converts the input x and y coordinates of the search point(s) to arrays if they are not already.
     2. Computes the Euclidean distance between each point in `x_coords` and `y_coords` and the reference points.
     3. Returns the indices of these points for further processing or analysis.
 
@@ -293,16 +293,18 @@ def _ordered_arcs_all_points(rdx, rdy, slc_quality, idx_pnts_buffer, dist_to_qua
     slc_quality_j_buffer = slc_quality_buffer[np.newaxis, :]
 
     # Compute the arc quality time series
+    # quality is based on both sides of the arc
     arc_quality_ts = np.sqrt(slc_quality_i_buffer**2 + slc_quality_j_buffer**2)
 
-    # Get the maximum value
+    # Get the maximum value in the time dimension per arc
+    # This is considered as the 'worst' quality for the entire time period
     arcs_quality_max = np.max(arc_quality_ts, axis=2)
 
     # Get only the lower triangular matrix
     arcs_quality_max_lower = np.tril(arcs_quality_max)
     arcs_dist = np.tril(dist_matrix)
 
-    # Combine the distance sigma and the quality timeserie of the points
+    # Add additional sigma because of the arc length
     arc_quality_dist_max = arcs_quality_max_lower + arcs_dist * dist_to_quality
 
     # Order the arcs
@@ -321,15 +323,24 @@ def _ordered_arcs_all_points(rdx, rdy, slc_quality, idx_pnts_buffer, dist_to_qua
 
 
 def construct_control_network(
-    arcs, quality_dict_arcs, failed_arcs, n_top, n_batch, deg_threshold, min_nodes, min_redundancy, visualize_network=0
+    arcs,
+    quality_dict_arcs,
+    excluded_arcs,
+    n_top,
+    n_batch,
+    deg_threshold,
+    min_nodes,
+    min_redundancy,
+    visualize_network=False,
 ):
-    """Construct a foundational network of arcs based on quality metrics and structural requirements.
+    """Construct a control network of arcs based on quality metrics and structural requirements.
 
-    This function iteratively builds a network from a search area of arcs, filtering out failed arcs
-    and ensuring that the resulting network meets specified criteria, such as a minimum number of nodes
-    and redundancy. The network is constructed by:
+    This function iteratively builds a network from a search area of arcs, filtering out excluded arcs
+    (where an excluded arc is an arc we know we don't want to have) and ensuring that the resulting
+    network meets specified criteria, such as a minimum number of nodes and redundancy.
+    The network is constructed by:
     1. Ranking arcs based on quality metrics provided in `quality_dict_arcs`.
-    2. Excluding arcs that are in the `failed_arcs` list.
+    2. Excluding arcs that are in the `excluded_arcs` list.
     3. Iteratively adding arcs in batches and refining the network to remove nodes with low centrality.
     4. Evaluating the network against requirements such as minimum nodes and average redundancy.
 
@@ -339,14 +350,14 @@ def construct_control_network(
     Args:
     ----
         arcs (list of tuples): List of arcs (pairs of points) within the search area.
-        quality_dict_arcs (dict): Dictionary mapping arcs (tuples) to quality scores.
-        failed_arcs (list of tuples): List of arcs that should be excluded from the network.
+        quality_dict_arcs (dict): Dictionary mapping arcs (tuples) to a sigma value.
+        excluded_arcs (list of tuples): List of arcs that should be excluded from the network.
         n_top (int): Number of top-ranked arcs to start with.
         n_batch (int): Number of additional arcs to add in each iteration.
         deg_threshold (float): Degree threshold for removing low-centrality nodes from the network.
         min_nodes (int): Minimum number of nodes required in the final network.
         min_redundancy (float): Minimum average redundancy (degree) required in the final network.
-        visualize_network (int, optional): If set to 1, the network construction process is visualized.
+        visualize_network (bolean, optional): If set to True, the network construction process is visualized.
 
     Returns:
     -------
@@ -359,15 +370,15 @@ def construct_control_network(
     Example:
     -------
         ref_pnt, final_arcs, initial_ref_pnt, initial_arcs = construct_control_network(
-            arcs, quality_dict_arcs, failed_arcs,
+            arcs, quality_dict_arcs, excluded_arcs,
             n_top=50, n_batch=10,
             deg_threshold=1.5, min_nodes=20, min_redundancy=2.0,
             visualize_network=1
         )
     """
-    # Sort arcs by quality, removing failed arcs from the ranked arcs variable
-    failed_arcs_sorted = [tuple(sorted(arc)) for arc in failed_arcs]
-    arcs_without_failed = [arc for arc in arcs if tuple(sorted(arc)) not in failed_arcs_sorted]
+    # Sort arcs by quality, removing excluded arcs from the ranked arcs variable
+    excluded_arcs_sorted = [tuple(sorted(arc)) for arc in excluded_arcs]
+    arcs_without_excluded = [arc for arc in arcs if tuple(sorted(arc)) not in excluded_arcs_sorted]
 
     # Initialize variables
     current_network = None
@@ -378,7 +389,7 @@ def construct_control_network(
         # Select the arcs for the current iteration
         iteration += 1
         end_idx = n_top + iteration * n_batch
-        arcs_to_test = arcs_without_failed[0:end_idx]
+        arcs_to_test = arcs_without_excluded[0:end_idx]
 
         if not arcs_to_test:  # Break if no more arcs to add
             print("No more arcs to test.")
@@ -386,12 +397,12 @@ def construct_control_network(
 
         # Create a new network using the selected arcs
         current_network = nx.Graph()
-        current_network, _, ref_pnt = _from_arcs_to_graph(arcs_without_failed[:end_idx], plot=visualize_network)
+        current_network, _, ref_pnt = _from_arcs_to_graph(arcs_without_excluded[:end_idx], plot=visualize_network)
         if iteration == 1:
             ref_pnt_initial = ref_pnt
             arcs_initial_network = [tuple(sorted(arc)) for arc in current_network.edges()]
 
-        # Remove nodes with degree = 1
+        # Remove nodes with degree equal or lower than the threshold
         current_network, _, ref_pnt = _remove_low_centrality_nodes(
             current_network, deg_threshold=deg_threshold, plot=visualize_network
         )
@@ -416,15 +427,19 @@ def construct_control_network(
     return ref_pnt, arcs_updated_network_sorted, ref_pnt_initial, arcs_initial_network
 
 
-def _from_arcs_to_graph(arcs, plot=0):
+def _from_arcs_to_graph(arcs, plot=False, save_path="./network.png"):
     """Construct a graph from a set of arcs and identifies key properties of the network.
 
     Args:
     ----
-        arcs (list of tuple): List of arcs (edges) in the graph. Each arc is represented as a tuple
-                              of two nodes, e.g., [(node1, node2), (node2, node3)].
-        plot (int, optional): If 1, the function visualizes the graph structure, including highlighting
-                              connected components. Default is 0 (no visualization).
+        arcs : (list of tuple)
+            List of arcs (edges) in the graph. Each arc is represented as a tuple
+            of two nodes, e.g., [(node1, node2), (node2, node3)].
+        plot : (bolean)
+            Default is False, If True, the function visualizes the graph structure, including highlighting
+            connected components. Default is 0 (no visualization).
+        save_path : (string)
+            Default = "./network"
 
     Returns:
     -------
@@ -442,12 +457,13 @@ def _from_arcs_to_graph(arcs, plot=0):
     network.add_edges_from(arcs)
 
     # Compute the degree centrality
+    # Which says something on how connected one particular node is with other nodes
     degree_centrality = nx.degree_centrality(network)
 
     # Get the reference point (node with the most connections)
     ref_pnt = max(degree_centrality, key=degree_centrality.get)
 
-    if plot == 1:
+    if plot:
         # Visualize the network
         pos = nx.spring_layout(network)  # Lay-out for the graph
         nx.draw(
@@ -474,15 +490,15 @@ def _from_arcs_to_graph(arcs, plot=0):
     return network, degree_centrality, ref_pnt
 
 
-def _remove_low_centrality_nodes(network, deg_threshold, plot=0):
-    """Remove nodes with a specified degree threshold or lower from a graph and updates its properties.
+def _remove_low_centrality_nodes(network, deg_threshold, plot=False):
+    """Remove nodes with a low degree of centrality.
 
     Args:
     ----
         network (networkx.Graph): The input graph from which nodes will be removed.
         deg_threshold (int): The degree threshold; nodes with a degree equal to or less than this value will be removed.
-        plot (int, optional): If 1, the function visualizes the updated graph, including its connected components.
-                              Default is 0 (no visualization).
+        plot (bolean, optional): If True, the function visualizes the updated graph, including its connected components.
+                              Default is False (no visualization).
 
     Returns:
     -------
@@ -494,7 +510,7 @@ def _remove_low_centrality_nodes(network, deg_threshold, plot=0):
     Example:
     -------
         updated_network, degree_centrality, ref_point = remove_low_centrality_nodes(
-            network, deg_threshold=1, plot=1
+            network, deg_threshold=1, plot=False
         )
     """
     # Identify nodes to remove
@@ -514,7 +530,7 @@ def _remove_low_centrality_nodes(network, deg_threshold, plot=0):
     # Get the reference point (node with the highest degree centrality)
     ref_pnt = max(degree_centrality, key=degree_centrality.get)
 
-    if plot == 1:
+    if plot:
         # Visualize the updated network
         pos = nx.spring_layout(network)
         nx.draw(
@@ -591,6 +607,7 @@ def test_succeeded_arcs_control_network(
     arcs_updated_network_sorted = []
     network_check = 0
 
+    # Construct the network based on the input arcs
     current_network = nx.Graph()
     current_network, _, ref_pnt = _from_arcs_to_graph(succeeded_arcs, plot=visualize_network)
     arcs_updated_network = [tuple(sorted(arc)) for arc in current_network.edges()]
@@ -637,25 +654,25 @@ def test_succeeded_arcs_control_network(
     return network_check, arcs_updated_network_sorted, ref_pnt
 
 
-def ordered_arcs_new_point_and_control_network(
-    rdx_new_point,
-    rdy_new_point,
-    slc_quality_new_point,
-    new_point_idx,
+def ordered_arcs_connection_point_and_control_network(
+    rdx_connection_point,
+    rdy_connection_point,
+    slc_quality_connection_point,
+    connection_point_idx,
     rdx_control,
     rdy_control,
     slc_quality_control,
     control_idx,
     dist_to_quality,
 ):
-    """Generate a sorted array of unique arcs between a 'new_point' and the control network.
+    """Generate a sorted array of unique arcs between a 'connection_point' and the control network.
 
-    This function computes arcs between a new point and control points, evaluating each arc based on
+    This function computes arcs between a connection point and control points, evaluating each arc based on
     a combination of spatial distance and SLC quality. The arcs are sorted from best to worst, where "best"
     is determined by the lowest combined quality and distance value.
 
     The function:
-    1. Computes the Euclidean distance between the new point and the control points.
+    1. Computes the Euclidean distance between the connection point and the control points.
     2. Calculates the arc quality time series for each arc.
     3. Combines the distance and maximum quality for each arc to define an overall quality value.
     4. Sorts the arcs by quality values from best (lowest) to worst (highest).
@@ -663,10 +680,10 @@ def ordered_arcs_new_point_and_control_network(
 
     Args:
     ----
-        rdx_new_point (xarray.DataArray): x-coordinate of the new point.
-        rdy_new_point (xarray.DataArray): y-coordinate of the new point.
-        slc_quality_new_point (xarray.DataArray): Array of SLC quality time series for the new point.
-        new_point_idx (xarray.DataArray): Index of the new point.
+        rdx_connection_point (xarray.DataArray): x-coordinate of the connection point.
+        rdy_connection_point (xarray.DataArray): y-coordinate of the connection point.
+        slc_quality_connection_point (xarray.DataArray): Array of SLC quality time series for the connection point.
+        connection_point_idx (xarray.DataArray): Index of the connection point.
         rdx_control (xarray.DataArray): x-coordinates of the control points.
         rdy_control (xarray.DataArray): y-coordinates of the control points.
         slc_quality_control (xarray.DataArray): Array of SLC quality time series for the control points.
@@ -677,19 +694,19 @@ def ordered_arcs_new_point_and_control_network(
     -------
         tuple:
             - arcs (numpy.ndarray): A sorted array of arcs, where each row contains a control point
-              followed by the new point.
+              followed by the connection point.
             - sorted_quality_values (numpy.ndarray): Sorted quality values corresponding to the arcs.
     """
-    # Stack the coordinates of the new point and the control points
-    coords_new_point = np.vstack((rdx_new_point, rdy_new_point)).T
+    # Stack the coordinates of the connection point and the control points
+    coords_connection_point = np.vstack((rdx_connection_point, rdy_connection_point)).T
     coords_control = np.vstack((rdx_control, rdy_control)).T
 
-    # Distance matrix between the new point and the control points
-    dist_matrix = distance_matrix(coords_new_point, coords_control).squeeze()
+    # Distance matrix between the connection point and the control points
+    dist_matrix = distance_matrix(coords_connection_point, coords_control).squeeze()
 
-    # # Compute the quality matrix for new point (pnt i) and the grondlag points (point j)
+    # # Compute the quality matrix for connection point (pnt i) and all control points (point j)
     slc_quality_j = slc_quality_control.values  # Quality values of the control points
-    slc_quality_i = np.expand_dims(slc_quality_new_point.values, axis=0)  # Make sure the dimensions match
+    slc_quality_i = np.expand_dims(slc_quality_connection_point.values, axis=0)  # Make sure the dimensions match
     slc_quality_i = np.repeat(slc_quality_i, repeats=slc_quality_j.shape[0], axis=0)
 
     # Compute arc quality time series (which is a function of the slc_quality of point i and point j)
@@ -699,14 +716,15 @@ def ordered_arcs_new_point_and_control_network(
     # Combine distance and quality
     arc_quality_dist_max = arc_quality_max + dist_matrix * dist_to_quality
 
-    # Sort the arcs and compute the indices of the control points (since point i, the new_point, is in all arcs)
+    # Sort the arcs and compute the indices of the control points (since point i, the connection_point, is in all arcs)
     sorted_control = np.argsort(arc_quality_dist_max)
     sorted_control_idx = control_idx.values[sorted_control]  # sort the indices of the control points as well
     sorted_quality_values = np.sort(arc_quality_dist_max)
 
-    # Compute the arcs between the new_point and the control points. Make sure that the control_points comes first
+    # Compute the arcs between the connection_point and the control points.
+    # Make sure that the control_points comes first
     arcs = np.zeros((len(sorted_control_idx), 2), dtype=int)
     arcs[:, 0] = sorted_control_idx  # grondslag points
-    arcs[:, 1] = new_point_idx.values  # new_point
+    arcs[:, 1] = connection_point_idx.values  # connection_point
 
     return arcs, sorted_quality_values

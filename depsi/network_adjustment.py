@@ -12,10 +12,6 @@ import depsi.network as dn
 def network_adjustment_control_network(A_adjustment, y_obs, sigma_obs):
     """Perform a network adjustment to estimate the parameters of points using the estimated parameters for the arc.
 
-    This function applies BLUE to adjust the parameters of the points in the
-    network, minimizing the residuals between the observed and adjusted values of the arcs. The adjustment process also
-    provides estimates of the variance-covariance matrix of the adjusted parameters and the observations.
-
     The function:
     1. Reshapes the observation vector.
     2. Constructs the variance-covariance matrix (VCM) for the observations.
@@ -120,19 +116,20 @@ def apply_w_test_control_network(m, A, Qx_hat, Qyy, Qyy_inv, y, e_hat):
     Qyy_hat = A @ Qx_hat @ A.transpose()
     Qee = Qyy - Qyy_hat
 
-    # Apply the w-test per detected outlier
+    # Apply the w-test for every observation
+    # the observation with the highest result, will be flaged as a potential outlier
     for w in range(m):
         c_i = np.zeros((m, 1))
         c_i[w, 0] = 1
 
-        A = (c_i.transpose() @ Qyy_inv @ e_hat)[0, 0]  # Haal de enkele waarde op
+        A = (c_i.transpose() @ Qyy_inv @ e_hat)[0, 0]
         B = np.sqrt((c_i.transpose() @ Qyy_inv @ Qee @ Qyy_inv @ c_i)[0, 0])
 
         w_result[w] = A / B
 
     w_result = np.abs(w_result)
 
-    # Re-wrap the biggest outlier
+    # Re-wrap the observation with the highest w-test result
     idx_biggest_w = np.argmax(w_result)
     corrected_y = np.copy(y)
 
@@ -165,9 +162,9 @@ def update_estimated_parameters(
 ):
     """Update the estimated values, time series, and VCM for the given points at a specific iteration.
 
-    This function iterates over the adjustment points, updating the estimated heights, thermal components, and VCM.
-    Additionally, it updates the time series data, corrected time series, and their variance-covariance
-    matrices for each point.
+    This function iterates over the control points, updating the estimated heights, thermal components, and VCM.
+    We do multiple network adjustments by adding additional arcs. For every adjustment we get new estimates for
+    the unknown parameters. Here we update the dictionaries per iteration.
 
     The function:
     1. Checks if the point is new or already exists in the dictionaries.
@@ -224,7 +221,7 @@ def update_estimated_parameters(
         point_time_series_vcm
     )
     """
-    # Loop over each point in the adjustment and update estimated values and time series
+    # Loop over each point in the control network and update estimated values and time series
     for i, point in enumerate(adjustment_points):
         if point not in estimated_values:
             # Initialize estimated values and time series for new points
@@ -263,8 +260,7 @@ def adjustment_matrix_control_network(arcs, nr_pnts, points_network):
     """Construct a sparse design matrix (A matrix) for network adjustment in the 'control' network.
 
     This function creates the A matrix, which describes the relationships between arcs (observations) and points
-    in the network. The matrix is used for adjusting the network to minimize the residuals between the observed
-    arcs and the estimated positions of the points.
+    in the network.
 
     The function:
     1. Defines the number of equations based on the number of arcs.
@@ -289,15 +285,18 @@ def adjustment_matrix_control_network(arcs, nr_pnts, points_network):
         A dense submatrix of the design matrix that represents the part of the matrix corresponding to the selected
         points in the network.
     """
-    neq = len(arcs)
+    neq = len(arcs)  # The number of arcs define the number of equations in the A matrix
     npt = nr_pnts
     eqs = np.concatenate((np.ones(neq), -1 * np.ones(neq)))
-    rows = np.concatenate((np.arange(neq), np.arange(neq)))
-    cols = np.concatenate((arcs[:, 1], arcs[:, 0]))
+    rows = np.concatenate((np.arange(neq), np.arange(neq)))  # Rows in A matrix equal to nr of eqs.
+    cols = np.concatenate((arcs[:, 1], arcs[:, 0]))  # the columnds are defined by the points in adjustment
 
     A = csr_matrix((eqs, (rows, cols)), shape=(neq, npt))
     A_dense = A.toarray()
 
+    # A_dense will contain all points from the stm matrix (e.g., can be up to 10000)
+    # For a lot of points we have no arcs, therefore we can remove these points from the matrix
+    # resulting in A_small
     A_small = A_dense[:, points_network]
 
     return A_small
@@ -349,33 +348,32 @@ def _run_with_timeout(func, max_time, *args, **kwargs):
             return None
 
 
-def _estimate_connection_point_stm(variable, stm_control, arc_variable, arc_sigma, nr_conn, grondslag_conn_points):
-    """Estimate a variable (e.g., cross-range or displacement) for a point relative to the control network.
+def _estimate_connection_point_stm(variable, stm_control, arc_variable, arc_sigma, nr_conn, control_conn_points):
+    """Estimate a variable (e.g., cross-range or displacement) for a conneciton point relative to the control network.
 
-    This function uses the Best Linear Unbiased Estimator (BLUE) method to calculate the value of a variable for a
-    new connection point. It combines information from arc observations and previously estimated values for
-    ground control points (grondslag). Variance-covariance matrices (VCMs) are constructed to ensure proper
-    weighting and uncertainty propagation in the estimation process.
+    This function uses BLUE to calculate the value of a variable for a connection point.
+    It combines information from arc observations and previously estimated values for the control points (grondslag).
+    Variance-covariance matrices (VCMs) are constructed to ensure proper error propagation
 
     Parameters
     ----------
     variable : str
         The name of the variable to estimate (e.g., 'cross_range', 'displacement').
     stm_control : xarray.DataArray
-        State Transition Matrix (STM) of the grondslag points, including the reference point.
+        State Transition Matrix (STM) of the control points, including the reference point.
     arc_variable : numpy.ndarray
         Observations related to the arcs in the network (e.g., arc displacements).
     arc_sigma : numpy.ndarray
         Standard deviations (uncertainties) of the arc observations.
     nr_conn : int
         Number of connection points used for the estimation.
-    grondslag_conn_points : list
-        List of indices representing the grondslag points connected to the new point.
+    control_conn_points : list
+        List of indices representing the control points connected to the connection point.
 
     Returns
     -------
     x_hat : numpy.ndarray
-        Estimated value of the variable for the new connection point.
+        Estimated value of the variable for the connection point.
     Qx_hat : numpy.ndarray
         Variance-covariance matrix of the estimated variable.
     Qyy : numpy.ndarray
@@ -393,32 +391,32 @@ def _estimate_connection_point_stm(variable, stm_control, arc_variable, arc_sigm
 
     Notes
     -----
-    - The observations vector is constructed by adding the estimated values of the grondslag points
+    - The observations vector is constructed by adding the estimated values of the control points
       to the arc observations.
     - The VCM for the observations accounts for uncertainties in both the arc observations and the
-      previously estimated grondslag values.
+      previously estimated control values.
     """
     variable_variance = variable + "_variance"
 
     # Select the right values from the stm_control_solved stm
-    variable_estimate_control = stm_control.sel(space=grondslag_conn_points)[variable]
-    variable_variance_control = stm_control.sel(space=grondslag_conn_points)[variable_variance]
+    variable_estimate_control = stm_control.sel(space=control_conn_points)[variable]
+    variable_variance_control = stm_control.sel(space=control_conn_points)[variable_variance]
 
     # Construct the observations vector
     y_obs = arc_variable + variable_estimate_control.values
     y_obs = np.reshape(y_obs, (len(y_obs), 1))
 
     # Construct the VCM for the observations that need to be solved.
-    # This is the sum of a matrix with the 'estimated' variances for the new connection point and a matrix with the
-    # variances of the grondslag points on the diagonal
+    # This is the sum of a matrix with the 'estimated' variances for the connection point and a matrix with the
+    # variances of the control points on the diagonal
     # The is the same as filling the diagonal of the matrix with the arc variances
 
     # Since the variance for the cross_range and thermal component is not known, it is calculated
-    variance_new_point = arc_sigma**2 - variable_variance_control.values
+    variance_connection_point = arc_sigma**2 - variable_variance_control.values
 
-    # Get the variances of the 'new point' into the full matrix,
-    # since the variances of the new point are causing the covariance terms
-    Qyy = np.ones((nr_conn, nr_conn)) * np.mean(variance_new_point)
+    # Get the variances of the 'connection point' into the full matrix,
+    # since the variances of the connection point are causing the covariance terms
+    Qyy = np.ones((nr_conn, nr_conn)) * np.mean(variance_connection_point)
     # Get the arc variances on the diagonal
     np.fill_diagonal(Qyy, arc_sigma**2)
 
@@ -427,7 +425,7 @@ def _estimate_connection_point_stm(variable, stm_control, arc_variable, arc_sigm
 
     A = np.ones((nr_conn, 1))
 
-    # Estimate the unknown parameter for the new point
+    # Estimate the unknown parameter for the connection point
     x_hat, Qx_hat = est.blue_q_yy_inv(A, y_obs, Qyy_inv)
 
     # Estimate residue
@@ -439,6 +437,9 @@ def _estimate_connection_point_stm(variable, stm_control, arc_variable, arc_sigm
 
 def _detect_ambiguous_series(timeseries, threshold=0.85 * 2 * np.pi):
     """Detect ambiguous time series that may require correction due to phase wrapping and applys corrections.
+
+    Sometimes when the time series for an arc is estimated, it is accidentally shifted by +pi or -pi wrt
+    the other estimated time series. We need to test this, and potentially shift a time series up or down
 
     Parameters
     ----------
@@ -475,7 +476,8 @@ def _detect_ambiguous_series(timeseries, threshold=0.85 * 2 * np.pi):
             correction_counts[j] += 1
             correction_counts[i] += 1
 
-    # Identify point that has most correction suggestions
+    # Identify arc that has most correction suggestions
+    # That arc time series need to be shifted up or down
     max_correction_point = max(correction_counts, key=correction_counts.get)
 
     # Define the direction of the correction (up or down)
@@ -569,25 +571,25 @@ def _estimate_connection_point_displ_stm_input(
     time_series_control = stm_control.sel(space=control_conn_points)["displ_time_series_corrected"]
     time_series_variance_control = stm_control.sel(space=control_conn_points)["displ_time_series_variances"]
 
-    # Extract the right epoch
+    # Extract the right epoch for the displacement adjustment
     displ_control = time_series_control.values[:, t]
     displ_variance_control = time_series_variance_control.values[:, t]
 
-    # Construct the observations vector which is the sum of the arc estimations and the grondslag points
+    # Construct the observations vector which is the sum of the arc estimations and the control points
     y_obs = arc_displ + displ_control
     y_obs = np.reshape(y_obs, (len(y_obs), 1))
 
     # Construct the VCM for the observations that need to be solved.
     # This is the sum of a matrix with the 'estimated' variances for the new connection point and an identity matrix
-    # with the variances of the grondslag points on the diagonal
+    # with the variances of the control points on the diagonal
     # The is the same as filling the diagonal of the matrix with the arc variances
 
     # We estimate the variance of the new point
-    variance_new_point = arc_sigma_displ**2 - displ_variance_control
+    variance_connection_point = arc_sigma_displ**2 - displ_variance_control
 
     # Get the variances of the 'new point' into the full matrix, since the variances of the new point are
     # causing the covariance terms
-    Qyy = np.ones((nr_conn, nr_conn)) * np.mean(variance_new_point)
+    Qyy = np.ones((nr_conn, nr_conn)) * np.mean(variance_connection_point)
     # Get the arc variances on the diagonal
     np.fill_diagonal(Qyy, arc_sigma_displ**2)
 
@@ -673,7 +675,6 @@ def connect_point_to_control_network(
     nr_conn,
     alpha,
     bounds,
-    mother_epoch,
     m2ph,
     correct_epochs_arc,
 ):
@@ -719,8 +720,6 @@ def connect_point_to_control_network(
         - `a`, `b`, `c` are polynomial parameters,
         - `CR` is the cross-range,
         - `therm` is the thermal component.
-    mother_epoch : str
-        Date of the mother epoch (e.g., '20190807').
     m2ph : float
         Factor relating the phase to meters, which varies per mission.
     correct_epochs_arc : int
@@ -752,7 +751,7 @@ def connect_point_to_control_network(
     nr_epochs = len(stm_1_point["time"])
 
     # Compute the ordered-arcs between the connection point and control points
-    arcs, sorted_quality_values = dn.ordered_arcs_new_point_and_control_network(
+    arcs, sorted_quality_values = dn.ordered_arcs_connection_point_and_control_network(
         stm_1_point["rd_x"],
         stm_1_point["rd_y"],
         stm_1_point["slc_quality"],
@@ -784,7 +783,6 @@ def connect_point_to_control_network(
             stm_control_1_point,
             stm_1_point,
             bounds,
-            mother_epoch,
             m2ph,
             test_stochastics=0,
             print_output=0,
@@ -853,11 +851,11 @@ def connect_point_to_control_network(
         (
             cross_range_pnt,
             Qx_cross_range,
-            Qyy_cross_range,
+            _,
             Qyy_cross_range_inv,
             A,
-            y_cross_range,
-            y_cross_range_hat,
+            _,
+            _,
             e_cross_range,
         ) = _estimate_connection_point_stm(
             "cross_range",
@@ -867,15 +865,13 @@ def connect_point_to_control_network(
             nr_conn,
             control_conn_points,
         )
-        thermal_pnt, Qx_thermal, Qyy_thermal, Qyy_thermal_inv, A, y_thermal, y_thermal_hat, e_thermal = (
-            _estimate_connection_point_stm(
-                "thermal_comp",
-                stm_ref_control_solved,
-                estimated_thermal_arc,
-                estimated_thermal_sigma_arc,
-                nr_conn,
-                control_conn_points,
-            )
+        thermal_pnt, Qx_thermal, _, Qyy_thermal_inv, A, _, _, e_thermal = _estimate_connection_point_stm(
+            "thermal_comp",
+            stm_ref_control_solved,
+            estimated_thermal_arc,
+            estimated_thermal_sigma_arc,
+            nr_conn,
+            control_conn_points,
         )
 
         # Apply OMT for cross_range and thermal component
@@ -911,7 +907,7 @@ def connect_point_to_control_network(
 
         # Test whether we need to correct a time series by 2pi or not
         # Sometimes one of the arc will have the timeseries one full cycle above the other two
-        arcs_closing_variable, mean_values, corrections = _detect_ambiguous_series(
+        arcs_closing_variable, _, corrections = _detect_ambiguous_series(
             arcs_closing_variable, threshold=0.85 * 2 * np.pi
         )
         print("Check whether we need to shift a time series ", corrections)
@@ -944,12 +940,10 @@ def connect_point_to_control_network(
             if correct_epochs_arc == 1 and T_omt_displ[t] > k:
                 count_omt_reject += 1
 
-                corrected_y, idx_outlier, correction_type = apply_w_test_control_network(
-                    m_omt, A, Qx_epoch, Qyy, Qyy_inv, y_obs, e_hat_epoch
-                )
+                corrected_y, _, _ = apply_w_test_control_network(m_omt, A, Qx_epoch, Qyy, Qyy_inv, y_obs, e_hat_epoch)
 
                 # Re-estimate the displacement with the corrected y
-                point_epoch, Qx_hat, y_hat_corr, e_hat_epoch_corr = _estimate_connection_point_outlier(
+                point_epoch, _, y_hat_corr, e_hat_epoch_corr = _estimate_connection_point_outlier(
                     corrected_y, A, Qyy_inv
                 )
                 # # Compute the OMT for this particular epoch

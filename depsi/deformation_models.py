@@ -24,9 +24,8 @@ def a_seasonal(t):
     """Construct the A matrix to estimate a seasonal component, a linear velocity, and an offset.
 
     This function constructs an A matrix based on a seasonal model. The seasonal component is modeled as
-    a sine and cosine function of time (in years). The matrix is used in a regression framework to estimate
-    the seasonal variation, linear velocity, and offset parameters. The construction is based on Eq. 4.17 from
-    the thesis by Freek.
+    a sine and cosine function of time (in years).
+    The construction is based on Eq. 4.17 from the thesis by Freek.
 
     The function estimates the seasonal component using the following equation:
     y = a1 * D1 + a2 * D2
