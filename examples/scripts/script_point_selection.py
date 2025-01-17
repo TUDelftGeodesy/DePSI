@@ -26,26 +26,25 @@ initialization_length = 50
 recalibration_jump_size = 10
 
 # PS selection method
-nmad_max = 0.25
-# nad_max = 0.425 #0.3
 ps_selection_method = "nmad"
+threshold = 0.25
 chunks_ps_selection = 1000
 
 # Input variables for the outlier detection
-do_outlier_detection = True
-window_size_outliers = 15
-outlier_detection_db = True
-n_sigma_outliers = 3
+do_ps_outlier_detection = True
+ps_window_size_outliers = 15
+ps_outlier_detection_db = True
+ps_n_sigma_outliers = 3
 
 # Input variables for the partitioning
-do_partitioning = True
-search_method = 'pelt'
-cost_function = 'l2'
-db_partitioning = False
-min_obs_partition = 27
+do_ps_partitioning = True
+ps_partitioning_search_method = 'pelt'
+ps_partitioning_cost_function = 'l2'
+ps_db_partitioning = False
+ps_min_obs_partition = 27
 
 # Compute temporal differences
-mother_epoch_sd = '20190806'
+ps_mother_epoch_sd = '20190806'
 
 # ## FUNCTIONALITY
 # ############ LOAD THE SLCS FROM ZARR ###############
@@ -58,26 +57,26 @@ cropped_slcs = crop_slc_spacetime(slcs,
                                   end_date=last_date)
 
 # ######## POINT SELECTION WITH THE PARAMETERS ABOVE ############
-stm_nmad = ps_selection(cropped_slcs,
-                        threshold=nmad_max,
-                        method=ps_selection_method,
-                        ps_selection_start_date=start_date_ps_selection,
-                        ps_selection_end_date=initialization_length,
-                        output_chunks=chunks_ps_selection,
-                        mem_persist=False,
-                        recalibration_jump_size=recalibration_jump_size,
-                        do_rd_coordinate_conversion=True,
-                        do_partitioning=do_partitioning,
-                        partitioning_kwargs={"db_partitioning": db_partitioning,
-                                             "search_method": search_method,
-                                             "cost_function": cost_function,
-                                             "min_obs_partition": min_obs_partition},
-                        do_outlier_detection=True,
-                        outlier_detection_kwargs={"db_outlier_detection": outlier_detection_db,
-                                                  "window_size": window_size_outliers,
-                                                  "n_sigma": n_sigma_outliers},
-                        single_difference_mother=mother_epoch_sd
-                        )
+stm = ps_selection(cropped_slcs,
+                   method=ps_selection_method,
+                   threshold=threshold,
+                   ps_selection_start_date=start_date_ps_selection,
+                   ps_selection_end_date=initialization_length,
+                   output_chunks=chunks_ps_selection,
+                   mem_persist=False,
+                   recalibration_jump_size=recalibration_jump_size,
+                   do_rd_coordinate_conversion=True,
+                   do_partitioning=do_ps_partitioning,
+                   partitioning_kwargs={"db_partitioning": ps_db_partitioning,
+                                        "search_method": ps_partitioning_search_method,
+                                        "cost_function": ps_partitioning_cost_function,
+                                        "min_obs_partition": ps_min_obs_partition},
+                   do_outlier_detection=do_ps_outlier_detection,
+                   outlier_detection_kwargs={"db_outlier_detection": ps_outlier_detection_db,
+                                             "window_size": ps_window_size_outliers,
+                                             "n_sigma": ps_n_sigma_outliers},
+                   single_difference_mother=ps_mother_epoch_sd
+                   )
 
 # SAVE
-stm_nmad.to_zarr(stm_save_path, mode='w')
+stm.to_zarr(stm_save_path, mode='w')
