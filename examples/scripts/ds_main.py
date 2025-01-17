@@ -58,7 +58,7 @@ def main():
             path_to_pe = settings["phase_est_dir"],
         )
         fileout = os.path.join(settings['stm_dir'], "ds_stm_" + stack_meta['stack_id'] + ".zarr")
-        ds_stm.to_zarr(fileout, mode="w")
+        ds_stm.to_zarr(fileout, mode="a")
 
         ## Merge ps and ds stm
         psds_stm = xr.concat([ps_stm, ds_stm], dim='space')
