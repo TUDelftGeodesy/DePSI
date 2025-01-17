@@ -12,7 +12,7 @@ dependencies = [
     "stmtools",
     "ruptures",
 ]
-description = "Python package for interferometric synthetic aperture radar (InSAR) data processing."
+description = "Python package for interferometric synthetic aperture radar (InSAR) time series processing."
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
