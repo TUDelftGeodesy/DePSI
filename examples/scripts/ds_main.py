@@ -53,6 +53,7 @@ def main():
             slc_dates = stack_meta["slc_dates"],
             mother_date = stack_meta["mother_date"],
             ds_min_cells = settings["ds_min_cells"],
+            ds_shp_test=settings["ds_shp_test"],
             path_to_shapefile = settings["parcel_shapefile"],
             path_to_stm = settings["stm_dir"],
             path_to_pe = settings["phase_est_dir"],
