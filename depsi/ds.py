@@ -141,7 +141,7 @@ def assign_id_pixel(slc_stack, nlines, npixels, path_to_shapefile, ds_min_cells)
     npixels : int
         Number of pixels (range).
     path_to_shapefile : str
-        Path to parcel shapefile with attributes int_id, cropcode, soilcode, knmi_id.
+        Path to parcel shapefile with attributes id, cropcode, soilcode, knmi_id.
     ds_min_cells : int
         Minimum number of radar pixels inside a parcel polygon.
 
