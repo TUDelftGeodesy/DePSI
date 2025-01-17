@@ -20,6 +20,7 @@ def ds_selection(
     slc_dates,
     mother_date,
     ds_min_cells,
+    ds_shp_test,
     path_to_shapefile,
     path_to_stm,
     path_to_pe,
@@ -44,6 +45,8 @@ def ds_selection(
         Mother date in the format yyyyMMdd.
     ds_min_cells : int
         Minimum number of radar pixels inside the specified extent.
+    ds_shp_test : str, optional
+        Statistical homogeneous pixel, by default "yes".
     path_to_shapefile : str
         Path to parcel shapefile with attributes int_id, cropcode, soilcode, knmi_id.
     path_to_stm : str
@@ -106,7 +109,7 @@ def ds_selection(
             ds_stm,
             slc_dates,
             mother_date,
-            ds_shp_test=False,
+            ds_shp_test,
         )
 
         fileout = os.path.join(path_to_stm, "ds_stm_" + stack_id + ".zarr")
@@ -247,7 +250,7 @@ def export_to_hdf(dataset_name, dataset, out_dir, filename):  # noqa: D417
             f.create_dataset(dset_name, data=data_dict[dset_name])
 
 
-def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, mother_date, ds_shp_test=True):  # noqa: D417
+def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, mother_date, ds_shp_test):  # noqa: D417
     """Function that estimates equivalent single mother phase from a full complex coherence
     using multilooking interferogram based on parcel.
 
@@ -264,8 +267,8 @@ def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, mother_date,
         List of integer of slc dates in the format yyyyMMdd.
     mother_date : int
         Mother date in the format yyyyMMdd.
-    ds_shp_test : bool, optional
-        Statistical homogeneous pixel, by default True.
+    ds_shp_test : str, optional
+        Statistical homogeneous pixel, by default "yes".
 
     Returns
     -------
@@ -300,7 +303,7 @@ def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, mother_date,
         cpx_sel = cpx_sel[~np.isnan(cpx_sel).all(axis=1)]
 
         ## Perform brotherhood selection to each parcel
-        if ds_shp_test is True:
+        if ds_shp_test == "yes":
             cpx_sel = shp_test(cpx_sel, "ks-test")
         nlooks[i] = cpx_sel.shape[0]
 
