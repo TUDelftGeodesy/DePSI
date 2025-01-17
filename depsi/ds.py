@@ -18,7 +18,7 @@ def ds_selection(
     nlines,
     npixels,
     slc_dates,
-    master_date,
+    mother_date,
     ds_min_cells,
     path_to_shapefile,
     path_to_stm,
@@ -40,10 +40,10 @@ def ds_selection(
         Number of pixels (range).
     slc_dates : list
         List of integer of slc dates in the format yyyyMMdd.
-    master_date : int
-        Master date in the format yyyyMMdd.
+    mother_date : int
+        Mother date in the format yyyyMMdd.
     ds_min_cells : int
-        Minimum number of radar pixels inside a parcel polygon.
+        Minimum number of radar pixels inside the specified extent.
     path_to_shapefile : str
         Path to parcel shapefile with attributes int_id, cropcode, soilcode, knmi_id.
     path_to_stm : str
@@ -105,7 +105,7 @@ def ds_selection(
             pixel_id,
             ds_stm,
             slc_dates,
-            master_date,
+            mother_date,
             ds_shp_test=False,
         )
 
@@ -247,8 +247,8 @@ def export_to_hdf(dataset_name, dataset, out_dir, filename):  # noqa: D417
             f.create_dataset(dset_name, data=data_dict[dset_name])
 
 
-def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, master_date, ds_shp_test=True):  # noqa: D417
-    """Function that estimates equivalent single master phase from a full complex coherence
+def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, mother_date, ds_shp_test=True):  # noqa: D417
+    """Function that estimates equivalent single mother phase from a full complex coherence
     using multilooking interferogram based on parcel.
 
     Parameters
@@ -262,8 +262,8 @@ def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, master_date,
         STM containing information of DS.
     slc_dates : list
         List of integer of slc dates in the format yyyyMMdd.
-    master_date : int
-        Master date in the format yyyyMMdd.
+    mother_date : int
+        Mother date in the format yyyyMMdd.
     ds_shp_test : bool, optional
         Statistical homogeneous pixel, by default True.
 
@@ -318,11 +318,11 @@ def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, master_date,
         dc_coh[i] = np.abs(np.diag(cpx_coh[i], 1))
         dc_coh[i] = np.insert(dc_coh[i], 0, 0)
 
-        ## Equivalent single master (ESM) phase estimation
-        master_idx = slc_dates.index(master_date)
+        ## Equivalent single mother (ESM) phase estimation
+        mother_idx = slc_dates.index(mother_date)
         if np.isfinite(cpx_coh[i]).all():
             cpx_phases = phase_linking(cpx_coh[i], regularization=0, estimator="emi")
-            esm_phase[i] = np.angle(cpx_phases[master_idx])
+            esm_phase[i] = np.angle(cpx_phases[mother_idx])
         else:
             esm_phase[i] = np.full((len(slc_dates),), np.nan)
 
@@ -343,13 +343,13 @@ def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, master_date,
     return ds_stm, parcel_id, cpx_coh
 
 
-def task(x):  # noqa: D103
+def kstest(x):  # noqa: D103
     return stats.kstest(x[0], x[1]).pvalue
 
 
 def shp_test(data, method="ks-test"):  # noqa: D417
-    """Function that performs brotherhood selection of selected pixels in a parcel by
-    testing whether pixels come from the same distribution.
+    """Function that performs brotherhood selection of selected pixels within the specified extent
+    by testing whether pixels come from the same distribution.
 
     Parameters
     ----------
@@ -376,7 +376,7 @@ def shp_test(data, method="ks-test"):  # noqa: D417
         # pvals       = np.array([stats.kstest(x[0], x[1]).pvalue for x in iter])
         with mp.Pool() as pool:
             iter = itertools.product(np.sort(np.abs(data)), np.sort(np.abs(data)))
-            pvals = np.array(pool.map(task, iter))
+            pvals = np.array(pool.map(kstest, iter))
         idx = np.argwhere(pvals > 0.05)
         if idx.size != 0:
             ksmat[idx] = 1
@@ -402,27 +402,29 @@ def shp_test(data, method="ks-test"):  # noqa: D417
 
 
 def phase_linking(data, regularization=0, estimator="emi"):
-    """Function that provides different phase linking methods for esm phase estimation.
+    """Function that provides different phase linking methods for
+    equivalent single mother (ESM) phase estimation.
 
     Parameters
     ----------
     data : 2D array
-        Complex coherence of a parcel.
+        Complex coherence.
     regularization : int, optional
         Scaling (spectral regularization), by default 0
     estimator : str, optional
         Method to perform phase linking a.k.a. ESM phase estimation, by default "emi"
+        EMI (Eigendecomposition-based Maximum-likelihood-estimator of Interferometric phase)
 
     Returns
     -------
     cpx_phase : 2D array
-        Complex phase estimates of a parcel.
+        Complex phase estimates.
 
     Raises
     ------
     NotImplementedError
         Other methods that are not yet implemented.
-    """  # noqa: D401
+    """  # noqa: D205, D401
     ## Spectral regularization
     if regularization == 1:
         beta = 0.5
