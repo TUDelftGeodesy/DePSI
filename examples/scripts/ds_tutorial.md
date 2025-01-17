@@ -10,7 +10,7 @@ The current implementation performs the following things:
 - load the stack
 - do reslc
 - parcel based multilooking
-- equivalent single master phase estimation
+- equivalent single mother phase estimation
 
 The output will be a space-time matrix (STM) Xarray Dataset with the following attributes:
 - space         : idices, lat, lon, azimuth, and range
@@ -21,7 +21,7 @@ The output will be a space-time matrix (STM) Xarray Dataset with the following a
 - pnt_ampdisp   : amplitude dispersion
 - mean_amp      : mean amplitude
 - dc_coh        : daisy chain coherence
-- esm_phase     : equivalent single master phase
+- esm_phase     : equivalent single mother phase
 
 In addition to the output, there will be intermediate outputs stored in HDF format, such as:
 - id_pixel: 2D array contains parcel_id to each radar pixel
@@ -71,7 +71,7 @@ stacks (stack_root_dir)
 │   ├── stackarea_of_interest.xxx
 │   ├── stackburst_coverage.xxx
 │   ├── stack
-│   │   ├── yyyyMMdd (master)
+│   │   ├── yyyyMMdd (mother)
 │   │   │   ├── cint.raw
 │   │   │   ├── dem_radar.raw
 │   │   │   ├── h2ph_srd.raw
@@ -80,7 +80,7 @@ stacks (stack_root_dir)
 │   │   │   ├── phi.raw
 │   │   │   ├── slave_rsmp_reramped.raw
 │   │   │   ├── ...
-│   │   ├── yyyyMMdd (slave)
+│   │   ├── yyyyMMdd (daughter)
 │   │   │   ├── cint.raw
 │   │   │   ├── h2ph_srd.raw
 │   │   │   ├── lam.raw
@@ -99,15 +99,15 @@ stacks (stack_root_dir)
 │   ├── dates.txt
 │   ├── stackarea_of_interest.xxx
 │   ├── stackburst_coverage.xxx
-│   ├── yyyyMMdd (master)
+│   ├── yyyyMMdd (mother)
 │   │   ├── cint_srd.raw
 │   │   ├── h2ph.raw
 │   │   ├── master.res
 │   │   ├── slc_srd.raw
-│   ├── yyyyMMdd (slave)
+│   ├── yyyyMMdd (daughter)
 │   │   ├── dem_radar.raw
 │   │   ├── lam.raw
-│   │   ├── master.res
+│   │   ├── slave.res
 │   │   ├── phi.raw
 │   │   ├── slc_srd.raw
 ```
@@ -125,8 +125,8 @@ nieuwolda
 │   ├── parcels
 │   │   ├── nieuwolda_attributes.shp (parcel_shapefile)
 │   │   ├── ...
-├── insar (proj_dir); directories below will be created during the run
-│   ├── testpy
+├── [proj_dir] e.g.: insar; directories below will be created during the run
+│   ├── [run_name] e.g.: testpy
 │   │   ├── metadata
 │   │   │   ├── s1_dsc_t037
 │   │   │   │   ├── stack_meta_s1_dsc_t037.json
