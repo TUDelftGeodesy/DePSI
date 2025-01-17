@@ -194,7 +194,7 @@ def assign_id_pixel(slc_stack, nlines, npixels, path_to_shapefile, ds_min_cells)
             rg_centroid.append(np.median(rg[np.unique(mask2d_id[:, 1])]).astype(int))
 
         ## Counter
-        if np.mod(j, round(len(features) / (len(features) / 15))) == 0:
+        if np.mod(j, round(len(features) / (len(features) / 10))) == 0:
             print(f"Done {j} polygons ({round(j/len(features)*100, 2)} %)")
 
     pixel_id = pixel_id.reshape(nlines, npixels)
@@ -327,7 +327,7 @@ def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, mother_date,
             esm_phase[i] = np.full((len(slc_dates),), np.nan)
 
         ## Counter
-        if np.mod(i, round(len(parcel_id) / (len(parcel_id) / 15))) == 0:
+        if np.mod(i, round(len(parcel_id) / (len(parcel_id) / 10))) == 0:
             print(f"Done {i} polygons ({round(i/len(parcel_id)*100, 2)} %)")
 
     print("Update ds_stm file ...")
