@@ -13,48 +13,48 @@ import xarray as xr
 from slc import *  # noqa: F403
 
 
-def extract_master_date(xml_file):
-    """Function to extract master date as an integer from doris_input.xml.
+def extract_mother_date(xml_file):
+    """Function to extract mother date as an integer from doris_input.xml.
 
     Parameters
     ----------
     xml_file : file
-        An xml containing the setup for doris input, inc. the master date.
+        An xml containing the setup for doris input, inc. the mother date.
 
     Returns
     -------
     int
-        Master date as an integer with yyyyMMdd format.
+        Mother date as an integer with yyyyMMdd format.
 
     Raises
     ------
     ValueError
-        Raise when master date element not found in the XML file.
+        Raise when mother date element not found in the XML file.
     """  # noqa: D401
     # Parse the XML file
     tree = ET.parse(xml_file)
     root = tree.getroot()
 
-    # Find the master_date element
-    master_date_element = root.find(".//master_date")
+    # Find the mother element
+    mother_date_element = root.find(".//master_date")
 
-    if master_date_element is not None:
+    if mother_date_element is not None:
         # Extract the date string
-        master_date_str = master_date_element.text
+        mother_date_str = mother_date_element.text
 
         # Convert the date string to a datetime object
-        master_date_obj = datetime.strptime(master_date_str, "%Y-%m-%d")
+        mother_date_obj = datetime.strptime(mother_date_str, "%Y-%m-%d")
 
         # Format the date as an integer in yyyyMMdd format
-        master_date_int = int(master_date_obj.strftime("%Y%m%d"))
+        mother_date_int = int(mother_date_obj.strftime("%Y%m%d"))
 
-        return master_date_int
+        return mother_date_int
     else:
         raise ValueError("master_date element not found in the XML file.")
 
 
 def identify_stacks(settings):
-    """Function to idendify stack data information and store it to a metadata file.
+    """Function to identify stack data information and store it to a metadata file.
     This function works for coregistered SAR data using DORIS.
 
     Parameters
@@ -68,7 +68,7 @@ def identify_stacks(settings):
         Two dictionaries: settings and stack_meta.
         Stack meta contains information of one track
     """  # noqa: D205, D401
-    ## Detect number of master images / tracks
+    ## Detect number of mother images / tracks
     dirlist = os.listdir(settings["stack_root_dir"])
     pattern = re.compile(rf'^{settings["stack_prefix"]}_?s1_[ad]sc_t\d{{3}}$')
     stack_dirs = sorted([os.path.join(settings["stack_root_dir"], i) for i in dirlist if pattern.match(i)])
@@ -113,25 +113,25 @@ def identify_stacks(settings):
 
     stack_meta_list = []
     for i in range(num_tracks):
-        master_date = extract_master_date(os.path.join(stack_dirs[i], "doris_input.xml"))
+        mother_date = extract_mother_date(os.path.join(stack_dirs[i], "doris_input.xml"))
 
         assert (
-            master_date << start_date or master_date >> end_date
-        ), "Master image is outside specified date range, add it later"
+            mother_date << start_date or mother_date >> end_date
+        ), "Mother image is outside specified date range, add it later"
 
         if settings["processor"] == "flinsar":
-            master_dir = os.path.join(stack_dirs[i], str(master_date))
+            mother_dir = os.path.join(stack_dirs[i], str(mother_date))
             full_dates = np.loadtxt(os.path.join(stack_dirs[i], "dates.txt"), dtype=int)
         if settings["processor"] == "caroline":
-            master_dir = os.path.join(stack_dirs[i], "stack", str(master_date))
+            mother_dir = os.path.join(stack_dirs[i], "stack", str(mother_date))
             full_dates = np.loadtxt(os.path.join(stack_dirs[i], "stack", "dir.txt"), dtype=int)
         sid = np.argwhere(full_dates >= start_date)[0][0]
         eid = np.argwhere(full_dates <= end_date)[-1][0]
         slc_dates = full_dates[sid : eid + 1].tolist()
-        if master_date < start_date:
-            slc_dates.insert(0, master_date)
-        if master_date > end_date:
-            slc_dates.append(master_date)
+        if mother_date < start_date:
+            slc_dates.insert(0, mother_date)
+        if mother_date > end_date:
+            slc_dates.append(mother_date)
         nslcs = len(slc_dates)
 
         ## Extract the name of the stack folder
@@ -140,14 +140,14 @@ def identify_stacks(settings):
 
         ## Create list of dates without the mother
         ifg_dates = slc_dates.copy()
-        ifg_dates.remove(master_date)
+        ifg_dates.remove(mother_date)
         nifgs = len(ifg_dates)
 
-        print(f"Track: {stack_id}  Master: {master_date}  nifgs: {nifgs}")
+        print(f"Track: {stack_id}  Mother: {mother_date}  nifgs: {nifgs}")
 
         ## Create a list of stack paths
-        stack_dir = os.path.dirname(master_dir)
-        master_idx = slc_dates.index(master_date)
+        stack_dir = os.path.dirname(mother_dir)
+        mother_idx = slc_dates.index(mother_date)
 
         if settings["reslc"] == "yes":
             stack_type = "cint"
@@ -161,9 +161,9 @@ def identify_stacks(settings):
             filelist = [str(path) for path in filelist]
             slc_paths = [path for path in filelist if extract_date(path) in ifg_dates]
             if settings["processor"] == "caroline":
-                slc_paths.insert(master_idx, os.path.join(master_dir, "slave_rsmp_reramped.raw"))
+                slc_paths.insert(mother_idx, os.path.join(mother_dir, "slave_rsmp_reramped.raw"))
             if settings["processor"] == "flinsar":
-                slc_paths.insert(master_idx, os.path.join(master_dir, "slc_srd.raw"))
+                slc_paths.insert(mother_idx, os.path.join(mother_dir, "slc_srd.raw"))
 
         if settings["reslc"] == "no":
             stack_type = "slc"
@@ -175,7 +175,7 @@ def identify_stacks(settings):
 
         ## Read data from the master res file
         if settings["processor"] == "caroline":
-            with open(os.path.join(master_dir, "master.res")) as f:
+            with open(os.path.join(mother_dir, "master.res")) as f:
                 lines = f.readlines()
                 swath = lines[37].strip().split()[-1]
                 mode = lines[38].strip().split()[-1]
@@ -202,9 +202,9 @@ def identify_stacks(settings):
             "stack_prefix": settings["stack_prefix"],
             "meta_dir": os.path.join(settings["meta_dir"], stack_id),
             "do_reslc": settings["reslc"],
-            "master_date": master_date,
+            "mother_date": mother_date,
             "stack_dir": stack_dir,
-            "master_dir": master_dir,
+            "mother_dir": mother_dir,
             "slc_paths": slc_paths,
             "stack_type": stack_type,
             "stack_id": stack_id,
@@ -286,8 +286,8 @@ def load_slc_stack(stack_meta, chunks=(500, 500)):
         An updated stack metadata.
     """  # noqa: D205, D401
     ## Read variables
-    master_dir = stack_meta["master_dir"]
-    master_date = stack_meta["master_date"]
+    mother_dir = stack_meta["mother_dir"]
+    mother_date = stack_meta["mother_date"]
     filelist = stack_meta["slc_paths"]
     npixels = stack_meta["npixels_res"]
     nlines = stack_meta["nlines_res"]
@@ -295,10 +295,10 @@ def load_slc_stack(stack_meta, chunks=(500, 500)):
 
     ## Load coordinates
     lat = sarxarray.from_binary(
-        [os.path.join(master_dir, "phi.raw")], shape=(nlines, npixels), vlabel="lat", dtype=np.float32, chunks=chunks
+        [os.path.join(mother_dir, "phi.raw")], shape=(nlines, npixels), vlabel="lat", dtype=np.float32, chunks=chunks
     )
     lon = sarxarray.from_binary(
-        [os.path.join(master_dir, "lam.raw")], shape=(nlines, npixels), vlabel="lon", dtype=np.float32, chunks=chunks
+        [os.path.join(mother_dir, "lam.raw")], shape=(nlines, npixels), vlabel="lon", dtype=np.float32, chunks=chunks
     )
 
     ## Load SLCs and crop to aoi
@@ -343,25 +343,24 @@ def load_slc_stack(stack_meta, chunks=(500, 500)):
         ## Assign datetime as time coordinates
         ifg_stack["time"] = [datetime.strptime(str(date_int), "%Y%m%d") for date_int in slc_dates]
 
-        ## Load master SLC
-        master_idx = slc_dates.index(master_date)
-        slc_master = ifg_stack.isel(time=slice(master_idx, master_idx + 1))
+        ## Load mother SLC
+        mother_idx = slc_dates.index(mother_date)
+        slc_mother = ifg_stack.isel(time=slice(mother_idx, mother_idx + 1))
 
         ## Extract aoi indices for cropping stack to the area of interest
         l0, lN, p0, pN = extract_stack_aoi_indices(ifg_stack, stack_meta)  # noqa: N806
 
         ## Crop stack
         ifg_stack_subset = ifg_stack.sel(azimuth=slice(l0, lN), range=slice(p0, pN))
-        slc_master_subset = slc_master.sel(azimuth=slice(l0, lN), range=slice(p0, pN))
+        slc_mother_subset = slc_mother.sel(azimuth=slice(l0, lN), range=slice(p0, pN))
 
         ## Re-SLC
-        # reslc = da.conj(stack_subset.complex.values) / master_subset.complex.values
-        slc_stack_out = ifg_to_slc(slc_master_subset, ifg_stack_subset)  # noqa: F405
+        slc_stack_out = ifg_to_slc(slc_mother_subset, ifg_stack_subset)  # noqa: F405
 
-        ## Insert master slc to the re-slc stack
-        ## TODO: check the master slc
+        ## Insert mother slc to the re-slc stack
+        ## TODO: check the mother slc
         slc_stack_subset = (
-            xr.concat([slc_stack_out, slc_master_subset], dim="time")
+            xr.concat([slc_stack_out, slc_mother_subset], dim="time")
             .drop_duplicates(dim="time", keep="last")
             .sortby("time")
         )
