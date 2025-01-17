@@ -369,8 +369,8 @@ def read_slc_stack(filename: str) -> xr.Dataset:
     assert os.path.exists(filename), f"The requested file {filename} does not exist!"
 
     # Load the zarr file as a xr.Dataset
-    ds = xr.open_zarr(filename)
+    dataset = xr.open_zarr(filename)
     # Add complex, amplitude, and phase to the dataset
-    slcs = sarxarray.from_dataset(ds)
+    slcs = sarxarray.from_dataset(dataset)
 
     return slcs
