@@ -57,7 +57,7 @@ def ds_selection(
     Returns
     -------
     ds_stm : xr.Dataset
-        Selected DS as virtial PS in the form of STM with two variables: space and time.
+        Selected DS as virtial PS in the form of an STM with two dimensions: space and time.
     """  # noqa: D401, D205
     ## Assign id pixel
     print(
@@ -224,16 +224,16 @@ def assign_id_pixel(slc_stack, nlines, npixels, path_to_shapefile, ds_min_cells)
 
 
 def export_to_hdf(dataset_name, dataset, out_dir, filename):  # noqa: D417
-    """Funtion that exports single or multiple dataset into HDF file.
+    """Funtion that exports a single or multiple dataset(s) into an HDF file.
 
     Parameters
     ----------
     dataset_name : list
-        List of strings containing the name of dataset to be stored.
+        List of strings containing the name(s) of dataset(s) to be stored.
     dataset : list
         List of arrays containing the data to be stored.
     out_dir : str
-        Path to directory.
+        Path to output directory.
     filename : str
         Output filename without extention.
 
@@ -251,8 +251,8 @@ def export_to_hdf(dataset_name, dataset, out_dir, filename):  # noqa: D417
 
 
 def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, mother_date, ds_shp_test):  # noqa: D417
-    """Function that estimates equivalent single mother phase from a full complex coherence
-    using multilooking interferogram based on parcel.
+    """Function that estimates equivalent single mother phase from a full complex coherence matrix
+    after multilooking interferograms based on parcel id.
 
     Parameters
     ----------
@@ -268,7 +268,7 @@ def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, mother_date,
     mother_date : int
         Mother date in the format yyyyMMdd.
     ds_shp_test : str, optional
-        Statistical homogeneous pixel, by default "yes".
+        Do statistical homogeneous pixel (shp) test, by default "yes".
 
     Returns
     -------
