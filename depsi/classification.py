@@ -113,7 +113,7 @@ def ps_selection(
         with attributes:
         - ps_selection_start_date: the epoch of the first image used for the PS selection
         - ps_selection_end_date: the epoch of the last image used for the PS selection
-        - sd_mother: the epoch of the mother used for the single differences
+        - ps_sd_mother: the epoch of the mother used for the single differences
         with variables:
         - h2ph (space, time): the height to phase conversion
         - lat (space): latitude of the PS
@@ -433,7 +433,7 @@ def ps_selection(
 
     # Format the single difference mother, and save it to the STM
     sd_mother_formatted = "{}{:0>2d}{:0>2d}".format(sd_mother.year, sd_mother.month, sd_mother.day)
-    stm_masked_inc.attrs["sd_mother"] = sd_mother_formatted
+    stm_masked_inc.attrs["ps_sd_mother"] = sd_mother_formatted
 
     # calculate the h2ph single difference (= daughter - mother)
     sd_h2ph = stm_masked_inc["h2ph"] - stm_masked_inc["h2ph"][:, sd_mother_index]
