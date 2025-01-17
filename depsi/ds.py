@@ -25,7 +25,7 @@ def ds_selection(
     path_to_stm,
     path_to_pe,
 ):
-    """Function to read slc stack, identify id pixel, perform multilooking,
+    """Function to read an slc stack, identify id pixel, perform multilooking,
     and estimate equivalent single mother phase.
 
     Parameters
