@@ -13,6 +13,8 @@ from scipy.spatial import KDTree
 from depsi.point_quality import _detect_outliers, _estimate_breakpoints, _nad_nmad_quality_metrics
 from depsi.utils import _npdatetime64_to_datetime, crop_slc_spacetime
 
+# partitioning and outlier detection when requested in ps_selection require a fixed set of keywords to function.
+# The following lines are the required keywords against which the input dictionaries will be checked.
 REQUIRED_PARTITIONING_KEYS = ["db_partitioning", "search_method", "cost_function", "min_obs_partition"]
 REQUIRED_OUTLIER_DETECTION_KEYS = ["db_outlier_detection", "window_size", "n_sigma"]
 
