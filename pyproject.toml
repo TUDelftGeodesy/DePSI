@@ -77,7 +77,6 @@ lint.select = [
 lint.ignore = [
 "D100", "D101", "D104", "D105", "D106", "D107", "D203", "D213", "D413"
 ] # docstring style
-# UP032 attempts to transform .format() to f-string, which does not work for all format functionality
 
 line-length = 120
 exclude = ["docs", "build", "*.ipynb", "examples/*"]
