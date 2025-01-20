@@ -11,62 +11,82 @@ from depsi.classification import _idx_within_distance, _nad_block, _nmad_block, 
 rng = np.random.default_rng(42)
 
 
-def test_ps_seletion_nad():
+def test_ps_selection_nad():
     slcs = xr.Dataset(
         data_vars={"amplitude": (("azimuth", "range", "time"), np.ones((10, 10, 10)))},
-        coords={"azimuth": np.arange(10), "range": np.arange(10), "time": np.arange(10)},
+        coords={
+            "azimuth": np.arange(10),
+            "range": np.arange(10),
+            "time": [np.datetime64(f"2015-01-{i:0>2d}") for i in range(1, 11)],
+        },
     )
     res = ps_selection(slcs, 0.5, method="nad", output_chunks=5)
     assert res.sizes["time"] == 10
     assert res.sizes["space"] == 100
-    assert "pnt_nad" in res
+    assert "selection_nad" in res
     assert "azimuth" in res
     assert "range" in res
     assert "space" in res.dims
     assert "time" in res.dims
-    assert isinstance(res["pnt_nad"].data, da.core.Array)
+    assert isinstance(res["selection_nad"].data, da.core.Array)
 
 
-def test_ps_seletion_nmad():
+def test_ps_selection_nmad():
     slcs = xr.Dataset(
         data_vars={"amplitude": (("azimuth", "range", "time"), np.ones((10, 10, 10)))},
-        coords={"azimuth": np.arange(10), "range": np.arange(10), "time": np.arange(10)},
+        coords={
+            "azimuth": np.arange(10),
+            "range": np.arange(10),
+            "time": [np.datetime64(f"2015-01-{i:0>2d}") for i in range(1, 11)],
+        },
     )
     res = ps_selection(slcs, 0.5, method="nmad", output_chunks=5)
     assert res.sizes["time"] == 10
     assert res.sizes["space"] == 100
-    assert "pnt_nmad" in res
+    assert "selection_nmad" in res
     assert "azimuth" in res
     assert "range" in res
     assert "space" in res.dims
     assert "time" in res.dims
-    assert isinstance(res["pnt_nmad"].data, da.core.Array)
+    assert isinstance(res["selection_nmad"].data, da.core.Array)
 
 
-def test_ps_seletion_nad_mempersist():
+def test_ps_selection_nad_mempersist():
     """When mem_persist=True, results should be a numpy array."""
     slcs = xr.Dataset(
         data_vars={"amplitude": (("azimuth", "range", "time"), np.ones((10, 10, 10)))},
-        coords={"azimuth": np.arange(10), "range": np.arange(10), "time": np.arange(10)},
+        coords={
+            "azimuth": np.arange(10),
+            "range": np.arange(10),
+            "time": [np.datetime64(f"2015-01-{i:0>2d}") for i in range(1, 11)],
+        },
     )
     res = ps_selection(slcs, 0.5, method="nad", output_chunks=5, mem_persist=True)
-    assert isinstance(res["pnt_nad"].data, np.ndarray)
+    assert isinstance(res["selection_nad"].data, np.ndarray)
 
 
-def test_ps_seletion_nmad_mempersist():
+def test_ps_selection_nmad_mempersist():
     """When mem_persist=True, results should be a numpy array."""
     slcs = xr.Dataset(
         data_vars={"amplitude": (("azimuth", "range", "time"), np.ones((10, 10, 10)))},
-        coords={"azimuth": np.arange(10), "range": np.arange(10), "time": np.arange(10)},
+        coords={
+            "azimuth": np.arange(10),
+            "range": np.arange(10),
+            "time": [np.datetime64(f"2015-01-{i:0>2d}") for i in range(1, 11)],
+        },
     )
     res = ps_selection(slcs, 0.5, method="nmad", output_chunks=5, mem_persist=True)
-    assert isinstance(res["pnt_nmad"].data, np.ndarray)
+    assert isinstance(res["selection_nmad"].data, np.ndarray)
 
 
-def test_ps_seletion_not_implemented():
+def test_ps_selection_not_implemented():
     slcs = xr.Dataset(
         data_vars={"amplitude": (("azimuth", "range", "time"), np.ones((10, 10, 10)))},
-        coords={"azimuth": np.arange(10), "range": np.arange(10), "time": np.arange(10)},
+        coords={
+            "azimuth": np.arange(10),
+            "range": np.arange(10),
+            "time": [np.datetime64(f"2015-01-{i:0>2d}") for i in range(1, 11)],
+        },
     )
     # catch not implemented method
     with pytest.raises(NotImplementedError):
@@ -199,7 +219,11 @@ def test_nad_block_select_two():
     amp[0, 0:2, :] = 1.0  # Two pixels with constant amplitude
     slcs = xr.Dataset(
         data_vars={"amplitude": (("azimuth", "range", "time"), amp)},
-        coords={"azimuth": np.arange(10), "range": np.arange(10), "time": np.arange(10)},
+        coords={
+            "azimuth": np.arange(10),
+            "range": np.arange(10),
+            "time": [np.datetime64(f"2015-01-{i:0>2d}") for i in range(1, 11)],
+        },
     )
     res = ps_selection(slcs, 1e-10, method="nad", output_chunks=5)  # Select pixels with dispersion lower than 0.00001
     assert res.sizes["time"] == 10
@@ -212,7 +236,11 @@ def test_nmad_block_select_two():
     amp[0, 0:2, :] = 1.0  # Two pixels with constant amplitude
     slcs = xr.Dataset(
         data_vars={"amplitude": (("azimuth", "range", "time"), amp)},
-        coords={"azimuth": np.arange(10), "range": np.arange(10), "time": np.arange(10)},
+        coords={
+            "azimuth": np.arange(10),
+            "range": np.arange(10),
+            "time": [np.datetime64(f"2015-01-{i:0>2d}") for i in range(1, 11)],
+        },
     )
     res = ps_selection(slcs, 1e-10, method="nmad", output_chunks=5)  # Select pixels with dispersion lower than 0.00001
     assert res.sizes["time"] == 10
