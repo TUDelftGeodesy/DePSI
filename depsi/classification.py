@@ -302,21 +302,13 @@ def ps_selection(
         start_date = _npdatetime64_to_datetime(stm_masked["time"].values[0])
         end_date = _npdatetime64_to_datetime(stm_masked["time"].values[-1])
 
-        stm_masked.attrs["ps_selection_start_date"] = "{}{:0>2d}{:0>2d}".format(
-            start_date.year, start_date.month, start_date.day
-        )
-        stm_masked.attrs["ps_selection_end_date"] = "{}{:0>2d}{:0>2d}".format(
-            end_date.year, end_date.month, end_date.day
-        )
+        stm_masked.attrs["ps_selection_start_date"] = f"{start_date.year}{start_date.month:0>2d}{start_date.day:0>2d}"
+        stm_masked.attrs["ps_selection_end_date"] = f"{end_date.year}{end_date.month:0>2d}{end_date.day:0>2d}"
     else:
         start_date = _npdatetime64_to_datetime(ps_selection_times[0])
         end_date = _npdatetime64_to_datetime(ps_selection_times[-1])
-        stm_masked.attrs["ps_selection_start_date"] = "{}{:0>2d}{:0>2d}".format(
-            start_date.year, start_date.month, start_date.day
-        )
-        stm_masked.attrs["ps_selection_end_date"] = "{}{:0>2d}{:0>2d}".format(
-            end_date.year, end_date.month, end_date.day
-        )
+        stm_masked.attrs["ps_selection_start_date"] = f"{start_date.year}{start_date.month:0>2d}{start_date.day:0>2d}"
+        stm_masked.attrs["ps_selection_end_date"] = f"{end_date.year}{end_date.month:0>2d}{end_date.day:0>2d}"
 
     # add incremental and recalibration NAD / NMAD
     for loop_method in ["nmad", "nad"]:
@@ -432,7 +424,7 @@ def ps_selection(
     sd_mother = _npdatetime64_to_datetime(stm_masked_inc["time"].values[sd_mother_index])
 
     # Format the single difference mother, and save it to the STM
-    sd_mother_formatted = "{}{:0>2d}{:0>2d}".format(sd_mother.year, sd_mother.month, sd_mother.day)
+    sd_mother_formatted = f"{sd_mother.year}{sd_mother.month:0>2d}{sd_mother.day:0>2d}"
     stm_masked_inc.attrs["ps_sd_mother"] = sd_mother_formatted
 
     # calculate the h2ph single difference (= daughter - mother)
