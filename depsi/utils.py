@@ -4,6 +4,7 @@ try:
     from datetime import UTC, datetime
 except ImportError:  # UTC can only be imported from Python 3.11 onwards
     from datetime import datetime, timezone
+    import warnings
 
     UTC = timezone.utc
     warnings.warn(
