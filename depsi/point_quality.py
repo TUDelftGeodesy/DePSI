@@ -5,6 +5,8 @@ import numpy as np
 import ruptures as rpt
 import xarray as xr
 
+# The partitioning requires a jump size when using pelt mode. This should always be 5.
+# TODO: add documentation as to why this should be 5
 PELT_JUMP = 5
 
 
