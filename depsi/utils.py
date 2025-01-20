@@ -6,7 +6,14 @@ except ImportError:  # UTC can only be imported from Python 3.11 onwards
     from datetime import datetime, timezone
 
     UTC = timezone.utc
-    DeprecationWarning("UTC import is only supported from Python 3.11 onwards. Please upgrade your system.")
+    warnings.warn(
+    """
+    DePSI uses datetime.UTC is only supported from Python 3.11 onwards.
+    For an older Python versions, datetime.timezone.utc is used. 
+    This might be deprecated in newer DePSI versions.
+    """,
+    DeprecationWarning,
+    )
 
 import geopandas
 import numpy as np
