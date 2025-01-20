@@ -1,4 +1,7 @@
 import os
+from typing import Literal
+
+import pyproj
 
 try:
     from datetime import UTC, datetime
@@ -285,3 +288,78 @@ def crop_slc_spacetime(
         slcs = slcs.where(space_mask.compute(), drop=True)
 
     return slcs
+
+
+def project_stm_coordinates(stm: xr.Dataset, projection: Literal["RD"] | str = "RD") -> xr.Dataset:
+    """Project the latitude and longitude of a space-time matrix to another reference frame.
+
+    The latitude and longitude layers are transformed into the desired projection, default Rijksdriehoek or RD.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+      Space-time matrix with the layers `lat` (latitude) and `lon` (longitude in WGS84 (EPSG:4326), and coordinate
+      `space`
+    projection: Literal["RD"] | str, optional
+      Projection to which the latitude and longitude coordinates should be transformed. "RD" defaults to "EPSG:28992".
+      Default "RD"
+
+    Returns
+    -------
+    xr.Dataset
+      Space-time matrix with the added layers `projection_x` and `projection_y`, where projection is the requested
+      parameter `projection` in lower case.
+
+    Raises
+    ------
+    AssertionError
+      When layers "lon" or "lat" do not exist in `stm`.
+    """
+    assert "lon" in stm.keys(), "Expected a space-time matrix with longitude layer named lon but it is not there!"
+    assert "lat" in stm.keys(), "Expected a space-time matrix with latitude layer named lat but it is not there!"
+    if projection == "RD":
+        projection_formatted = "EPSG:28992"
+    elif projection[:5] == "EPSG:":
+        projection_formatted = projection
+    else:
+        raise ValueError(f"Invalid projection provided! Expected 'RD' or 'EPSG:###' but got {projection}!")
+
+    wgs84 = pyproj.Transformer.from_crs("EPSG:4326", projection_formatted, always_xy=True).transform
+    # Convert Lat and Lon to coordinates
+    proj_x, proj_y = wgs84(stm["lon"], stm["lat"])
+
+    # Add coordinates to the dataset
+    stm = stm.assign({f"{projection.lower()}_x": (["space"], proj_x)})
+    stm = stm.assign({f"{projection.lower()}_y": (["space"], proj_y)})
+
+    return stm
+
+
+def add_stm_time_deltas(stm: xr.Dataset) -> xr.Dataset:
+    """Add the time differences since the first image to a space-time matrix.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+      the space-time matrix with an axis "time"
+
+    Returns
+    -------
+    xr.Dataset
+      the space-time matrix with two new variables:
+      - `days_since_first_img`, the number of days since the first epoch in the STM
+      - `years_since_first_img`, the number of years since the first epoch in the STM, assuming 365.2425 days per year
+
+    """
+    assert "time" in stm.keys(), "Expected STM to have time axis but it's not there!"
+    # Add extra time coordinate variables for time intervals since first image
+    days = np.array(
+        [
+            (_npdatetime64_to_datetime(date) - _npdatetime64_to_datetime(stm["time"].values[0])).days
+            for date in stm["time"].values
+        ]
+    )
+    stm = stm.assign({"days_since_first_img": (["time"], days)})
+    stm = stm.assign({"years_since_first_img": (["time"], days / 365.2425)})
+
+    return stm

@@ -5,7 +5,6 @@ from typing import Literal
 
 import dask.array as da
 import numpy as np
-import pyproj
 import pytz
 import xarray as xr
 from scipy.spatial import KDTree
@@ -28,7 +27,6 @@ def ps_selection(
     ps_selection_start_date: datetime | str | None = None,
     ps_selection_end_date: datetime | str | int | None = None,
     recalibration_jump_size: int = 10,
-    do_rd_coordinate_conversion: bool = False,
     do_partitioning: bool = False,
     partitioning_kwargs: dict | None = None,
     do_outlier_detection: bool = False,
@@ -79,9 +77,6 @@ def ps_selection(
     recalibration_jump_size: int, optional
       the number of images that the recalibration NAD / NMAD variables remains constant. Will start after the
       initialization epoch (if ps_selection_start_date and ps_selection_end_date are not None). Defaults to 10.
-    do_rd_coordinate_conversion: bool, optional
-      boolean to trigger coordinate conversion from latitude/longitude (WGS84) to RD_X/RD_Y (Rijksdriehoek). This only
-      makes sense for AoIs located in the Netherlands. Defaults to False.
     do_partitioning: bool, optional
       boolean to trigger the breakpoint analysis. Defaults to False.
     partitioning_kwargs: dict | None, optional
@@ -147,12 +142,7 @@ def ps_selection(
         - sd_amplitude_unnormalized (space, time): single difference complex phasor amplitude to
             single_difference_mother, not normalized
         - sd_phase (space, time): single difference phase with respect to single_difference_mother
-        - days_since_first_img (time): number of days since the first image
-        - years_since_first_img (time): number of years since the first image (assuming 365.2425 days per year)
         - classification_flag (space): 1 for all selected PS
-        If do_rd_coordinate_conversion is set to True:
-        - rd_x (space): Rijksdriehoek x coordinate if requested (only recommended in the Netherlands)
-        - rd_y (space): Rijksdriehoek y coordinate if requested (only recommended in the Netherlands)
         If do_partitioning is set to True:
         - breakpoints (space, time): boolean array of the breakpoint locations
         - partition_id (space, time): unique identifier for each partition
@@ -448,26 +438,6 @@ def ps_selection(
         {"sd_amplitude_unnormalized": (["space", "time"], sd_amplitude_unnormalized.data)}
     )
     stm_masked_inc = stm_masked_inc.assign({"sd_phase": (["space", "time"], sd_phase.data)})
-
-    # Add RD coordinates if requested
-    if do_rd_coordinate_conversion:
-        wgs84 = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:28992", always_xy=True).transform
-        # Convert Lat and Lon to RD-coordinates
-        rd_x, rd_y = wgs84(stm_masked_inc["lon"], stm_masked_inc["lat"])
-
-        # Add RD coordinates to the dataset
-        stm_masked_inc = stm_masked_inc.assign({"rd_x": (["space"], rd_x)})
-        stm_masked_inc = stm_masked_inc.assign({"rd_y": (["space"], rd_y)})
-
-    # Add extra time coordinate variables for time intervals since first image
-    days = np.array(
-        [
-            (_npdatetime64_to_datetime(date) - _npdatetime64_to_datetime(stm_masked["time"].values[0])).days
-            for date in stm_masked["time"].values
-        ]
-    )
-    stm_masked_inc = stm_masked_inc.assign({"days_since_first_img": (["time"], days)})
-    stm_masked_inc = stm_masked_inc.assign({"years_since_first_img": (["time"], days / 365.2425)})
 
     if do_partitioning:
         breakpoints, partition_identifiers = _estimate_breakpoints(

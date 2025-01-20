@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from depsi.io import read_slc_stack
-from depsi.utils import crop_slc_spacetime
+from depsi.utils import crop_slc_spacetime, add_stm_time_deltas, project_stm_coordinates
 from depsi.classification import ps_selection
 
 # ############## INPUT VARIABLES
@@ -65,7 +65,6 @@ stm = ps_selection(cropped_slcs,
                    output_chunks=chunks_ps_selection,
                    mem_persist=False,
                    recalibration_jump_size=recalibration_jump_size,
-                   do_rd_coordinate_conversion=True,
                    do_partitioning=do_ps_partitioning,
                    partitioning_kwargs={"db_partitioning": ps_db_partitioning,
                                         "search_method": ps_partitioning_search_method,
@@ -77,6 +76,12 @@ stm = ps_selection(cropped_slcs,
                                              "n_sigma": ps_n_sigma_outliers},
                    single_difference_mother=ps_mother_epoch_sd
                    )
+
+# Add RD coordinates to the STM
+stm = project_stm_coordinates(stm, "RD")
+
+# Add time deltas to the STM
+stm = add_stm_time_deltas(stm)
 
 # SAVE
 stm.to_zarr(stm_save_path, mode='w')
