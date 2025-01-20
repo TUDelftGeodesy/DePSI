@@ -43,6 +43,10 @@ def ps_selection(
     The original `azimuth` and `range` coordinates will be persisted.
     The computed NAD or NMAD will be added to the output dataset as a new variable. It can be persisted in
     memory if `mem_persist` is True.
+    The original time axis will be preserved in all cases. If `ps_selection_start_date` and `ps_selection_end_date`
+    are provided, the selection will only use the images in the provided time window. However, the full time axis
+    will be preserved and returned. In this case, the layers `selection_nmad` / `selection_nad` and `full_ts_nmad` /
+    `full_ts_nad` are thus different.
 
     Parameters
     ----------
