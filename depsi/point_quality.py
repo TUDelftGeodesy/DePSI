@@ -8,6 +8,20 @@ import xarray as xr
 # The partitioning requires a jump size when using pelt mode. This should always be 5.
 # TODO: add documentation as to why this should be 5
 PELT_JUMP = 5
+# The conversion from NAD and NMAD to standard deviation is done using an empirical approximation. Four approximations
+# have been modeled: NAD - mean (the mean of the simulations for NAD), NAD - 2sigma (the mean of the simulations
+# plus 2 sigma for NAD), and the same two for NMAD. The function is of the form value = A + B*x + C*x^2 + D*x^3 .
+# In this dictionary the values are stored as [A, B, C, D]
+NAD_NMAD_TO_SIGMA_CONVERSION = {
+    "nad": {
+        "mean": [-7.65752941e-03, 1.33360757e00, -3.18428074e00, 9.35392564e00],
+        "2sigma": [-0.03222335, 2.02221987, -5.76342934, 14.47118093],
+    },
+    "nmad": {
+        "mean": [-1.44869469e-02, 2.00028682e00, -5.23271341e00, 2.11111801e01],
+        "2sigma": [0.01907808, 1.2852969, 1.90052824, 11.60677721],
+    },
+}
 
 
 def _estimate_breakpoints(
@@ -281,34 +295,20 @@ def _nad_nmad_quality_metrics(
     -------
     xr.DataArray
         DataArray with the quality metrics
+
+    Raises
+    ------
+    AssertionError
+      when `input_mode` or `output_mode` do not match the given options
     """
-    match input_mode:
-        case "nad":
-            match output_mode:
-                case "mean":
-                    output = (
-                        -7.65752941e-03
-                        + 1.33360757e00 * nad_nmad
-                        + -3.18428074e00 * nad_nmad**2
-                        + 9.35392564e00 * nad_nmad**3
-                    )
-                case "2sigma":
-                    output = -0.03222335 + 2.02221987 * nad_nmad + -5.76342934 * nad_nmad**2 + 14.47118093 * nad_nmad**3
-                case _:
-                    raise ValueError(f"Unknown output_mode {output_mode}")
-        case "nmad":
-            match output_mode:
-                case "mean":
-                    output = (
-                        -1.44869469e-02
-                        + 2.00028682e00 * nad_nmad
-                        + -5.23271341e00 * nad_nmad**2
-                        + 2.11111801e01 * nad_nmad**3
-                    )
-                case "2sigma":
-                    output = 0.01907808 + 1.2852969 * nad_nmad + 1.90052824 * nad_nmad**2 + 11.60677721 * nad_nmad**3
-                case _:
-                    raise ValueError(f"Unknown output_mode {output_mode}")
-        case _:
-            raise ValueError(f"Unknown input_mode {input_mode}")
+    assert input_mode in ["nad", "nmad"], f"Expected input_mode in ['nad', 'nmad'] but got {input_mode}!"
+    assert output_mode in ["mean", "2sigma"], f"Expected output_mode in ['mean', '2sigma'] but got {output_mode}!"
+
+    output = (
+        NAD_NMAD_TO_SIGMA_CONVERSION[input_mode][output_mode][0]
+        + NAD_NMAD_TO_SIGMA_CONVERSION[input_mode][output_mode][1] * nad_nmad
+        + NAD_NMAD_TO_SIGMA_CONVERSION[input_mode][output_mode][2] * nad_nmad**2
+        + NAD_NMAD_TO_SIGMA_CONVERSION[input_mode][output_mode][3] * nad_nmad**3
+    )
+
     return output
