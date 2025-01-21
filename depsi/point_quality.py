@@ -222,7 +222,7 @@ def _binseg_single_point(amplitude_ts: xr.Dataset, cost_model: str, size: int) -
     return breakpoints_xarray
 
 
-def detect_outliers(
+def detect_outliers_stm(
     stm: xr.Dataset, db_outlier_detection: bool = True, window_size: int = 15, n_sigma: int = 3
 ) -> xr.Dataset:
     """Detect outliers based on a hampel filter.
