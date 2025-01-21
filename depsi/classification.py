@@ -9,13 +9,12 @@ import pytz
 import xarray as xr
 from scipy.spatial import KDTree
 
-from depsi.point_quality import _detect_outliers, _estimate_breakpoints, _nad_nmad_quality_metrics
+from depsi.point_quality import _estimate_breakpoints, _nad_nmad_quality_metrics
 from depsi.utils import _npdatetime64_to_datetime, crop_slc_spacetime
 
 # partitioning and outlier detection when requested in ps_selection require a fixed set of keywords to function.
 # The following lines are the required keywords against which the input dictionaries will be checked.
 REQUIRED_PARTITIONING_KEYS = ["db_partitioning", "search_method", "cost_function", "min_obs_partition"]
-REQUIRED_OUTLIER_DETECTION_KEYS = ["db_outlier_detection", "window_size", "n_sigma"]
 
 
 def ps_selection(
@@ -29,8 +28,6 @@ def ps_selection(
     recalibration_jump_size: int = 10,
     do_partitioning: bool = False,
     partitioning_kwargs: dict | None = None,
-    do_outlier_detection: bool = False,
-    outlier_detection_kwargs: dict | None = None,
     single_difference_mother: datetime | str = "auto",
 ) -> xr.Dataset:
     """Select Persistent Scatterers (PS) from an SLC stack, and return a Space-Time Matrix.
@@ -86,14 +83,6 @@ def ps_selection(
       - search_method: 'pelt' or 'binseg'. Advised 'pelt'
       - cost_function: 'l#' with # replaced by 0-3. Advised 'l2'
       - min_obs_partition: integer. Advised min 0.5 years converted to # images, for Sentinel-1 27 (6 day interval)
-    do_outlier_detection: bool, optional
-      boolean to trigger the outlier detection. Defaults to False.
-    outlier_detection_kwargs: dict | None, optional
-      the keyword arguments required for the outlier detection. Required if do_outlier_detection is set to True.
-      Formatted as a dictionary with required keys:
-      - db_outlier_detection: True or False, whether or not to do outlier detection in dB. Advised True
-      - window_size: window size of the hampel filter used for detection. Advised 15
-      - n_sigma: number of standard deviations difference required before outlier is detected. Advised 3
     single_difference_mother: datetime | str
       the date to be used as the mother image for the single difference computations, in one of three formats:
       - 'auto' : will detect the mother image in the input SLC dataset, and use that epoch.
@@ -157,9 +146,6 @@ def ps_selection(
             amplitude per partition
         - partition_sd_mad (space, time): Median Absolute Deviation of the unnormalized single difference
             amplitude per partition
-        If do_outlier_detection is set to True:
-        - outliers (space, time): boolean array, where True indicates an outlier detected based on the
-            outlier_detection_kwargs and a hampel filter
 
     Raises
     ------
@@ -186,15 +172,6 @@ def ps_selection(
         assert np.all(
             [key in partitioning_kwargs.keys() for key in REQUIRED_PARTITIONING_KEYS]
         ), f"Keys {REQUIRED_PARTITIONING_KEYS} are required but received {partitioning_kwargs.keys()}!"
-
-    if do_outlier_detection:
-        assert outlier_detection_kwargs is not None, "Outlier detection requested without keyword arguments!"
-        assert isinstance(
-            outlier_detection_kwargs, dict
-        ), f"outlier_detection_kwargs should be dict but is {type(outlier_detection_kwargs)}"
-        assert np.all(
-            [key in outlier_detection_kwargs.keys() for key in REQUIRED_OUTLIER_DETECTION_KEYS]
-        ), f"Keys {REQUIRED_OUTLIER_DETECTION_KEYS} are required but received {outlier_detection_kwargs.keys()}!"
 
     # Make sure there is no temporal chunk
     # since later a block function assumes all temporal data is available in a spatial block
@@ -486,19 +463,6 @@ def ps_selection(
         stm_masked_inc = stm_masked_inc.assign(
             {"partition_sd_mad": (["space", "time"], partition_stats_sd["partition_amp_mad"].data)}
         )
-
-    if do_outlier_detection:
-        outliers = xr.map_blocks(
-            _detect_outliers,
-            stm_masked_inc["amplitude"],
-            kwargs={
-                "db_outlier_detection": outlier_detection_kwargs["db_outlier_detection"],
-                "window_size": outlier_detection_kwargs["window_size"],
-                "n_sigma": outlier_detection_kwargs["n_sigma"],
-            },
-            template=stm_masked_inc["amplitude"],
-        )
-        stm_masked_inc = stm_masked_inc.assign({"outliers": (["space", "time"], outliers.data)})
 
     # Add the classification flag
     stm_masked_inc = stm_masked_inc.assign(

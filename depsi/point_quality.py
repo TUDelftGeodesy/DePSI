@@ -222,6 +222,47 @@ def _binseg_single_point(amplitude_ts: xr.Dataset, cost_model: str, size: int) -
     return breakpoints_xarray
 
 
+def detect_outliers(
+    stm: xr.Dataset, db_outlier_detection: bool = True, window_size: int = 15, n_sigma: int = 3
+) -> xr.Dataset:
+    """Detect outliers based on a hampel filter.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+      Dataset containing the amplitude values as an amplitude variable, with coordinates `space` and `time`
+    db_outlier_detection: bool, optional
+      whether or not to do outlier detection in dB. Default and advised True
+    window_size: int, optional
+      window size of the hampel filter used for detection. Default 15
+    n_sigma: int, optional
+      number of standard deviations difference required before outlier is detected. Default 3
+
+
+    Returns
+    -------
+    xr.Dataset
+      The original dataset with a new variable 'outliers': a boolean variable with True indicating an outlier detected
+      for that point at that epoch
+
+    """
+    for key in ["space", "time", "amplitude"]:
+        assert key in stm.keys(), f"Expected {key} in stm but it is missing!"
+    outliers = xr.map_blocks(
+        _detect_outliers,
+        stm["amplitude"],
+        kwargs={
+            "db_outlier_detection": db_outlier_detection,
+            "window_size": window_size,
+            "n_sigma": n_sigma,
+        },
+        template=stm["amplitude"],
+    )
+    stm = stm.assign({"outliers": (["space", "time"], outliers.data)})
+
+    return stm
+
+
 def _detect_outliers(
     amplitude_array: xr.DataArray, db_outlier_detection: bool = True, window_size: int = 15, n_sigma: int = 3
 ) -> xr.Dataset:

@@ -3,6 +3,7 @@ from datetime import datetime
 from depsi.io import read_slc_stack
 from depsi.utils import crop_slc_spacetime, add_stm_time_deltas, project_stm_coordinates
 from depsi.classification import ps_selection
+from depsi.point_quality import detect_outliers
 
 # ############## INPUT VARIABLES
 
@@ -70,10 +71,6 @@ stm = ps_selection(cropped_slcs,
                                         "search_method": ps_partitioning_search_method,
                                         "cost_function": ps_partitioning_cost_function,
                                         "min_obs_partition": ps_min_obs_partition},
-                   do_outlier_detection=do_ps_outlier_detection,
-                   outlier_detection_kwargs={"db_outlier_detection": ps_outlier_detection_db,
-                                             "window_size": ps_window_size_outliers,
-                                             "n_sigma": ps_n_sigma_outliers},
                    single_difference_mother=ps_mother_epoch_sd
                    )
 
@@ -82,6 +79,11 @@ stm = project_stm_coordinates(stm, "RD")
 
 # Add time deltas to the STM
 stm = add_stm_time_deltas(stm)
+
+# Do outlier detection
+if do_ps_outlier_detection:
+    stm = detect_outliers(stm, db_outlier_detection=ps_outlier_detection_db, window_size=ps_window_size_outliers,
+                          n_sigma=ps_n_sigma_outliers)
 
 # SAVE
 stm.to_zarr(stm_save_path, mode='w')
