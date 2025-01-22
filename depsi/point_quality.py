@@ -5,6 +5,9 @@ import numpy as np
 import ruptures as rpt
 import xarray as xr
 
+from depsi.classification import _nad_block, _nmad_block
+from depsi.utils import _npdatetime64_to_datetime, crop_slc_spacetime
+
 # The partitioning requires a jump size when using pelt mode. This should always be 5.
 # TODO: add documentation as to why this should be 5
 PELT_JUMP = 5
@@ -149,6 +152,145 @@ def stm_partitioning(
                         )
                     }
                 )
+    return stm
+
+
+def stm_add_incremental_recal_nad_nmad(
+    stm: xr.Dataset,
+    method: Literal["nmad", "nad"] = "nmad",
+    mode: Literal["incremental", "recalibration"] = "recalibration",
+    recalibration_jump_size: int = 10,
+) -> xr.Dataset:
+    """Calculate the incremental or recalibration NAD or NMAD of an STM.
+
+    Incremental NAD or NMAD yields the NAD or NMAD of all images up to and including that epoch.
+    Recalibration NAD or NMAD yields the NAD or NMAD of all images up to and including the last recalibration epoch,
+    dictated by `recalibration_jump_size`. In case the STM was generated using an initialization period, this is
+    automatically detected and alters the output as follows:
+    - Any epoch before the initialization period is set to 0
+    - Any epoch during the initialization period is set to the NAD or NMAD of the full initialization period
+    - Any epoch after the initialization period will use the first epoch of the initialization period as first epoch
+      for the NAD and NMAD estimation. The recalibration epochs will start counting after the end of the initialization
+      period.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+      The dataset with the amplitude of the points and coordinates `space` and `time`, attributes
+      `ps_selection_start_date` and `ps_selection_end_date`, and variable `amplitude`
+    method: Literal["nmad", "nad"], optional
+      Which method to use, either NMAD or NAD. Default "nmad"
+    mode: Literal["incremental", "recalibration"], optional
+      Which output mode to use, either incremental or recalibration. Default "recalibration"
+    recalibration_jump_size: int, optional
+      The number of epochs the NMAD or NAD should remain constant in recalibration mode. Default 10. This is ignored
+      when mode "incremental" is selected.
+
+    Returns
+    -------
+    xr.Dataset
+      The same dataset with one new variable, e.g. `recalibration_nmad`. Always formatted as `mode`_`method`.
+
+    Raises
+    ------
+    AssertionError
+      Raised when:
+      - method is not nad or nmad
+      - mode is not incremental or recalibration
+      - "ps_selection_start_date", "ps_selection_end_date", "time", "space" or "amplitude" is missing from the STM
+    """
+    assert method in ["nad", "nmad"], f"Method is {method}, expected nad or nmad!"
+    assert mode in ["incremental", "recalibration"], f"Mode is {mode}, expected incremental or recalibration"
+    for key in ["time", "amplitude", "space"]:
+        assert key in stm.keys(), f"Expected STM with key {key} but it is not there!"
+    for key in ["ps_selection_start_date", "ps_selection_end_date"]:
+        assert key in dir(stm), f"Expected STM with attribute {key} but it is not there!"
+
+    imgs = []
+    recalibration_idx = -1  # start at -1 so that the first addition will trigger a reset of the data layer
+    current_image = None
+
+    # detect if an initialization epoch was used in the PS selection
+    initialization_mode = True
+    first_epoch = _npdatetime64_to_datetime(stm["time"].values[0])
+    last_epoch = _npdatetime64_to_datetime(stm["time"].values[-1])
+    if stm.ps_selection_start_date == f"{first_epoch.year}{first_epoch.month:0>2d}{first_epoch.day:0>2d}":
+        if stm.ps_selection_end_date == f"{last_epoch.year}{last_epoch.month:0>2d}{last_epoch.day:0>2d}":
+            initialization_mode = False
+
+    # loop over the time values
+    for date in stm["time"].values:
+        # determine the time crop and recalibration index for the current image
+        if initialization_mode:
+            current_epoch = _npdatetime64_to_datetime(date)
+            current_epoch_formatted = f"{current_epoch.year}{current_epoch.month:0>2d}{current_epoch.day:0>2d}"
+
+            if current_epoch_formatted < stm.ps_selection_start_date:
+                start_date = stm.ps_selection_start_date
+                end_date = stm.ps_selection_start_date
+                if current_epoch_formatted == f"{first_epoch.year}{first_epoch.month:0>2d}{first_epoch.day:0>2d}":
+                    recalibration_idx = 0  # compute the first one
+                else:
+                    recalibration_idx = -1  # just reuse the previous one, they are set to zero
+            elif current_epoch_formatted <= stm.ps_selection_end_date:
+                start_date = stm.ps_selection_start_date
+                end_date = stm.ps_selection_end_date
+                if current_epoch_formatted in [stm.ps_selection_start_date, stm.ps_selection_end_date]:
+                    recalibration_idx = 0  # only recompute for the first and last image
+                else:
+                    recalibration_idx = -1  # just reuse the previous one, they are all the same
+            else:
+                start_date = stm.ps_selection_start_date
+                end_date = current_epoch_formatted
+                recalibration_idx += 1  # add, and do modulo the jump size, so that it will be 0 every time a new image
+                # should be loaded
+                recalibration_idx %= recalibration_jump_size
+        else:
+            start_date = _npdatetime64_to_datetime(stm["time"].values[0])
+            end_date = _npdatetime64_to_datetime(date)
+            recalibration_idx += 1  # add, and do modulo the jump size, so that it will be 0 every time a new image
+            # should be loaded
+            recalibration_idx %= recalibration_jump_size
+
+        # Check if we need to recompute or can use the previous one
+        match mode:
+            case "incremental":  # always requires an update
+                update = True
+            case "recalibration":  # only requires an update when the index is 0
+                match recalibration_idx:
+                    case 0:
+                        update = True
+                    case _:
+                        update = False
+            case _:
+                raise NotImplementedError(f"Unknown mode {mode}, known are recalibration and incremental!")
+
+        if update:  # only recompute if `update` is triggered, otherwise use the previous one
+            current_crop = crop_slc_spacetime(stm, start_date=start_date, end_date=end_date)
+            match method:
+                case "nad":
+                    nad = xr.map_blocks(
+                        _nad_block,
+                        current_crop["amplitude"],
+                        template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
+                    )
+                    current_image = nad.copy()
+                case "nmad":
+                    nmad = xr.map_blocks(
+                        _nmad_block,
+                        current_crop["amplitude"],
+                        template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
+                    )
+                    current_image = nmad.copy()
+
+        imgs.append(current_image.copy())
+
+    layer = da.vstack(imgs).T
+    stm = stm.assign({f"{mode}_{method}": (["space", "time"], layer)})
+
+    # Rechunk is needed because after calculating incremental NAD/NMAD, the chunk size in time will be inconsistent
+    stm = stm.chunk({"time": -1})
+
     return stm
 
 

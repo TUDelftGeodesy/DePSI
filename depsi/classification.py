@@ -3,7 +3,6 @@
 from datetime import datetime
 from typing import Literal
 
-import dask.array as da
 import numpy as np
 import xarray as xr
 from scipy.spatial import KDTree
@@ -19,7 +18,6 @@ def ps_selection(
     mem_persist: bool = False,
     ps_selection_start_date: datetime | str | None = None,
     ps_selection_end_date: datetime | str | int | None = None,
-    recalibration_jump_size: int = 10,
 ) -> xr.Dataset:
     """Select Persistent Scatterers (PS) from an SLC stack, and return a Space-Time Matrix.
 
@@ -62,9 +60,6 @@ def ps_selection(
         more images are requested than exist since the start date, all images from start_date until the last image
         are provided.
       - None, no cropping in time requested for the ps_selection (default)
-    recalibration_jump_size: int, optional
-      the number of images that the recalibration NAD / NMAD variables remains constant. Will start after the
-      initialization epoch (if ps_selection_start_date and ps_selection_end_date are not None). Defaults to 10.
 
     Returns
     -------
@@ -91,18 +86,6 @@ def ps_selection(
         - selection_nad / selection_nmad (space): the value used for selection of the PS, dependent on method
         - full_ts_nad (space): the Normalized Amplitude Dispersion of the PS
         - full_ts_nmad (space): the Normalized Median Amplitude Dispersion of the PS
-        - incremental_nad (space, time): the NAD of all images up to and including that epoch (initialization epochs
-            will yield the initialization period NAD if selected). If ps_selection_start_date is not None, images
-            before ps_selection_start_date will yield 0
-        - incremental_nmad (space, time): the NMAD of all images up to and including that epoch (initialization epochs
-            will yield the initialization period NMAD if selected). If ps_selection_start_date is not None, images
-            before ps_selection_start_date will yield 0
-        - recalibration_nad (space, time): the NAD of all images up to and including the last recalibration epoch
-            (dictated by recalibration_jump_size, initialization epochs will yield the initialization period NAD if
-            selected). If ps_selection_start_date is not None, images before ps_selection_start_date will yield 0
-        - recalibration_nmad (space, time): the NMAD of all images up to and including the last recalibration epoch
-            (dictated by recalibration_jump_size, initialization epochs will yield the initialization period NMAD if
-            selected). If ps_selection_start_date is not None, images before ps_selection_start_date will yield 0
         - classification_flag (space): 1 for all selected PS
 
     Raises
@@ -208,6 +191,8 @@ def ps_selection(
     )
     stm_masked = stm_masked.assign({"full_ts_nmad": (["space"], nmad.data)})
     stm_masked = stm_masked.assign({"full_ts_nad": (["space"], nad.data)})
+
+    # Add selection date attributes
     if ps_selection_start_date is None:
         start_date = _npdatetime64_to_datetime(stm_masked["time"].values[0])
         end_date = _npdatetime64_to_datetime(stm_masked["time"].values[-1])
@@ -220,82 +205,9 @@ def ps_selection(
         stm_masked.attrs["ps_selection_start_date"] = f"{start_date.year}{start_date.month:0>2d}{start_date.day:0>2d}"
         stm_masked.attrs["ps_selection_end_date"] = f"{end_date.year}{end_date.month:0>2d}{end_date.day:0>2d}"
 
-    # add incremental and recalibration NAD / NMAD
-    for loop_method in ["nmad", "nad"]:
-        incremental_imgs = []
-        recalibration_imgs = []
-        recalibration_idx = -1  # start at -1 so that the first addition will trigger a reset of the data layer
-        recalibration_data_layer = None
-        for date in stm_masked["time"].values:
-            if ps_selection_start_date is not None:
-                if (
-                    date in ps_selection_times
-                ):  # only gets triggered in case there is an initialization epoch for the duration
-                    # of the initialization epoch
-                    start_date = ps_selection_start_date
-                    end_date = ps_selection_end_date
-                    recalibration_idx = 0
-                else:
-                    start_date = _npdatetime64_to_datetime(ps_selection_times[0])
-                    end_date = _npdatetime64_to_datetime(date)
-                    recalibration_idx += 1
-                    # add, and do modulo the jump size, so that it will be 0 every time a new image
-                    # should be loaded
-                    recalibration_idx %= recalibration_jump_size
-                    if start_date > end_date:
-                        end_date = start_date  # will always be 0 as they are equal
-            else:
-                start_date = _npdatetime64_to_datetime(stm_masked["time"].values[0])
-                end_date = _npdatetime64_to_datetime(date)
-                recalibration_idx += 1  # add, and do modulo the jump size, so that it will be 0 every time a new image
-                # should be loaded
-                recalibration_idx %= recalibration_jump_size
-
-            current_crop = crop_slc_spacetime(stm_masked, start_date=start_date, end_date=end_date)
-            match loop_method:
-                case "nad":
-                    nad = xr.map_blocks(
-                        _nad_block,
-                        current_crop["amplitude"],
-                        template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
-                    )
-                    incremental_imgs.append(nad)
-                    if recalibration_idx == 0:
-                        recalibration_data_layer = nad.copy()
-                case "nmad":
-                    nmad = xr.map_blocks(
-                        _nmad_block,
-                        current_crop["amplitude"],
-                        template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
-                    )
-                    incremental_imgs.append(nmad)
-                    if recalibration_idx == 0:
-                        recalibration_data_layer = nmad.copy()
-
-            recalibration_imgs.append(recalibration_data_layer.copy())
-
-        # format the images, and add them to the data array
-        incremental_nad_nmad = da.vstack(incremental_imgs).T
-        recalibration_nad_nmad = da.vstack(recalibration_imgs).T
-        match loop_method:
-            case "nad":
-                stm_masked = stm_masked.assign({"incremental_nad": (["space", "time"], incremental_nad_nmad)})
-                stm_masked = stm_masked.assign({"recalibration_nad": (["space", "time"], recalibration_nad_nmad)})
-            case "nmad":
-                stm_masked = stm_masked.assign({"incremental_nmad": (["space", "time"], incremental_nad_nmad)})
-                stm_masked = stm_masked.assign({"recalibration_nmad": (["space", "time"], recalibration_nad_nmad)})
-
-    # Rechunk is needed because after calculating incremental NAD/NMAD, the chunksize will be inconsistant
-    stm_masked_inc = stm_masked.chunk(
-        {
-            "space": output_chunks,
-            "time": -1,
-        }
-    )
-
     # Add the classification flag
-    stm_masked_inc = stm_masked_inc.assign(
-        {"classification_flag": (["space"], np.ones_like(stm_masked_inc.space.values).astype(np.int8))}
+    stm_masked_inc = stm_masked.assign(
+        {"classification_flag": (["space"], np.ones_like(stm_masked.space.values).astype(np.int8))}
     )
 
     # Compute NAD or NMAD if mem_persist is True
@@ -305,19 +217,15 @@ def ps_selection(
             case "nad":
                 for key in [
                     "selection_nad",
-                    "incremental_nmad",
-                    "incremental_nad",
-                    "recalibration_nad",
-                    "recalibration_nmad",
+                    "full_ts_nad",
+                    "full_ts_nmad",
                 ]:
                     stm_masked_inc[key] = stm_masked[key].compute()
             case "nmad":
                 for key in [
                     "selection_nmad",
-                    "incremental_nmad",
-                    "incremental_nad",
-                    "recalibration_nad",
-                    "recalibration_nmad",
+                    "full_ts_nad",
+                    "full_ts_nmad",
                 ]:
                     stm_masked_inc[key] = stm_masked[key].compute()
 

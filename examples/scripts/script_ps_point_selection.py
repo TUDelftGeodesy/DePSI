@@ -4,7 +4,7 @@ from depsi.io import read_slc_stack
 from depsi.utils import crop_slc_spacetime, add_stm_time_deltas, project_stm_coordinates, \
     stm_compute_single_time_differences
 from depsi.classification import ps_selection
-from depsi.point_quality import detect_outliers_stm, stm_partitioning
+from depsi.point_quality import detect_outliers_stm, stm_partitioning, stm_add_incremental_recal_nad_nmad
 
 # ############## INPUT VARIABLES
 
@@ -25,6 +25,7 @@ start_date_ps_selection = datetime(2017, 1, 1)
 initialization_length = 50
 
 # Recalibrated NAD and NMAD settings
+increment_mode = "recalibration"
 recalibration_jump_size = 10
 
 # PS selection method
@@ -65,9 +66,14 @@ stm = ps_selection(cropped_slcs,
                    ps_selection_start_date=start_date_ps_selection,
                    ps_selection_end_date=initialization_length,
                    output_chunks=chunks_ps_selection,
-                   mem_persist=False,
-                   recalibration_jump_size=recalibration_jump_size,
+                   mem_persist=False
                    )
+
+# Add the incremental or recalibration NAD / NMAD to the STM
+stm = stm_add_incremental_recal_nad_nmad(stm,
+                                         mode=increment_mode,
+                                         method=ps_selection_method,
+                                         recalibration_jump_size=recalibration_jump_size)
 
 # Add RD coordinates to the STM
 stm = project_stm_coordinates(stm, "RD")
