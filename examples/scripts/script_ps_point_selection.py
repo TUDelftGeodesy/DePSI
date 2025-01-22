@@ -1,7 +1,8 @@
 from datetime import datetime
 
 from depsi.io import read_slc_stack
-from depsi.utils import crop_slc_spacetime, add_stm_time_deltas, project_stm_coordinates
+from depsi.utils import crop_slc_spacetime, add_stm_time_deltas, project_stm_coordinates, \
+    stm_compute_single_time_differences
 from depsi.classification import ps_selection
 from depsi.point_quality import detect_outliers_stm, stm_partitioning
 
@@ -66,7 +67,6 @@ stm = ps_selection(cropped_slcs,
                    output_chunks=chunks_ps_selection,
                    mem_persist=False,
                    recalibration_jump_size=recalibration_jump_size,
-                   single_difference_mother=ps_mother_epoch_sd
                    )
 
 # Add RD coordinates to the STM
@@ -74,6 +74,9 @@ stm = project_stm_coordinates(stm, "RD")
 
 # Add time deltas to the STM
 stm = add_stm_time_deltas(stm)
+
+# Add single differences to the STM
+stm = stm_compute_single_time_differences(stm, ps_mother_epoch_sd)
 
 if do_ps_partitioning:
     stm = stm_partitioning(stm,
@@ -99,5 +102,5 @@ if do_ps_outlier_detection:
     stm = detect_outliers_stm(stm, db_outlier_detection=ps_outlier_detection_db, window_size=ps_window_size_outliers,
                               n_sigma=ps_n_sigma_outliers)
 
-# SAVE
+# Save
 stm.to_zarr(stm_save_path, mode='w')

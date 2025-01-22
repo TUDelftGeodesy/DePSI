@@ -1,6 +1,7 @@
 import os
 from typing import Literal
 
+import dask.array as da
 import pyproj
 
 try:
@@ -361,5 +362,98 @@ def add_stm_time_deltas(stm: xr.Dataset) -> xr.Dataset:
     )
     stm = stm.assign({"days_since_first_img": (["time"], days)})
     stm = stm.assign({"years_since_first_img": (["time"], days / 365.2425)})
+
+    return stm
+
+
+def stm_compute_single_time_differences(
+    stm: xr.Dataset, single_difference_mother: str | datetime = "auto"
+) -> xr.Dataset:
+    """Compute the single differences of an STM in time with respect to a given mother image.
+
+    This computes the single difference complex value, phase, unnormalized amplitude, and h2ph values with respect
+    to the provided single difference mother
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+      the space-time matrix with an axis "time" and "space", and variables `h2ph` and `complex`
+    single_difference_mother: datetime | str
+      the date to be used as the mother image for the single difference computations, in one of three formats:
+      - 'auto' : will detect the mother image in the input SLC dataset, and use that epoch.
+      - datetime object
+      - str object, formatted as YYYYMMDD
+
+    Returns
+    -------
+    xr.Dataset
+      the space-time matrix with four new variables:
+        - sd_h2ph (space, time): single difference height to phase conversion with respect to single_difference_mother
+        - sd_complex (space, time): single difference complex phasor with respect to single_difference_mother
+        - sd_amplitude_unnormalized (space, time): single difference complex phasor amplitude to
+            single_difference_mother, not normalized
+        - sd_phase (space, time): single difference phase with respect to single_difference_mother
+
+    Raises
+    ------
+    ValueError
+      Raised when:
+        - single_difference_mother is of an unsupported format
+        - the date provided to single_difference_mother is not in the input stack
+    """
+    # Identify the mother image
+    if isinstance(single_difference_mother, datetime):
+        format_mother_date = datetime(
+            single_difference_mother.year, single_difference_mother.month, single_difference_mother.day, tzinfo=pytz.UTC
+        )
+        mother_index = [
+            idx for idx, date in enumerate(stm["time"].values) if format_mother_date == _npdatetime64_to_datetime(date)
+        ]
+    elif isinstance(single_difference_mother, str):
+        if single_difference_mother == "auto":
+            mother_index = np.where(abs(stm["h2ph"]).sum(axis=0).values == 0)[0]
+        elif len(single_difference_mother) == 8:
+            format_mother_date = datetime(
+                eval(single_difference_mother[:4]),
+                eval(single_difference_mother[4:6].lstrip("0")),
+                eval(single_difference_mother[6:].lstrip("0")),
+                tzinfo=pytz.UTC,
+            )
+            mother_index = [
+                idx
+                for idx, date in enumerate(stm["time"].values)
+                if format_mother_date == _npdatetime64_to_datetime(date)
+            ]
+        else:
+            raise ValueError(f'Cannot parse {single_difference_mother}, not of type "auto" or "YYYYMMDD"!')
+    else:
+        raise ValueError(f"Unknown format {type(single_difference_mother)} for single_difference_mother!")
+    if len(mother_index) == 0:
+        raise ValueError(
+            f"Cannot find provided mother date {single_difference_mother}, "
+            f"please provide a date that is part of the stack! Possible dates: "
+            f"{stm.time.values}"
+        )
+    sd_mother_index = mother_index[0]  # 0 in case somehow more than 1 image is detected
+    # In that case we take the first image that was detected, as this is expected
+    sd_mother = _npdatetime64_to_datetime(stm["time"].values[sd_mother_index])
+
+    # Format the single difference mother, and save it to the STM
+    sd_mother_formatted = f"{sd_mother.year}{sd_mother.month:0>2d}{sd_mother.day:0>2d}"
+    stm.attrs["ps_sd_mother"] = sd_mother_formatted
+
+    # calculate the h2ph single difference (= daughter - mother)
+    sd_h2ph = stm["h2ph"] - stm["h2ph"][:, sd_mother_index]
+    stm = stm.assign({"sd_h2ph": (["space", "time"], sd_h2ph.data)})
+
+    # calculate the complex single difference, the amplitude, and the phase
+    mother_comp = stm["complex"][:, sd_mother_index].conj()
+    sd_complex_transposed = stm["complex"].transpose() * mother_comp
+    sd_complex = sd_complex_transposed.transpose()
+    sd_phase = da.angle(sd_complex)
+    sd_amplitude_unnormalized = da.abs(sd_complex)
+    stm = stm.assign({"sd_complex": (["space", "time"], sd_complex.data)})
+    stm = stm.assign({"sd_amplitude_unnormalized": (["space", "time"], sd_amplitude_unnormalized.data)})
+    stm = stm.assign({"sd_phase": (["space", "time"], sd_phase.data)})
 
     return stm
