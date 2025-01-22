@@ -54,7 +54,8 @@ def extract_mother_date(xml_file):
 
 
 def identify_stacks(settings):
-    """Function to identify stack data information and store it to a metadata file.
+    """Identify stack data information and store it to a metadata file.
+    
     This function works for coregistered SAR data using DORIS.
 
     Parameters
@@ -67,7 +68,7 @@ def identify_stacks(settings):
     dict
         Two dictionaries: settings and stack_meta.
         Stack meta contains information of one track
-    """  # noqa: D205, D401
+    """
     ## Detect number of mother images / tracks
     dirlist = os.listdir(settings["stack_root_dir"])
     pattern = re.compile(rf'^{settings["stack_prefix"]}_?s1_[ad]sc_t\d{{3}}$')
@@ -190,8 +191,6 @@ def identify_stacks(settings):
             with open(os.path.join(stack_dirs[i], "npixels_crp.txt")) as f:
                 lines = f.readlines()
                 npixels_res = int(lines[0])
-            swath = ""  # noqa: F841
-            mode = ""  # noqa: F841
             r_px_spacing = "n/a"
             az_px_spacing = "n/a"
 
@@ -228,7 +227,7 @@ def identify_stacks(settings):
 
 
 def create_processing_folders(settings):
-    """Function to create directories if not already there.
+    """Create directories if not already there.
 
     Parameters
     ----------
@@ -239,7 +238,7 @@ def create_processing_folders(settings):
     -------
     dict
         An updated variable settings.
-    """  # noqa: D401
+    """
     ## Do not modify
     settings["run_dir"] = os.path.join(settings["proj_dir"], settings["run_name"])
     settings["meta_dir"] = os.path.join(settings["run_dir"], "metadata/")
@@ -267,8 +266,7 @@ def extract_date(path):  # noqa: D103
 
 
 def load_slc_stack(stack_meta, chunks=(500, 500)):
-    """Function to load stack (SLCs or interferograms), assign coordinates,
-    subset to the area of interest, and do re-slc if desired.
+    """Load stack (SLCs or interferograms), assign coordinates, subset to the AoI and do re-slc if desired.
 
     Parameters
     ----------
@@ -284,7 +282,7 @@ def load_slc_stack(stack_meta, chunks=(500, 500)):
         and two coordinates: space (lat, lon, azimuth, range) and time.
     dict
         An updated stack metadata.
-    """  # noqa: D205, D401
+    """
     ## Read variables
     mother_dir = stack_meta["mother_dir"]
     mother_date = stack_meta["mother_date"]
@@ -318,7 +316,7 @@ def load_slc_stack(stack_meta, chunks=(500, 500)):
         slc_stack["time"] = [datetime.strptime(str(date_int), "%Y%m%d") for date_int in slc_dates]
 
         ## Extract aoi indices for cropping stack to the area of interest
-        l0, lN, p0, pN = extract_stack_aoi_indices(slc_stack, stack_meta)  # noqa: N806
+        l0, lN, p0, pN = extract_stack_aoi_indices(slc_stack, stack_meta) 
 
         ## Crop stack
         slc_stack_subset = slc_stack.sel(azimuth=slice(l0, lN), range=slice(p0, pN))
@@ -348,14 +346,14 @@ def load_slc_stack(stack_meta, chunks=(500, 500)):
         slc_mother = ifg_stack.isel(time=slice(mother_idx, mother_idx + 1))
 
         ## Extract aoi indices for cropping stack to the area of interest
-        l0, lN, p0, pN = extract_stack_aoi_indices(ifg_stack, stack_meta)  # noqa: N806
+        l0, lN, p0, pN = extract_stack_aoi_indices(ifg_stack, stack_meta)
 
         ## Crop stack
         ifg_stack_subset = ifg_stack.sel(azimuth=slice(l0, lN), range=slice(p0, pN))
         slc_mother_subset = slc_mother.sel(azimuth=slice(l0, lN), range=slice(p0, pN))
 
         ## Re-SLC
-        slc_stack_out = ifg_to_slc(slc_mother_subset, ifg_stack_subset)  # noqa: F405
+        slc_stack_out = ifg_to_slc(slc_mother_subset, ifg_stack_subset)
 
         ## Insert mother slc to the re-slc stack
         ## TODO: check the mother slc
@@ -381,8 +379,7 @@ def load_slc_stack(stack_meta, chunks=(500, 500)):
 
 
 def extract_stack_aoi_indices(stack, stack_meta):
-    """Function to find the start indices (l0, p0)
-    and end indices (lN, pN) of the aoi on the stack.
+    """Find the start indices (l0, p0) and end indices (lN, pN) of the aoi on the stack.
 
     Parameters
     ----------
@@ -396,7 +393,7 @@ def extract_stack_aoi_indices(stack, stack_meta):
     -------
     int (four variables)
         Start and end indices of azimuth and range.
-    """  # noqa: D401, D205
+    """
     ## Load area of interest as geodataframe
     gdf_aoi = gpd.read_file(stack_meta["aoi_path"])
     assert gdf_aoi.crs == "EPSG:4326", "Area of interest is not using WGS84 coordinate reference system"
@@ -404,12 +401,12 @@ def extract_stack_aoi_indices(stack, stack_meta):
 
     ## Create a mask for cropping stack to the area of interest
     mask = (stack["lat"] > lat_min) & (stack["lat"] < lat_max) & (stack["lon"] > lon_min) & (stack["lon"] < lon_max)
-    mask_idx = np.argwhere(mask.values == True)  # noqa: E712
+    mask_idx = np.argwhere(mask.values)
     # mask = mask.compute()
 
     ## Extract the start and the end of lines/azimuth and pixel/range
-    l0, lN = min(mask_idx[:, 0]), max(mask_idx[:, 0])  # noqa: N806
-    p0, pN = min(mask_idx[:, 1]), max(mask_idx[:, 1])  # noqa: N806
+    l0, lN = min(mask_idx[:, 0]), max(mask_idx[:, 0])
+    p0, pN = min(mask_idx[:, 1]), max(mask_idx[:, 1])
 
     return l0, lN, p0, pN
 
