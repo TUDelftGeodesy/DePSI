@@ -3,7 +3,7 @@ from datetime import datetime
 from depsi.io import read_slc_stack
 from depsi.utils import crop_slc_spacetime, add_stm_time_deltas, project_stm_coordinates
 from depsi.classification import ps_selection
-from depsi.point_quality import detect_outliers_stm
+from depsi.point_quality import detect_outliers_stm, stm_partitioning
 
 # ############## INPUT VARIABLES
 
@@ -28,7 +28,7 @@ recalibration_jump_size = 10
 
 # PS selection method
 ps_selection_method = "nmad"
-threshold = 0.25
+threshold = 0.1
 chunks_ps_selection = 1000
 
 # Input variables for the outlier detection
@@ -66,11 +66,6 @@ stm = ps_selection(cropped_slcs,
                    output_chunks=chunks_ps_selection,
                    mem_persist=False,
                    recalibration_jump_size=recalibration_jump_size,
-                   do_partitioning=do_ps_partitioning,
-                   partitioning_kwargs={"db_partitioning": ps_db_partitioning,
-                                        "search_method": ps_partitioning_search_method,
-                                        "cost_function": ps_partitioning_cost_function,
-                                        "min_obs_partition": ps_min_obs_partition},
                    single_difference_mother=ps_mother_epoch_sd
                    )
 
@@ -79,6 +74,25 @@ stm = project_stm_coordinates(stm, "RD")
 
 # Add time deltas to the STM
 stm = add_stm_time_deltas(stm)
+
+if do_ps_partitioning:
+    stm = stm_partitioning(stm,
+                           db_partitioning=ps_db_partitioning,
+                           search_method=ps_partitioning_search_method,
+                           cost_model=ps_partitioning_cost_function,
+                           size=ps_min_obs_partition,
+                           amplitude_variable_name="amplitude",
+                           output_variable_prefix="partition",
+                           output_variables=("nmad", "nad", "quality_nmad_2sigma"))
+
+    stm = stm_partitioning(stm,
+                           db_partitioning=ps_db_partitioning,
+                           search_method=ps_partitioning_search_method,
+                           cost_model=ps_partitioning_cost_function,
+                           size=ps_min_obs_partition,
+                           amplitude_variable_name="sd_amplitude_unnormalized",
+                           output_variable_prefix="partition_sd",
+                           output_variables=("mad", "amplitude_sigma", "amplitude_mean", "amplitude_median"))
 
 # Do outlier detection
 if do_ps_outlier_detection:

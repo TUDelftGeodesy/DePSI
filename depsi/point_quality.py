@@ -22,11 +22,139 @@ NAD_NMAD_TO_SIGMA_CONVERSION = {
         "2sigma": [0.01907808, 1.2852969, 1.90052824, 11.60677721],
     },
 }
+# The following list is used to check which output variables are valid in the STM partitioning.
+POSSIBLE_OUTPUT_VARIABLES_PARTITIONING = [
+    "nad",
+    "nmad",
+    "mad",
+    "quality_nmad_2sigma",
+    "quality_nmad_mean",
+    "quality_nad_2sigma",
+    "quality_nad_mean",
+    "amplitude_mean",
+    "amplitude_sigma",
+    "amplitude_median",
+]
+
+
+def stm_partitioning(
+    stm: xr.Dataset,
+    db_partitioning: bool = False,
+    search_method: Literal["pelt", "binseg"] = "pelt",
+    cost_model: str = "l2",
+    size: int = 27,
+    amplitude_variable_name: str = "amplitude",
+    output_variable_prefix: str = "partition",
+    output_variables: tuple = ("nad", "nmad", "quality_nmad_2sigma"),
+) -> xr.Dataset:
+    """Perform partitioning of a space-time matrix based on amplitude data.
+
+    Identifies breakpoints in the amplitude timeseries of a set of points, based on a given search method, cost model
+    and minimum partition size between the breakpoints. The search can be performed on the normal amplitude data or on
+    a dB scale. Different output variables (quality metrics) can be defined to be calculated per partition.
+
+    If the layers `breakpoints` and `partition_id` already exist, these are used as the partitions instead.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+      The dataset with the amplitude of the points and coordinates `space` and `time`
+    db_partitioning: bool, optional
+      Toggle to turn partitioning on the dB scale on (True) or off (False). Defaults to False.
+    search_method: Literal["pelt", "binseg"], optional
+      Which search method to use. Default (and recommended) "pelt"
+    cost_model: str, optional
+      Which cost model to use. Default (and recommended) "l2"
+    size: int, optional
+      minimum size of the partitions. Default 27
+    amplitude_variable_name: str, optional
+      the name of the variable in which the amplitude information is stored in the STM. Default `amplitude`
+    output_variable_prefix: str, optional
+      the prefix of the output variables, named `output_variable_prefix`_`output_variable`. Default `partition`
+    output_variables: tuple, optional
+      the name of the requested output variables per partition. Default ("nad", "nmad", "quality_nmad_2sigma"). Options:
+      - nad - the NAD of the partition
+      - nmad - the NMAD of the partition
+      - mad - the MAD of the partition
+      - quality_nmad_2sigma - the quality of the partition based on an empirical relation, see
+        `_nad_nmad_quality_metrics`, based on NMAD and 2-sigma
+      - quality_nmad_mean - the quality of the partition based on an empirical relation, see
+        `_nad_nmad_quality_metrics`, based on NMAD and mean cloud
+      - quality_nad_2sigma - the quality of the partition based on an empirical relation, see
+        `_nad_nmad_quality_metrics`, based on NAD and 2-sigma
+      - quality_nad_mean - the quality of the partition based on an empirical relation, see
+        `_nad_nmad_quality_metrics`, based on NAD and mean cloud
+      - amplitude_mean - the mean of the amplitude
+      - amplitude_sigma - the standard deviation of the amplitude
+      - amplitude_median - the median of the amplitude
+
+    Returns
+    -------
+    xr.Dataset
+      the same xr.Dataset with new variables:
+      - breakpoints (space, time): boolean array of the breakpoint locations
+      - partition_id (space, time): unique identifier for each partition
+      - `output_variable_prefix`_`output_variable` (space, time): the requested output variables from
+        `output_variables`, where the provided values within a partition are at all epochs equal to the requested
+        output variable.
+
+    Raises
+    ------
+    AssertionError
+      - when the amplitude layer name `amplitude_variable_name` is not in the STM
+    NotImplementedError
+      - when there are variables in `output_variables` that do not exist in the documentation.
+    """
+    assert amplitude_variable_name in stm.keys(), f"Expected key {amplitude_variable_name} but it is not there!"
+
+    for variable in output_variables:
+        if variable not in POSSIBLE_OUTPUT_VARIABLES_PARTITIONING:
+            raise NotImplementedError(
+                f"Variable {variable} requested but not implemented. Currently implemented are "
+                f"{POSSIBLE_OUTPUT_VARIABLES_PARTITIONING}."
+            )
+
+    if "breakpoints" not in stm.keys() or "partition_id" not in stm.keys():
+        breakpoints, partition_identifiers = _estimate_breakpoints(
+            stm[amplitude_variable_name],
+            db_partitioning,
+            search_method,
+            cost_model,
+            size,
+        )
+        stm = stm.assign({"breakpoints": (["space", "time"], breakpoints.data)})
+        stm = stm.assign({"partition_id": (["space", "time"], partition_identifiers)})
+
+    # persist the amplitude values to memory to facilitate IO during the groups
+    groups = stm[amplitude_variable_name]
+    groups.data = groups.values
+    groups = groups.groupby(stm["partition_id"])
+
+    if len(output_variables) > 0:
+        partition_stats = groups.map(_compute_partition_nad_nmad_amp_stats)
+        for output_variable in output_variables:
+            if "quality" in output_variable:
+                output = _nad_nmad_quality_metrics(
+                    partition_stats[f"partition_{output_variable.split('_')[1]}"].data,
+                    output_variable.split("_")[1],
+                    output_variable.split("_")[2],
+                )
+                stm = stm.assign({f"{output_variable_prefix}_{output_variable}": (["space", "time"], output)})
+            else:
+                stm = stm.assign(
+                    {
+                        f"{output_variable_prefix}_{output_variable}": (
+                            ["space", "time"],
+                            partition_stats[f"partition_{output_variable}"].data,
+                        )
+                    }
+                )
+    return stm
 
 
 def _estimate_breakpoints(
     amplitude_array: xr.DataArray,
-    db_segmentation: bool = False,
+    db_partitioning: bool = False,
     search_method: Literal["pelt", "binseg"] = "pelt",
     cost_model: str = "l2",
     size: int = 27,
@@ -41,7 +169,7 @@ def _estimate_breakpoints(
     ----------
     amplitude_array: xr.DataArray
       The data array with the amplitude time series of the points.
-    db_segmentation: bool, optional
+    db_partitioning: bool, optional
       Toggle to turn partitioning on the dB scale on (True) or off (False). Defaults to False.
     search_method: Literal["pelt", "binseg"], optional
       Which search method to use. Default (and recommended) "pelt"
@@ -57,13 +185,13 @@ def _estimate_breakpoints(
     xr.DataArray
       integer data array where each partition has been assigned a unique identifier.
     """
-    match db_segmentation:
+    match db_partitioning:
         case False:
             amplitude_ts = amplitude_array
         case True:
             amplitude_ts = 10 * da.log10(amplitude_array)
         case _:
-            raise ValueError(f"db_segmentation should be False or True but is {db_segmentation}!")
+            raise ValueError(f"db_segmentation should be False or True but is {db_partitioning}!")
 
     match search_method:
         case "pelt":
@@ -353,3 +481,34 @@ def _nad_nmad_quality_metrics(
     )
 
     return output
+
+
+def _compute_partition_nad_nmad_amp_stats(amp: xr.DataArray) -> xr.DataArray:
+    """Compute the NAD and NMAD and the amplitude statistics on a partition basis.
+
+    Parameters
+    ----------
+    amp: xr.DataArray
+      a DataArray containing the amplitude values of a single partition, loaded into memory
+
+    Returns
+    -------
+    xr.DataArray
+      the same DataArray, with in the coordinates the calculated NAD and NMAD value in the same shape as the partition.
+
+    """
+    data = amp.data
+    std = np.std(data)
+    mean = np.mean(data)
+    nad = std / (mean + np.finfo(data.dtype).eps)
+    median = np.median(data)
+    mad = np.median(np.abs(data - median))
+    nmad = mad / (median + np.finfo(data.dtype).eps)
+
+    amp["partition_nad"] = (amp.dims, np.ones_like(data) * nad)
+    amp["partition_nmad"] = (amp.dims, np.ones_like(data) * nmad)
+    amp["partition_amplitude_sigma"] = (amp.dims, np.ones_like(data) * std)
+    amp["partition_amplitude_mean"] = (amp.dims, np.ones_like(data) * mean)
+    amp["partition_mad"] = (amp.dims, np.ones_like(data) * mad)
+    amp["partition_amplitude_median"] = (amp.dims, np.ones_like(data) * median)
+    return amp

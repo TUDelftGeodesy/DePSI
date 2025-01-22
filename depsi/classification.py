@@ -9,12 +9,7 @@ import pytz
 import xarray as xr
 from scipy.spatial import KDTree
 
-from depsi.point_quality import _estimate_breakpoints, _nad_nmad_quality_metrics
 from depsi.utils import _npdatetime64_to_datetime, crop_slc_spacetime
-
-# partitioning and outlier detection when requested in ps_selection require a fixed set of keywords to function.
-# The following lines are the required keywords against which the input dictionaries will be checked.
-REQUIRED_PARTITIONING_KEYS = ["db_partitioning", "search_method", "cost_function", "min_obs_partition"]
 
 
 def ps_selection(
@@ -26,8 +21,6 @@ def ps_selection(
     ps_selection_start_date: datetime | str | None = None,
     ps_selection_end_date: datetime | str | int | None = None,
     recalibration_jump_size: int = 10,
-    do_partitioning: bool = False,
-    partitioning_kwargs: dict | None = None,
     single_difference_mother: datetime | str = "auto",
 ) -> xr.Dataset:
     """Select Persistent Scatterers (PS) from an SLC stack, and return a Space-Time Matrix.
@@ -74,15 +67,6 @@ def ps_selection(
     recalibration_jump_size: int, optional
       the number of images that the recalibration NAD / NMAD variables remains constant. Will start after the
       initialization epoch (if ps_selection_start_date and ps_selection_end_date are not None). Defaults to 10.
-    do_partitioning: bool, optional
-      boolean to trigger the breakpoint analysis. Defaults to False.
-    partitioning_kwargs: dict | None, optional
-      the keyword arguments required for the breakpoint analysis. Required if do_breakpoint_analysis is set to True.
-      Formatted as a dictionary with required keys:
-      - db_partitioning: True or False, whether or not to do partitioning in dB. Advised False
-      - search_method: 'pelt' or 'binseg'. Advised 'pelt'
-      - cost_function: 'l#' with # replaced by 0-3. Advised 'l2'
-      - min_obs_partition: integer. Advised min 0.5 years converted to # images, for Sentinel-1 27 (6 day interval)
     single_difference_mother: datetime | str
       the date to be used as the mother image for the single difference computations, in one of three formats:
       - 'auto' : will detect the mother image in the input SLC dataset, and use that epoch.
@@ -132,47 +116,16 @@ def ps_selection(
             single_difference_mother, not normalized
         - sd_phase (space, time): single difference phase with respect to single_difference_mother
         - classification_flag (space): 1 for all selected PS
-        If do_partitioning is set to True:
-        - breakpoints (space, time): boolean array of the breakpoint locations
-        - partition_id (space, time): unique identifier for each partition
-        - partition_nmad (space, time): NMAD calculated per partition
-        - partition_nmad_quality (space, time): NMAD per partition converted to standard deviation using mean + 2 sigma
-        - partition_nad (space, time): NAD calculated per partition
-        - partition_sd_amplitude_sigma (space, time): standard deviation of the unnormalized single difference
-            amplitude per partition
-        - partition_sd_amplitude_mean (space, time): mean of the unnormalized single difference
-            amplitude per partition
-        - partition_sd_amplitude_median (space, time): median of the unnormalized single difference
-            amplitude per partition
-        - partition_sd_mad (space, time): Median Absolute Deviation of the unnormalized single difference
-            amplitude per partition
 
     Raises
     ------
     NotImplementedError
         Raised when an unsupported method is provided.
-    AssertionError
-        Raised when:
-        - do_partitioning is True but partitioning_kwargs is not provided
-        - Keywords are missing in partitioning_kwargs
-        - partitioning_kwargs is not a dictionary
-        - do_outlier_detection is True but outlier_detection_kwargs is not provided
-        - Keywords are missing in outlier_detection_kwargs
-        - outlier_detection_kwargs is not a dictionary
     ValueError
         Raised when:
         - single_difference_mother is of an unsupported format
         - the date provided to single_difference_mother is not in the input stack
     """
-    if do_partitioning:
-        assert partitioning_kwargs is not None, "Breakpoint analysis requested without keyword arguments!"
-        assert isinstance(
-            partitioning_kwargs, dict
-        ), f"breakpoint_kwargs should be dict but is {type(partitioning_kwargs)}"
-        assert np.all(
-            [key in partitioning_kwargs.keys() for key in REQUIRED_PARTITIONING_KEYS]
-        ), f"Keys {REQUIRED_PARTITIONING_KEYS} are required but received {partitioning_kwargs.keys()}!"
-
     # Make sure there is no temporal chunk
     # since later a block function assumes all temporal data is available in a spatial block
     slcs = slcs.chunk({"time": -1})
@@ -416,54 +369,6 @@ def ps_selection(
     )
     stm_masked_inc = stm_masked_inc.assign({"sd_phase": (["space", "time"], sd_phase.data)})
 
-    if do_partitioning:
-        breakpoints, partition_identifiers = _estimate_breakpoints(
-            stm_masked_inc["amplitude"],
-            partitioning_kwargs["db_partitioning"],
-            partitioning_kwargs["search_method"],
-            partitioning_kwargs["cost_function"],
-            partitioning_kwargs["min_obs_partition"],
-        )
-        stm_masked_inc = stm_masked_inc.assign({"breakpoints": (["space", "time"], breakpoints.data)})
-        stm_masked_inc = stm_masked_inc.assign({"partition_id": (["space", "time"], partition_identifiers)})
-
-        # persist the amplitude values to memory to facilitate IO during the groups
-        groups = stm_masked_inc["amplitude"]
-        groups.data = groups.values
-        groups = groups.groupby(stm_masked_inc["partition_id"])
-
-        groups_sd = stm_masked_inc["sd_amplitude_unnormalized"]
-        groups_sd.data = groups_sd.values
-        groups_sd = groups_sd.groupby(stm_masked_inc["partition_id"])
-
-        # Calculate the partition NAD and NMAD
-        partition_stats = groups.map(_compute_partition_nad_nmad_amp_stats)
-        partition_nmad = partition_stats["partition_nmad"].data
-        partition_nad = partition_stats["partition_nad"].data
-
-        partition_stats_sd = groups_sd.map(_compute_partition_nad_nmad_amp_stats)
-
-        # calculate the quality metrics
-
-        quality_nmad = _nad_nmad_quality_metrics(partition_nmad, "nmad", "2sigma")
-
-        # Save to the STM
-        stm_masked_inc = stm_masked_inc.assign({"partition_nmad": (["space", "time"], partition_nmad)})
-        stm_masked_inc = stm_masked_inc.assign({"partition_nmad_quality": (["space", "time"], quality_nmad)})
-        stm_masked_inc = stm_masked_inc.assign({"partition_nad": (["space", "time"], partition_nad)})
-        stm_masked_inc = stm_masked_inc.assign(
-            {"partition_sd_amplitude_sigma": (["space", "time"], partition_stats_sd["partition_amp_std"].data)}
-        )
-        stm_masked_inc = stm_masked_inc.assign(
-            {"partition_sd_amplitude_mean": (["space", "time"], partition_stats_sd["partition_amp_mean"].data)}
-        )
-        stm_masked_inc = stm_masked_inc.assign(
-            {"partition_sd_amplitude_median": (["space", "time"], partition_stats_sd["partition_amp_median"].data)}
-        )
-        stm_masked_inc = stm_masked_inc.assign(
-            {"partition_sd_mad": (["space", "time"], partition_stats_sd["partition_amp_mad"].data)}
-        )
-
     # Add the classification flag
     stm_masked_inc = stm_masked_inc.assign(
         {"classification_flag": (["space"], np.ones_like(stm_masked_inc.space.values).astype(np.int8))}
@@ -659,37 +564,6 @@ def _nmad_block(amp: xr.DataArray) -> xr.DataArray:
     nmad = mad / (median_amplitude + np.finfo(amp.dtype).eps)  # Normalized Median Absolute Deviation
 
     return nmad
-
-
-def _compute_partition_nad_nmad_amp_stats(amp: xr.DataArray) -> xr.DataArray:
-    """Compute the NAD and NMAD and the amplitude statistics on a partition basis.
-
-    Parameters
-    ----------
-    amp: xr.DataArray
-      a DataArray containing the amplitude values of a single partition, loaded into memory
-
-    Returns
-    -------
-    xr.DataArray
-      the same DataArray, with in the coordinates the calculated NAD and NMAD value in the same shape as the partition.
-
-    """
-    data = amp.data
-    std = np.std(data)
-    mean = np.mean(data)
-    nad = std / (mean + np.finfo(data.dtype).eps)
-    median = np.median(data)
-    mad = np.median(np.abs(data - median))
-    nmad = mad / (median + np.finfo(data.dtype).eps)
-
-    amp["partition_nad"] = (amp.dims, np.ones_like(data) * nad)
-    amp["partition_nmad"] = (amp.dims, np.ones_like(data) * nmad)
-    amp["partition_amp_std"] = (amp.dims, np.ones_like(data) * std)
-    amp["partition_amp_mean"] = (amp.dims, np.ones_like(data) * mean)
-    amp["partition_amp_mad"] = (amp.dims, np.ones_like(data) * mad)
-    amp["partition_amp_median"] = (amp.dims, np.ones_like(data) * median)
-    return amp
 
 
 def _idx_within_distance(coords_ref, coords_others, min_dist):
