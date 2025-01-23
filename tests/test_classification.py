@@ -36,7 +36,7 @@ def test_ps_selection_nmad():
         data_vars={"amplitude": (("azimuth", "range", "time"), np.ones((10, 9, 11)))},
         coords={
             "azimuth": np.arange(10),
-            "range": np.arange(11),
+            "range": np.arange(9),
             "time": [np.datetime64(f"2015-01-{i:0>2d}") for i in range(1, 12)],
         },
     )
