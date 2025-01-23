@@ -25,7 +25,9 @@ def ds_selection(
     path_to_stm,
     path_to_pe,
 ):
-    """Function to read an slc stack, identify id pixel, perform multilooking,
+    """Select distributed scatterers from the stack.
+
+    This fuction read an slc stack, identify id pixel, perform multilooking,
     and estimate equivalent single mother phase.
 
     Parameters
@@ -58,7 +60,7 @@ def ds_selection(
     -------
     ds_stm : xr.Dataset
         Selected DS as virtial PS in the form of an STM with two dimensions: space and time.
-    """  # noqa: D401, D205
+    """
     ## Assign id pixel
     print(
         "Check whether radar pixel_id has been assigned according to parcels.\n \
@@ -126,8 +128,10 @@ def ds_selection(
     return ds_stm
 
 
-def assign_id_pixel(slc_stack, nlines, npixels, path_to_shapefile, ds_min_cells):  # noqa: D417
-    """Function that performs point in polygon test,
+def assign_id_pixel(slc_stack, nlines, npixels, path_to_shapefile, ds_min_cells):
+    """Assign parcel id to radar pixels.
+
+    This function performs point in polygon test,
     assigns parcel id to each radar coords, and
     computes centroid of each parcel.
 
@@ -151,7 +155,7 @@ def assign_id_pixel(slc_stack, nlines, npixels, path_to_shapefile, ds_min_cells)
         Array with the same 2D shape as SLC data containing parcel_id.
     ds_stm : xr.Dataset
         STM containing information of DS.
-    """  # noqa: D205, D401
+    """
     ## Load variables
     az = slc_stack["azimuth"].values
     rg = slc_stack["range"].values
@@ -186,13 +190,13 @@ def assign_id_pixel(slc_stack, nlines, npixels, path_to_shapefile, ds_min_cells)
             mask2d = mask.reshape(nlines, npixels)
 
         if np.count_nonzero(mask) >= ds_min_cells:
-            mask_id = np.argwhere(mask == True)  # noqa: E712
+            mask_id = np.argwhere(mask)
             pixel_id[mask_id] = int(feature["properties"]["id"])
             center = sg.Polygon(r).centroid
             centroid.append([center.coords.xy[0][0], center.coords.xy[1][0]])
             parcel_id.append(int(feature["properties"]["id"]))
 
-            mask2d_id = np.argwhere(mask2d == True)  # noqa: E712
+            mask2d_id = np.argwhere(mask2d)
             az_centroid.append(np.median(az[np.unique(mask2d_id[:, 0])]).astype(int))
             rg_centroid.append(np.median(rg[np.unique(mask2d_id[:, 1])]).astype(int))
 
@@ -223,8 +227,10 @@ def assign_id_pixel(slc_stack, nlines, npixels, path_to_shapefile, ds_min_cells)
     return pixel_id, ds_stm
 
 
-def export_to_hdf(dataset_name, dataset, out_dir, filename):  # noqa: D417
-    """Funtion that exports a single or multiple dataset(s) into an HDF file.
+def export_to_hdf(dataset_name, dataset, out_dir, filename):
+    """Export data as HDF.
+
+    This function exports a single or multiple dataset(s) into an HDF file.
 
     Parameters
     ----------
@@ -250,8 +256,10 @@ def export_to_hdf(dataset_name, dataset, out_dir, filename):  # noqa: D417
             f.create_dataset(dset_name, data=data_dict[dset_name])
 
 
-def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, mother_date, ds_shp_test):  # noqa: D417
-    """Function that estimates equivalent single mother phase from a full complex coherence matrix
+def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, mother_date, ds_shp_test):
+    """Estimate equivalent single mother (ESM) phase to each parcel.
+
+    This function estimates ESM phase from a full complex coherence matrix
     after multilooking interferograms based on parcel id.
 
     Parameters
@@ -279,7 +287,7 @@ def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, mother_date,
     cpx_coh : 2D array
         Complex coherence of each parcel.
     NOTE: should we store the cpx_coh?
-    """  # noqa: D205, D401
+    """
     ## Extract data from the stack
     cpx_stack = slc_stack["complex"].values
     parcel_id = ds_stm["pnt_id"].values
@@ -346,12 +354,26 @@ def parcel_phase_estimation(slc_stack, pixel_id, ds_stm, slc_dates, mother_date,
     return ds_stm, parcel_id, cpx_coh
 
 
-def kstest(x):  # noqa: D103
+def kstest(x):
+    """Kolmogorov-Smirnov test.
+
+    Parameters
+    ----------
+    x : float
+        Amplitude of each SLC pixel within a parcel.
+
+    Returns
+    -------
+    float
+        P-value.
+    """
     return stats.kstest(x[0], x[1]).pvalue
 
 
-def shp_test(data, method="ks-test"):  # noqa: D417
-    """Function that performs brotherhood selection of selected pixels within the specified extent
+def shp_test(data, method="ks-test"):
+    """Statistical homogeneous pixel (SHP) test.
+
+    This function performs brotherhood selection of selected pixels within the specified extent
     by testing whether pixels come from the same distribution.
 
     Parameters
@@ -370,13 +392,11 @@ def shp_test(data, method="ks-test"):  # noqa: D417
     ------
     NotImplementedError
         Other methods that are not yet implemented.
-    """  # noqa: D401, D205
+    """
     if method == "ks-test" or method == "":
         ## Option 1: K-S Test (Kolmogorov-Smirnov)
         ## One means two samples have the same distribution (null hypothesis)
         ksmat = np.zeros(data.shape[0] * data.shape[0])
-        # iter        = itertools.product(np.sort(np.abs(data)), np.sort(np.abs(data)))
-        # pvals       = np.array([stats.kstest(x[0], x[1]).pvalue for x in iter])
         with mp.Pool() as pool:
             iter = itertools.product(np.sort(np.abs(data)), np.sort(np.abs(data)))
             pvals = np.array(pool.map(kstest, iter))
@@ -405,7 +425,9 @@ def shp_test(data, method="ks-test"):  # noqa: D417
 
 
 def phase_linking(data, regularization=0, estimator="emi"):
-    """Function that provides different phase linking methods for
+    """Phase linking.
+
+    This function provides different phase linking methods for
     equivalent single mother (ESM) phase estimation.
 
     Parameters
@@ -427,7 +449,7 @@ def phase_linking(data, regularization=0, estimator="emi"):
     ------
     NotImplementedError
         Other methods that are not yet implemented.
-    """  # noqa: D205, D401
+    """
     ## Spectral regularization
     if regularization == 1:
         beta = 0.5

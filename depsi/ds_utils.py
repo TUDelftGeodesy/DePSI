@@ -1,7 +1,7 @@
 import json
 import os
 import re
-import xml.etree.ElementTree as ET  # noqa: N817
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
@@ -10,11 +10,12 @@ import geopandas as gpd
 import numpy as np
 import sarxarray
 import xarray as xr
-from slc import *  # noqa: F403
+
+from depsi.slc import ifg_to_slc
 
 
 def extract_mother_date(xml_file):
-    """Function to extract mother date as an integer from doris_input.xml.
+    """Extract mother date as an integer from doris_input.xml.
 
     Parameters
     ----------
@@ -30,7 +31,7 @@ def extract_mother_date(xml_file):
     ------
     ValueError
         Raise when mother date element not found in the XML file.
-    """  # noqa: D401
+    """
     # Parse the XML file
     tree = ET.parse(xml_file)
     root = tree.getroot()
@@ -55,7 +56,7 @@ def extract_mother_date(xml_file):
 
 def identify_stacks(settings):
     """Identify stack data information and store it to a metadata file.
-    
+
     This function works for coregistered SAR data using DORIS.
 
     Parameters
@@ -97,7 +98,7 @@ def identify_stacks(settings):
         if boundary_stack.intersects(boundary_aoi):
             num_tracks += 1
         else:
-            print(f"Discarding stack {stack_id[i]}")  # noqa: F405
+            print(f"Discarding stack {settings["stack_id"][i]}")
             stack_dirs.remove(stack_dirs[i])
 
     assert num_tracks >= 1, "Could not find SAR data in the specified directory"
@@ -172,14 +173,13 @@ def identify_stacks(settings):
                 filelist = sorted(Path(stack_dir).glob("**/slave_rsmp_reramped.raw"))
             if settings["processor"] == "flinsar":
                 filelist = sorted(Path(stack_dir).glob("**/slc_srd.raw"))
+            filelist = [str(path) for path in filelist]
             slc_paths = [path for path in filelist if extract_date(path) in slc_dates]
 
         ## Read data from the master res file
         if settings["processor"] == "caroline":
             with open(os.path.join(mother_dir, "master.res")) as f:
                 lines = f.readlines()
-                swath = lines[37].strip().split()[-1]
-                mode = lines[38].strip().split()[-1]
                 r_px_spacing = float(lines[46].strip().split()[-1])
                 az_px_spacing = float(lines[47].strip().split()[-1])
                 npixels_res = int(lines[98].strip().split()[-1])
@@ -260,7 +260,19 @@ def create_processing_folders(settings):
     return settings
 
 
-def extract_date(path):  # noqa: D103
+def extract_date(path):
+    """Extract yyyyMMdd as integer from file path.
+
+    Parameters
+    ----------
+    path : str
+        path to slcs
+
+    Returns
+    -------
+    int or None
+        yyyyMMdd
+    """
     match = re.search(r"/(\d{8})/", path)
     return int(match.group(1)) if match else None
 
@@ -303,27 +315,19 @@ def load_slc_stack(stack_meta, chunks=(500, 500)):
     if stack_meta["do_reslc"] == "no":
         slc_stack = sarxarray.from_binary(filelist, shape=(nlines, npixels), dtype=np.complex64, chunks=chunks)
 
-        ## Drop amplitude and phase, keep complex only
-        slc_stack = slc_stack.drop_vars(["amplitude", "phase"])
-
         ## Assign coordinates to the stack
         slc_stack = slc_stack.assign_coords(
             lat=(("azimuth", "range"), lat.squeeze().lat.data), lon=(("azimuth", "range"), lon.squeeze().lon.data)
         )
-        # slc_stack = slc_stack.assign({'lon':lon, 'lat':lat})
 
         ## Assign datetime as time coordinates
         slc_stack["time"] = [datetime.strptime(str(date_int), "%Y%m%d") for date_int in slc_dates]
 
         ## Extract aoi indices for cropping stack to the area of interest
-        l0, lN, p0, pN = extract_stack_aoi_indices(slc_stack, stack_meta) 
+        l0, lN, p0, pN = extract_stack_aoi_indices(slc_stack, stack_meta)
 
         ## Crop stack
         slc_stack_subset = slc_stack.sel(azimuth=slice(l0, lN), range=slice(p0, pN))
-
-        ## Add amplitude and phase as attributes
-        slc_stack_subset = get_amplitude(slc_stack_subset)
-        slc_stack_subset = get_phase(slc_stack_subset)
 
     ## Recompute SLCs from IFGs
     if stack_meta["do_reslc"] == "yes":
@@ -364,8 +368,8 @@ def load_slc_stack(stack_meta, chunks=(500, 500)):
         )
 
         ## Add amplitude and phase as attributes
-        slc_stack_subset = get_amplitude(slc_stack_subset)
-        slc_stack_subset = get_phase(slc_stack_subset)
+        slc_stack_subset = _get_amplitude(slc_stack_subset)
+        slc_stack_subset = _get_phase(slc_stack_subset)
 
     ## Add the cropped shape to stack_meta
     stack_meta["nlines"] = int(lN - l0 + 1)
@@ -416,7 +420,7 @@ def extract_stack_aoi_indices(stack, stack_meta):
 #    https://github.com/TUDelftGeodesy/sarxarray/blob/main/sarxarray/stack.py                                  #
 #                                                                                                              #
 ################################################################################################################
-def get_amplitude(slc):  # noqa: D103
+def _get_amplitude(slc):
     slc_out = slc.copy()
     meta_arr = np.array((), dtype=np.float32)
     amplitude = da.apply_gufunc(_compute_amp, "()->()", slc["complex"], meta=meta_arr)
@@ -424,7 +428,7 @@ def get_amplitude(slc):  # noqa: D103
     return slc_out
 
 
-def get_phase(slc):  # noqa: D103
+def _get_phase(slc):
     slc_out = slc.copy()
     meta_arr = np.array((), dtype=np.float32)
     phase = da.apply_gufunc(_compute_phase, "()->()", slc["complex"], meta=meta_arr)

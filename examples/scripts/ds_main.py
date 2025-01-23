@@ -1,14 +1,11 @@
 import os
-import sys
 import json
 import sarxarray
 import xarray as xr
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append('/Users/ylumbangaol/Documents/S3/software/caroline_dev/DePSI_group/depsi/')
-from ds_utils import identify_stacks, create_processing_folders, load_slc_stack
-from classification import ps_selection
-from ds import ds_selection
+from depsi.classification import ps_selection
+from depsi.ds_utils import identify_stacks, create_processing_folders, load_slc_stack
+from depsi.ds import ds_selection
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJ_DIR = '/Users/ylumbangaol/Documents/S3/projects/nieuwolda/insar/'
