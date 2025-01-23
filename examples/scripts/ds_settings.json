@@ -1,5 +1,4 @@
 {
-  "project_name": "nieuwolda",
   "settings_filename": "ds_settings.json",
   "run_name": "testpy_ds",
   "proj_dir": "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/insar/",
@@ -7,7 +6,6 @@
   "aoi_shapefile": "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/contextual_data/aoi/nieuwolda_aoi_test.shp",
   "parcel_shapefile": "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/contextual_data/parcels/nieuwolda_attributes_wgs84_test.shp",
   "meteo_file": "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/contextual_data/knmi/",
-  "optical_rs": "",
   "stack_prefix": "nl_groningen",
   "start_date": 20200701,
   "end_date": 20201231,

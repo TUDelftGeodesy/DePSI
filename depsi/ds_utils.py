@@ -5,7 +5,6 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
-import dask.array as da
 import geopandas as gpd
 import numpy as np
 import sarxarray
@@ -72,7 +71,7 @@ def identify_stacks(settings):
     """
     ## Detect number of mother images / tracks
     dirlist = os.listdir(settings["stack_root_dir"])
-    pattern = re.compile(rf'^{settings["stack_prefix"]}_?s1_[ad]sc_t\d{{3}}$')
+    pattern = re.compile(rf"^{settings['stack_prefix']}_?s1_[ad]sc_t\d{{3}}$")
     stack_dirs = sorted([os.path.join(settings["stack_root_dir"], i) for i in dirlist if pattern.match(i)])
     num_tracks_init = len(stack_dirs)
 
@@ -98,7 +97,7 @@ def identify_stacks(settings):
         if boundary_stack.intersects(boundary_aoi):
             num_tracks += 1
         else:
-            print(f"Discarding stack {settings["stack_id"][i]}")
+            print(f"Discarding stack {settings['stack_id'][i]}")
             stack_dirs.remove(stack_dirs[i])
 
     assert num_tracks >= 1, "Could not find SAR data in the specified directory"
@@ -368,8 +367,8 @@ def load_slc_stack(stack_meta, chunks=(500, 500)):
         )
 
         ## Add amplitude and phase as attributes
-        slc_stack_subset = _get_amplitude(slc_stack_subset)
-        slc_stack_subset = _get_phase(slc_stack_subset)
+        slc_stack_subset = slc_stack_subset.slcstack._get_amplitude()
+        slc_stack_subset = slc_stack_subset.slcstack._get_phase()
 
     ## Add the cropped shape to stack_meta
     stack_meta["nlines"] = int(lN - l0 + 1)
@@ -413,35 +412,3 @@ def extract_stack_aoi_indices(stack, stack_meta):
     p0, pN = min(mask_idx[:, 1]), max(mask_idx[:, 1])
 
     return l0, lN, p0, pN
-
-
-################################################################################################################
-#    Source:                                                                                                   #
-#    https://github.com/TUDelftGeodesy/sarxarray/blob/main/sarxarray/stack.py                                  #
-#                                                                                                              #
-################################################################################################################
-def _get_amplitude(slc):
-    slc_out = slc.copy()
-    meta_arr = np.array((), dtype=np.float32)
-    amplitude = da.apply_gufunc(_compute_amp, "()->()", slc["complex"], meta=meta_arr)
-    slc_out = slc_out.assign({"amplitude": (("azimuth", "range", "time"), amplitude)})
-    return slc_out
-
-
-def _get_phase(slc):
-    slc_out = slc.copy()
-    meta_arr = np.array((), dtype=np.float32)
-    phase = da.apply_gufunc(_compute_phase, "()->()", slc["complex"], meta=meta_arr)
-    slc_out = slc_out.assign({"phase": (("azimuth", "range", "time"), phase)})
-    return slc_out
-
-
-def _compute_amp(complex):
-    return np.abs(complex)
-
-
-def _compute_phase(complex):
-    return np.angle(complex)
-
-
-################################################################################################################
