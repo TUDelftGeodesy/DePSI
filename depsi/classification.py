@@ -76,7 +76,6 @@ def ps_selection(
         with attributes:
         - ps_selection_start_date: the epoch of the first image used for the PS selection
         - ps_selection_end_date: the epoch of the last image used for the PS selection
-        - ps_sd_mother: the epoch of the mother used for the single differences
         with variables:
         - h2ph (space, time): the height to phase conversion
         - lat (space): latitude of the PS
@@ -87,7 +86,7 @@ def ps_selection(
         - selection_nad / selection_nmad (space): the value used for selection of the PS, dependent on method
         - full_ts_nad (space): the Normalized Amplitude Dispersion of the PS
         - full_ts_nmad (space): the Normalized Median Amplitude Dispersion of the PS
-        - classification_flag (space): 1 for all selected PS
+        - pnt_class (space): 1 for all selected PS
 
     Raises
     ------
@@ -208,7 +207,7 @@ def ps_selection(
 
     # Add the classification flag
     stm_masked_inc = stm_masked.assign(
-        {"classification_flag": (["space"], np.ones_like(stm_masked.space.values).astype(np.int8))}
+        {"pnt_class": (["space"], np.ones_like(stm_masked.space.values).astype(np.int8))}
     )
 
     # Compute NAD or NMAD if mem_persist is True
