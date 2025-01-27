@@ -83,7 +83,7 @@ def ps_selection(
         - complex (space, time): the complex value of the PS at each epoch
         - amplitude (space, time): the amplitude of the PS at each epoch
         - phase (space, time): the phase of the PS at each epoch
-        - selection_nad / selection_nmad (space): the value used for selection of the PS, dependent on method
+        - time_selection_nad / time_selection_nmad (space): the value used for selection of the PS, dependent on method
         - full_ts_nad (space): the Normalized Amplitude Dispersion of the PS
         - full_ts_nmad (space): the Normalized Median Amplitude Dispersion of the PS
         - pnt_class (space): 1 for all selected PS
@@ -116,7 +116,7 @@ def ps_selection(
                 )
                 ps_selection_times = []
             nad = nad.compute() if mem_persist else nad
-            slcs = slcs.assign(selection_nad=nad)
+            slcs = slcs.assign(time_selection_nad=nad)
             mask = nad < threshold
         case "nmad":
             if ps_selection_start_date is not None:
@@ -135,7 +135,7 @@ def ps_selection(
                 )
                 ps_selection_times = []
             nmad = nmad.compute() if mem_persist else nmad
-            slcs = slcs.assign(selection_nmad=nmad)
+            slcs = slcs.assign(time_selection_nmad=nmad)
             mask = nmad < threshold
         case _:
             raise NotImplementedError
@@ -216,14 +216,14 @@ def ps_selection(
         match method:
             case "nad":
                 for key in [
-                    "selection_nad",
+                    "time_selection_nad",
                     "full_ts_nad",
                     "full_ts_nmad",
                 ]:
                     stm_masked_inc[key] = stm_masked[key].compute()
             case "nmad":
                 for key in [
-                    "selection_nmad",
+                    "time_selection_nmad",
                     "full_ts_nad",
                     "full_ts_nmad",
                 ]:
@@ -236,7 +236,7 @@ def network_stm_selection(
     stm: xr.Dataset,
     min_dist: int | float,
     include_index: list[int] = None,
-    sortby_var: str = "pnt_nmad",
+    sortby_var: str = "time_selection_nmad",
     crs: int | str = "radar",
     x_var: str = "azimuth",
     y_var: str = "range",
@@ -263,7 +263,7 @@ def network_stm_selection(
     include_index : list[int], optional
         Index of points in the candidate STM that must be included in the selection, by default None
     sortby_var : str, optional
-        Sorting metric for selecting points, by default "pnt_nmad"
+        Sorting metric for selecting points, by default "time_selection_nmad"
     crs : int | str, optional
         EPSG code of Coordinate Reference System of `x_var` and `y_var`, by default "radar".
         If crs is "radar", the distance will be calculated based on radar coordinates, and
