@@ -45,7 +45,7 @@ def stm_partitioning(
     db_partitioning: bool = False,
     search_method: Literal["pelt", "binseg"] = "pelt",
     cost_model: str = "l2",
-    size: int = 27,
+    min_partition_size: int = 27,
     amplitude_variable_name: str = "amplitude",
     output_variable_prefix: str = "partition",
     output_variables: tuple = ("nad", "nmad", "quality_nmad_2sigma"),
@@ -68,7 +68,7 @@ def stm_partitioning(
       Which search method to use. Default (and recommended) "pelt"
     cost_model: str, optional
       Which cost model to use. Default (and recommended) "l2"
-    size: int, optional
+    min_partition_size: int, optional
       minimum size of the partitions. Default 27
     amplitude_variable_name: str, optional
       the name of the variable in which the amplitude information is stored in the STM. Default `amplitude`
@@ -123,7 +123,7 @@ def stm_partitioning(
             db_partitioning,
             search_method,
             cost_model,
-            size,
+            min_partition_size,
         )
         stm = stm.assign({"breakpoints": (["space", "time"], breakpoints.data)})
         stm = stm.assign({"partition_id": (["space", "time"], partition_identifiers)})
@@ -299,7 +299,7 @@ def _estimate_breakpoints(
     db_partitioning: bool = False,
     search_method: Literal["pelt", "binseg"] = "pelt",
     cost_model: str = "l2",
-    size: int = 27,
+    min_partition_size: int = 27,
 ) -> [xr.DataArray, xr.DataArray]:
     """Identify breakpoints in the amplitude timeseries of a DataArray of amplitude information.
 
@@ -317,7 +317,7 @@ def _estimate_breakpoints(
       Which search method to use. Default (and recommended) "pelt"
     cost_model: str, optional
       Which cost model to use. Default (and recommended) "l2"
-    size: int, optional
+    min_partition_size: int, optional
       minimum size of the partitions. Default 27
 
     Returns
@@ -340,14 +340,14 @@ def _estimate_breakpoints(
             breakpoints = xr.map_blocks(
                 _pelt_block,
                 amplitude_ts,
-                args=(cost_model, size),
+                args=(cost_model, min_partition_size),
                 template=amplitude_ts,
             )
         case "binseg":
             breakpoints = xr.map_blocks(
                 _binseg_block,
                 amplitude_ts,
-                args=(cost_model, size),
+                args=(cost_model, min_partition_size),
                 template=amplitude_ts,
             )
         case _:
@@ -370,7 +370,7 @@ def _estimate_breakpoints(
     return breakpoints, breakpoints_idx
 
 
-def _pelt_block(amplitude_ts: xr.Dataset, cost_model: str, size: int) -> xr.Dataset:
+def _pelt_block(amplitude_ts: xr.Dataset, cost_model: str, min_partition_size: int) -> xr.Dataset:
     """Compute the pelt cost function for breakpoints in chunks.
 
     Parameters
@@ -378,9 +378,9 @@ def _pelt_block(amplitude_ts: xr.Dataset, cost_model: str, size: int) -> xr.Data
     amplitude_ts: xr.Dataset
       dataset containing the amplitude values of a chunk of points.
     cost_model: str
-      Which cost model to use. Default (and recommended) "l2"
-    size: int
-      minimum size of the partitions. Default 27
+      Which cost model to use
+    min_partition_size: int
+      minimum size of the partitions
 
     Returns
     -------
@@ -388,11 +388,11 @@ def _pelt_block(amplitude_ts: xr.Dataset, cost_model: str, size: int) -> xr.Data
       Boolean dataset of the same size of the amplitude array, where True indicates a detected breakpoint
     """
     groups = amplitude_ts.groupby("space")
-    stmat_out = groups.map(_pelt_single_point, cost_model=cost_model, size=size)
+    stmat_out = groups.map(_pelt_single_point, cost_model=cost_model, min_partition_size=min_partition_size)
     return stmat_out
 
 
-def _pelt_single_point(amplitude_ts: xr.Dataset, cost_model: str, size: int) -> xr.Dataset:
+def _pelt_single_point(amplitude_ts: xr.Dataset, cost_model: str, min_partition_size: int) -> xr.Dataset:
     """Compute the pelt cost function for breakpoints for a single point.
 
     Parameters
@@ -400,9 +400,9 @@ def _pelt_single_point(amplitude_ts: xr.Dataset, cost_model: str, size: int) -> 
     amplitude_ts: xr.Dataset
       dataset containing the amplitude values of one point.
     cost_model: str
-      Which cost model to use. Default (and recommended) "l2"
-    size: int
-      minimum size of the partitions. Default 27
+      Which cost model to use
+    min_partition_size: int
+      minimum size of the partitions
 
     Returns
     -------
@@ -411,7 +411,7 @@ def _pelt_single_point(amplitude_ts: xr.Dataset, cost_model: str, size: int) -> 
     """
     amplitude_computed = amplitude_ts.compute().data
     penalty = np.var(amplitude_computed) * np.log(amplitude_ts.time.shape[0])
-    algo = rpt.Pelt(model=cost_model, min_size=size, jump=PELT_JUMP).fit(amplitude_computed.flatten())
+    algo = rpt.Pelt(model=cost_model, min_size=min_partition_size, jump=PELT_JUMP).fit(amplitude_computed.flatten())
     breakpoints = algo.predict(pen=penalty)
 
     # Convert to the boolean array
@@ -426,7 +426,7 @@ def _pelt_single_point(amplitude_ts: xr.Dataset, cost_model: str, size: int) -> 
     return breakpoints_xarray
 
 
-def _binseg_block(amplitude_ts: xr.Dataset, cost_model: str, size: int) -> xr.Dataset:
+def _binseg_block(amplitude_ts: xr.Dataset, cost_model: str, min_partition_size: int) -> xr.Dataset:
     """Compute the BinSeg cost function for breakpoints in chunks.
 
     Parameters
@@ -434,9 +434,9 @@ def _binseg_block(amplitude_ts: xr.Dataset, cost_model: str, size: int) -> xr.Da
     amplitude_ts: xr.Dataset
       dataset containing the amplitude values of a chunk of points.
     cost_model: str
-      Which cost model to use. Default (and recommended) "l2"
-    size: int
-      minimum size of the partitions. Default 27
+      Which cost model to use
+    min_partition_size: int
+      minimum size of the partitions
 
     Returns
     -------
@@ -444,11 +444,11 @@ def _binseg_block(amplitude_ts: xr.Dataset, cost_model: str, size: int) -> xr.Da
       Boolean dataset of the same size of the amplitude array, where True indicates a detected breakpoint
     """
     groups = amplitude_ts.groupby("space")
-    stmat_out = groups.map(_binseg_single_point, cost_model=cost_model, size=size)
+    stmat_out = groups.map(_binseg_single_point, cost_model=cost_model, min_partition_size=min_partition_size)
     return stmat_out
 
 
-def _binseg_single_point(amplitude_ts: xr.Dataset, cost_model: str, size: int) -> xr.Dataset:
+def _binseg_single_point(amplitude_ts: xr.Dataset, cost_model: str, min_partition_size: int) -> xr.Dataset:
     """Compute the BinSeg cost function for breakpoints for a single point.
 
     Parameters
@@ -456,9 +456,9 @@ def _binseg_single_point(amplitude_ts: xr.Dataset, cost_model: str, size: int) -
     amplitude_ts: xr.Dataset
       dataset containing the amplitude values of one point.
     cost_model: str
-      Which cost model to use. Default (and recommended) "l2"
-    size: int
-      minimum size of the partitions. Default 27
+      Which cost model to use
+    min_partition_size: int
+      minimum size of the partitions
 
     Returns
     -------
@@ -475,7 +475,7 @@ def _binseg_single_point(amplitude_ts: xr.Dataset, cost_model: str, size: int) -
     if len(all_breakpoints) > 0:  # we detected something
         breakpoints = [all_breakpoints[0]]
         for bkp in all_breakpoints[1:]:
-            if bkp - breakpoints[-1] >= size:
+            if bkp - breakpoints[-1] >= min_partition_size:
                 breakpoints.append(bkp)
     else:
         breakpoints = []

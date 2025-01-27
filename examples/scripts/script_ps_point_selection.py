@@ -17,8 +17,8 @@ aoi_file = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/sh
 stm_save_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t110_stm.zarr'
 
 # Crop in time
-last_date = datetime(2025, 9, 1)
 first_date = datetime(2014, 1, 1)
+last_date = datetime(2025, 9, 1)
 
 # PS Selection based on initialization
 start_date_ps_selection = datetime(2017, 1, 1)
