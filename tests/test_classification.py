@@ -114,7 +114,7 @@ def test_network_stm_selection_results():
         stm, min_dist=20, sortby_var="time_selection_nmad", azimuth_spacing=10, range_spacing=10
     )
     # Fields should remain the same
-    assert "pnt_nad" in res_nad
+    assert "time_selection_nad" in res_nad
     assert "azimuth" in res_nad
     assert "range" in res_nad
     assert "space" in res_nad.dims
