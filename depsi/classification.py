@@ -196,14 +196,11 @@ def ps_selection(
     if ps_selection_start_date is None:
         start_date = npdatetime64_to_datetime(stm_masked["time"].values[0])
         end_date = npdatetime64_to_datetime(stm_masked["time"].values[-1])
-
-        stm_masked.attrs["ps_selection_start_date"] = f"{start_date.year}{start_date.month:0>2d}{start_date.day:0>2d}"
-        stm_masked.attrs["ps_selection_end_date"] = f"{end_date.year}{end_date.month:0>2d}{end_date.day:0>2d}"
     else:
         start_date = npdatetime64_to_datetime(ps_selection_times[0])
         end_date = npdatetime64_to_datetime(ps_selection_times[-1])
-        stm_masked.attrs["ps_selection_start_date"] = f"{start_date.year}{start_date.month:0>2d}{start_date.day:0>2d}"
-        stm_masked.attrs["ps_selection_end_date"] = f"{end_date.year}{end_date.month:0>2d}{end_date.day:0>2d}"
+    stm_masked.attrs["ps_selection_start_date"] = start_date.strftime("%Y%m%d")
+    stm_masked.attrs["ps_selection_end_date"] = end_date.strftime("%Y%m%d")
 
     # Add the classification flag
     stm_masked_inc = stm_masked.assign(

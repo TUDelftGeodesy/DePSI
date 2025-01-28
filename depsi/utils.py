@@ -442,8 +442,7 @@ def stm_compute_single_time_differences(
     sd_mother = npdatetime64_to_datetime(stm["time"].values[sd_mother_index])
 
     # Format the single difference mother, and save it to the STM
-    sd_mother_formatted = f"{sd_mother.year}{sd_mother.month:0>2d}{sd_mother.day:0>2d}"
-    stm.attrs["ps_sd_mother"] = sd_mother_formatted
+    stm.attrs["ps_sd_mother"] = sd_mother.strftime("%Y%m%d")
 
     # calculate the h2ph single difference (= daughter - mother)
     sd_h2ph = stm["h2ph"] - stm["h2ph"][:, sd_mother_index]
