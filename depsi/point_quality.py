@@ -348,13 +348,13 @@ def _estimate_breakpoints(
     return computed_breakpoints, breakpoints_idx
 
 
-def _pelt_block(amplitude_ts: xr.Dataset, cost_model: str, min_partition_size: int) -> xr.Dataset:
+def _pelt_block(amplitude_ts: xr.DataArray, cost_model: str, min_partition_size: int) -> xr.DataArray:
     """Compute the pelt cost function for breakpoints in chunks.
 
     Parameters
     ----------
-    amplitude_ts: xr.Dataset
-      dataset containing the amplitude values of a chunk of points.
+    amplitude_ts: xr.DataArray
+      DataArray containing the amplitude values of a chunk of points.
     cost_model: str
       Which cost model to use
     min_partition_size: int
@@ -362,21 +362,21 @@ def _pelt_block(amplitude_ts: xr.Dataset, cost_model: str, min_partition_size: i
 
     Returns
     -------
-    xr.Dataset
-      Boolean dataset of the same size of the amplitude array, where True indicates a detected breakpoint
+    xr.DataArray
+      Boolean DataArray of the same size of the amplitude array, where True indicates a detected breakpoint
     """
     groups = amplitude_ts.groupby("space")
     stmat_out = groups.map(_pelt_single_point, cost_model=cost_model, min_partition_size=min_partition_size)
     return stmat_out
 
 
-def _pelt_single_point(amplitude_ts: xr.Dataset, cost_model: str, min_partition_size: int) -> xr.Dataset:
+def _pelt_single_point(amplitude_ts: xr.DataArray, cost_model: str, min_partition_size: int) -> xr.DataArray:
     """Compute the pelt cost function for breakpoints for a single point.
 
     Parameters
     ----------
-    amplitude_ts: xr.Dataset
-      dataset containing the amplitude values of one point.
+    amplitude_ts: xr.DataArray
+      DataArray containing the amplitude values of one point.
     cost_model: str
       Which cost model to use
     min_partition_size: int
@@ -384,8 +384,8 @@ def _pelt_single_point(amplitude_ts: xr.Dataset, cost_model: str, min_partition_
 
     Returns
     -------
-    xr.Dataset
-      Boolean dataset of the same size of the amplitude array, where True indicates a detected breakpoint
+    xr.DataArray
+      Boolean DataArray of the same size of the amplitude array, where True indicates a detected breakpoint
     """
     amplitude_computed = amplitude_ts.compute().data
     penalty = np.var(amplitude_computed) * np.log(amplitude_ts.time.shape[0])
@@ -404,13 +404,13 @@ def _pelt_single_point(amplitude_ts: xr.Dataset, cost_model: str, min_partition_
     return breakpoints_xarray
 
 
-def _binseg_block(amplitude_ts: xr.Dataset, cost_model: str, min_partition_size: int) -> xr.Dataset:
+def _binseg_block(amplitude_ts: xr.DataArray, cost_model: str, min_partition_size: int) -> xr.DataArray:
     """Compute the BinSeg cost function for breakpoints in chunks.
 
     Parameters
     ----------
-    amplitude_ts: xr.Dataset
-      dataset containing the amplitude values of a chunk of points.
+    amplitude_ts: xr.DataArray
+      DataArray containing the amplitude values of a chunk of points.
     cost_model: str
       Which cost model to use
     min_partition_size: int
@@ -426,13 +426,13 @@ def _binseg_block(amplitude_ts: xr.Dataset, cost_model: str, min_partition_size:
     return stmat_out
 
 
-def _binseg_single_point(amplitude_ts: xr.Dataset, cost_model: str, min_partition_size: int) -> xr.Dataset:
+def _binseg_single_point(amplitude_ts: xr.DataArray, cost_model: str, min_partition_size: int) -> xr.DataArray:
     """Compute the BinSeg cost function for breakpoints for a single point.
 
     Parameters
     ----------
-    amplitude_ts: xr.Dataset
-      dataset containing the amplitude values of one point.
+    amplitude_ts: xr.DataArray
+      DataArray containing the amplitude values of one point.
     cost_model: str
       Which cost model to use
     min_partition_size: int
@@ -440,8 +440,8 @@ def _binseg_single_point(amplitude_ts: xr.Dataset, cost_model: str, min_partitio
 
     Returns
     -------
-    xr.Dataset
-      Boolean dataset of the same size of the amplitude array, where True indicates a detected breakpoint
+    xr.DataArray
+      Boolean DataArray of the same size of the amplitude array, where True indicates a detected breakpoint
     """
     amplitude_computed = amplitude_ts.compute().data
     penalty = np.var(amplitude_computed) * np.log(amplitude_ts.time.shape[0])
