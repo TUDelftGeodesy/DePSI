@@ -211,6 +211,7 @@ def stm_add_incremental_recal_nad_nmad(
 
     # loop over the time values
     for date in stm["time"].values:
+        # TODO: check if this function loop can be simplified (#81)
         # determine the time crop and recalibration index for the current image
         if initialization_mode:
             current_epoch = npdatetime64_to_datetime(date)
@@ -536,7 +537,7 @@ def _detect_outliers(
     """
     if db_outlier_detection:
         amplitude_ts = 10 * np.log10(amplitude_array)
-    else: 
+    else:
         amplitude_ts = amplitude_array
 
     # Set up the filter value using a hampel filter with the window size
