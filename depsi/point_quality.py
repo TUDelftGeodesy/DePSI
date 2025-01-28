@@ -125,15 +125,15 @@ def stm_partitioning(
             cost_model,
             min_partition_size,
         )
-        stm = stm.assign({"breakpoints": (["space", "time"], breakpoints.data)})
+        stm = stm.assign({"breakpoints": (["space", "time"], breakpoints)})
         stm = stm.assign({"partition_id": (["space", "time"], partition_identifiers)})
 
-    # persist the amplitude values to memory to facilitate IO during the groups
-    groups = stm[amplitude_variable_name]
-    groups.data = groups.values
-    groups = groups.groupby(stm["partition_id"])
-
     if len(output_variables) > 0:
+        # persist the amplitude values to memory to facilitate IO during the groups
+        groups = stm[amplitude_variable_name]
+        groups.data = groups.values
+        groups = groups.groupby(stm["partition_id"])
+
         partition_stats = groups.map(_compute_partition_nad_nmad_amp_stats)
         for output_variable in output_variables:
             if "quality" in output_variable:
@@ -300,7 +300,7 @@ def _estimate_breakpoints(
     search_method: Literal["pelt", "binseg"] = "pelt",
     cost_model: str = "l2",
     min_partition_size: int = 27,
-) -> [xr.DataArray, xr.DataArray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Identify breakpoints in the amplitude timeseries of a DataArray of amplitude information.
 
     Identifies breakpoints in the amplitude timeseries of a set of points, based on a given search method, cost model
@@ -322,9 +322,9 @@ def _estimate_breakpoints(
 
     Returns
     -------
-    xr.DataArray
+    np.ndarray
       boolean data array where True indicates a breakpoint at that epoch
-    xr.DataArray
+    np.ndarray
       integer data array where each partition has been assigned a unique identifier.
     """
     match db_partitioning:
@@ -361,13 +361,12 @@ def _estimate_breakpoints(
     # breakpoint encountered.
     # 2. a point index to increase the identifier by 1 at the start of each new point. Otherwise the last partition of
     # point 1 and the first partition of point 2 will have the same identifier.
-    breakpoints.data = computed_breakpoints
-    breakpoints_idx_p1 = np.cumsum(breakpoints.data).reshape(breakpoints.shape)
-    point_idx = np.arange(0, breakpoints.shape[0]).reshape((breakpoints.shape[0], 1))
-    point_idx = np.hstack([point_idx for _ in range(breakpoints.shape[1])])
+    breakpoints_idx_p1 = np.cumsum(computed_breakpoints).reshape(computed_breakpoints.shape)
+    point_idx = np.arange(0, computed_breakpoints.shape[0]).reshape((computed_breakpoints.shape[0], 1))
+    point_idx = np.hstack([point_idx for _ in range(computed_breakpoints.shape[1])])
     breakpoints_idx = breakpoints_idx_p1 + point_idx
 
-    return breakpoints, breakpoints_idx
+    return computed_breakpoints, breakpoints_idx
 
 
 def _pelt_block(amplitude_ts: xr.Dataset, cost_model: str, min_partition_size: int) -> xr.Dataset:
