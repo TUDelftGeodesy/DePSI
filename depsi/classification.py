@@ -93,52 +93,35 @@ def ps_selection(
     NotImplementedError
         Raised when an unsupported method is provided.
     """
+    # define the PS selection functions based on the method. This is in the function since it requires
+    # _nad_block and _nmad_block to already be defined.
+    ps_selection_functions = {
+        "nad": _nad_block,
+        "nmad": _nmad_block,
+    }
+
     # Make sure there is no temporal chunk
     # since later a block function assumes all temporal data is available in a spatial block
     slcs = slcs.chunk({"time": -1})
 
-    # Calculate selection mask
-    match method:
-        case "nad":
-            if ps_selection_start_date is not None:
-                selection_crop = crop_slc_spacetime(
-                    slcs, start_date=ps_selection_start_date, end_date=ps_selection_end_date
-                )
-                nad = xr.map_blocks(
-                    _nad_block,
-                    selection_crop["amplitude"],
-                    template=selection_crop["amplitude"].isel(time=0).drop_vars("time"),
-                )
-                ps_selection_times = selection_crop["time"].values
-            else:
-                nad = xr.map_blocks(
-                    _nad_block, slcs["amplitude"], template=slcs["amplitude"].isel(time=0).drop_vars("time")
-                )
-                ps_selection_times = []
-            nad = nad.compute() if mem_persist else nad
-            slcs = slcs.assign(time_selection_nad=nad)
-            mask = nad < threshold
-        case "nmad":
-            if ps_selection_start_date is not None:
-                selection_crop = crop_slc_spacetime(
-                    slcs, start_date=ps_selection_start_date, end_date=ps_selection_end_date
-                )
-                nmad = xr.map_blocks(
-                    _nmad_block,
-                    selection_crop["amplitude"],
-                    template=selection_crop["amplitude"].isel(time=0).drop_vars("time"),
-                )
-                ps_selection_times = selection_crop["time"].values
-            else:
-                nmad = xr.map_blocks(
-                    _nmad_block, slcs["amplitude"], template=slcs["amplitude"].isel(time=0).drop_vars("time")
-                )
-                ps_selection_times = []
-            nmad = nmad.compute() if mem_persist else nmad
-            slcs = slcs.assign(time_selection_nmad=nmad)
-            mask = nmad < threshold
-        case _:
-            raise NotImplementedError
+    # Apply the time crop for the SLC selection if requested
+    if ps_selection_start_date is not None:
+        selection_slcs = crop_slc_spacetime(slcs, start_date=ps_selection_start_date, end_date=ps_selection_end_date)
+    else:
+        selection_slcs = slcs
+
+    if method not in ps_selection_functions.keys():
+        raise NotImplementedError(f"Know methods {ps_selection_functions.keys()} but {method} was requested!")
+
+    # Calculate the selection mask
+    nad_nmad = xr.map_blocks(
+        ps_selection_functions[method],
+        selection_slcs["amplitude"],
+        template=selection_slcs["amplitude"].isel(time=0).drop_vars("time"),
+    )
+    nad_nmad = nad_nmad.compute() if mem_persist else nad_nmad
+    slcs = slcs.assign({f"time_selection_{method}": nad_nmad})
+    mask = nad_nmad < threshold
 
     # Get the 1D index on space dimension
     mask_1d = mask.stack(space=("azimuth", "range")).drop_vars(["azimuth", "range", "space"])  # Drop multi-index coords
@@ -167,7 +150,7 @@ def ps_selection(
     # Re-order the dimensions to community preferred ("space", "time") order
     stm_masked = stm_masked.transpose("space", "time")
 
-    # Rechunk is needed because after apply maksing, the chunksize will be inconsistant
+    # Rechunk is needed because after apply masking, the chunksize will be inconsistent
     stm_masked = stm_masked.chunk(
         {
             "space": output_chunks,
@@ -193,40 +176,21 @@ def ps_selection(
     stm_masked = stm_masked.assign({"full_ts_nad": (["space"], nad.data)})
 
     # Add selection date attributes
-    if ps_selection_start_date is None:
-        start_date = npdatetime64_to_datetime(stm_masked["time"].values[0])
-        end_date = npdatetime64_to_datetime(stm_masked["time"].values[-1])
-    else:
-        start_date = npdatetime64_to_datetime(ps_selection_times[0])
-        end_date = npdatetime64_to_datetime(ps_selection_times[-1])
+    start_date = npdatetime64_to_datetime(selection_slcs["time"].values[0])
+    end_date = npdatetime64_to_datetime(selection_slcs["time"].values[-1])
     stm_masked.attrs["ps_selection_start_date"] = start_date.strftime("%Y%m%d")
     stm_masked.attrs["ps_selection_end_date"] = end_date.strftime("%Y%m%d")
 
     # Add the classification flag
-    stm_masked_inc = stm_masked.assign(
-        {"pnt_class": (["space"], np.ones_like(stm_masked.space.values).astype(np.int8))}
-    )
+    stm_masked = stm_masked.assign({"pnt_class": (["space"], np.ones_like(stm_masked.space.values).astype(np.int8))})
 
     # Compute NAD or NMAD if mem_persist is True
     # This only evaluate a very short task graph, since NAD or NMAD is already in memory
     if mem_persist:
-        match method:
-            case "nad":
-                for key in [
-                    "time_selection_nad",
-                    "full_ts_nad",
-                    "full_ts_nmad",
-                ]:
-                    stm_masked_inc[key] = stm_masked[key].compute()
-            case "nmad":
-                for key in [
-                    "time_selection_nmad",
-                    "full_ts_nad",
-                    "full_ts_nmad",
-                ]:
-                    stm_masked_inc[key] = stm_masked[key].compute()
+        for key in [f"time_selection_{method}", "full_ts_nad", "full_ts_nmad"]:
+            stm_masked[key] = stm_masked[key].compute()
 
-    return stm_masked_inc
+    return stm_masked
 
 
 def network_stm_selection(
