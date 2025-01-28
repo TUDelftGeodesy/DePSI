@@ -248,11 +248,7 @@ def stm_add_incremental_recal_nad_nmad(
             case "incremental":  # always requires an update
                 update = True
             case "recalibration":  # only requires an update when the index is 0
-                match recalibration_idx:
-                    case 0:
-                        update = True
-                    case _:
-                        update = False
+                update = recalibration_idx == 0
             case _:
                 raise NotImplementedError(f"Unknown mode {mode}, known are recalibration and incremental!")
 
