@@ -196,7 +196,7 @@ def stm_add_incremental_recal_nad_nmad(
     for key in ["time", "amplitude", "space"]:
         assert key in stm.keys(), f"Expected STM with key {key} but it is not there!"
     for key in ["ps_selection_start_date", "ps_selection_end_date"]:
-        assert key in dir(stm), f"Expected STM with attribute {key} but it is not there!"
+        assert key in stm.attrs, f"Expected STM with attribute {key} but it is not there!"
 
     imgs = []
     recalibration_idx = -1  # start at -1 so that the first addition will trigger a reset of the data layer
