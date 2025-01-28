@@ -1,5 +1,4 @@
 import os
-from typing import Literal
 
 import dask.array as da
 import pyproj
