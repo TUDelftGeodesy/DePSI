@@ -327,13 +327,10 @@ def _estimate_breakpoints(
     np.ndarray
       integer data array where each partition has been assigned a unique identifier.
     """
-    match db_partitioning:
-        case False:
-            amplitude_ts = amplitude_array
-        case True:
-            amplitude_ts = 10 * da.log10(amplitude_array)
-        case _:
-            raise ValueError(f"db_segmentation should be False or True but is {db_partitioning}!")
+if db_partitioning:
+    amplitude_ts = 10 * da.log10(amplitude_array)
+else:
+    amplitude_ts = amplitude_array
 
     match search_method:
         case "pelt":
