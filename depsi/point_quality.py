@@ -137,10 +137,8 @@ def stm_partitioning(
         partition_stats = groups.map(_compute_partition_nad_nmad_amp_stats)
         for output_variable in output_variables:
             if "quality" in output_variable:
-                _, var, metric = output_variable.split('_')
-                output = _nad_nmad_quality_metrics(
-                    partition_stats[f"partition_{var}"].data, var, metric
-                )
+                _, var, metric = output_variable.split("_")
+                output = _nad_nmad_quality_metrics(partition_stats[f"partition_{var}"].data, var, metric)
             else:
                 output = partition_stats[f"partition_{output_variable}"].data
             stm = stm.assign({f"{output_variable_prefix}_{output_variable}": (["space", "time"], output)})
@@ -206,7 +204,9 @@ def stm_add_incremental_recal_nad_nmad(
     initialization_mode = True
     first_epoch = npdatetime64_to_datetime(stm["time"].values[0])
     last_epoch = npdatetime64_to_datetime(stm["time"].values[-1])
-    if (stm.ps_selection_start_date == first_epoch.strftime("%Y%m%d")) and (stm.ps_selection_end_date == last_epoch.strftime("%Y%m%d")):
+    if (stm.ps_selection_start_date == first_epoch.strftime("%Y%m%d")) and (
+        stm.ps_selection_end_date == last_epoch.strftime("%Y%m%d")
+    ):
         initialization_mode = False
 
     # loop over the time values
@@ -314,10 +314,10 @@ def _estimate_breakpoints(
     np.ndarray
       integer data array where each partition has been assigned a unique identifier.
     """
-if db_partitioning:
-    amplitude_ts = 10 * da.log10(amplitude_array)
-else:
-    amplitude_ts = amplitude_array
+    if db_partitioning:
+        amplitude_ts = 10 * da.log10(amplitude_array)
+    else:
+        amplitude_ts = amplitude_array
 
     match search_method:
         case "pelt":
