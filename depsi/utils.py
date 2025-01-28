@@ -140,7 +140,8 @@ def _get_aoi_shapefile_bounding_box(aoi_filename: str) -> tuple:
     Returns
     -------
     tuple
-      tuple of two np.ndarrays, the first containing the latitudes, the second the longitudes of the bounding box.
+      tuple of two lists, the first containing the longitude extent, the second the latitude extent of the
+      bounding box.
 
     Raises
     ------
@@ -160,9 +161,11 @@ def _get_aoi_shapefile_bounding_box(aoi_filename: str) -> tuple:
     # open the file, and iterate through the geometry
     shape = geopandas.read_file(aoi_filename)
     # calculate the coordinates of the bounding box of the provided AoI
-    bounding_box = shape.envelope.boundary[0].xy
+    bounding_box = shape.total_bounds
+    # format as longitude extent (in x), latitude extent (in y)
+    bounding_box_formatted = ([bounding_box[0], bounding_box[2]], [bounding_box[1], bounding_box[3]])
 
-    return bounding_box
+    return bounding_box_formatted
 
 
 def crop_slc_spacetime(
