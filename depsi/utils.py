@@ -304,7 +304,7 @@ def project_stm_coordinates(stm: xr.Dataset, projection: Literal["RD"] | str = "
     stm: xr.Dataset
       Space-time matrix with the layers `lat` (latitude) and `lon` (longitude in WGS84 (EPSG:4326), and coordinate
       `space`
-    projection: Literal["RD"] | str, optional
+    projection: str, optional
       Projection to which the latitude and longitude coordinates should be transformed. "RD" defaults to "EPSG:28992".
       Default "RD"
 
