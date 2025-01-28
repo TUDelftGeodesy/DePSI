@@ -137,21 +137,13 @@ def stm_partitioning(
         partition_stats = groups.map(_compute_partition_nad_nmad_amp_stats)
         for output_variable in output_variables:
             if "quality" in output_variable:
+                _, var, metric = output_variable.split('_')
                 output = _nad_nmad_quality_metrics(
-                    partition_stats[f"partition_{output_variable.split('_')[1]}"].data,
-                    output_variable.split("_")[1],
-                    output_variable.split("_")[2],
+                    partition_stats[f"partition_{var}"].data, var, metric
                 )
-                stm = stm.assign({f"{output_variable_prefix}_{output_variable}": (["space", "time"], output)})
             else:
-                stm = stm.assign(
-                    {
-                        f"{output_variable_prefix}_{output_variable}": (
-                            ["space", "time"],
-                            partition_stats[f"partition_{output_variable}"].data,
-                        )
-                    }
-                )
+                output = partition_stats[f"partition_{output_variable}"].data
+            stm = stm.assign({f"{output_variable_prefix}_{output_variable}": (["space", "time"], output)})
     return stm
 
 
