@@ -89,7 +89,7 @@ if do_ps_partitioning:
                            db_partitioning=ps_db_partitioning,
                            search_method=ps_partitioning_search_method,
                            cost_model=ps_partitioning_cost_function,
-                           size=ps_min_obs_partition,
+                           min_partition_size=ps_min_obs_partition,
                            amplitude_variable_name="amplitude",
                            output_variable_prefix="partition",
                            output_variables=("nmad", "nad", "quality_nmad_2sigma"))
@@ -98,7 +98,7 @@ if do_ps_partitioning:
                            db_partitioning=ps_db_partitioning,
                            search_method=ps_partitioning_search_method,
                            cost_model=ps_partitioning_cost_function,
-                           size=ps_min_obs_partition,
+                           min_partition_size=ps_min_obs_partition,
                            amplitude_variable_name="sd_amplitude_unnormalized",
                            output_variable_prefix="partition_sd",
                            output_variables=("mad", "amplitude_sigma", "amplitude_mean", "amplitude_median"))
@@ -108,5 +108,6 @@ if do_ps_outlier_detection:
     stm = detect_outliers_stm(stm, db_outlier_detection=ps_outlier_detection_db, window_size=ps_window_size_outliers,
                               n_sigma=ps_n_sigma_outliers)
 
+import pdb; pdb.set_trace()
 # Save
 stm.to_zarr(stm_save_path, mode='w')

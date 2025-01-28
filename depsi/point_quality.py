@@ -6,7 +6,7 @@ import ruptures as rpt
 import xarray as xr
 
 from depsi.classification import _nad_block, _nmad_block
-from depsi.utils import _npdatetime64_to_datetime, crop_slc_spacetime
+from depsi.utils import crop_slc_spacetime, npdatetime64_to_datetime
 
 # The partitioning requires a jump size when using pelt mode. This should always be 5.
 # TODO: add documentation as to why this should be 5
@@ -212,8 +212,8 @@ def stm_add_incremental_recal_nad_nmad(
 
     # detect if an initialization epoch was used in the PS selection
     initialization_mode = True
-    first_epoch = _npdatetime64_to_datetime(stm["time"].values[0])
-    last_epoch = _npdatetime64_to_datetime(stm["time"].values[-1])
+    first_epoch = npdatetime64_to_datetime(stm["time"].values[0])
+    last_epoch = npdatetime64_to_datetime(stm["time"].values[-1])
     if stm.ps_selection_start_date == f"{first_epoch.year}{first_epoch.month:0>2d}{first_epoch.day:0>2d}":
         if stm.ps_selection_end_date == f"{last_epoch.year}{last_epoch.month:0>2d}{last_epoch.day:0>2d}":
             initialization_mode = False
@@ -222,7 +222,7 @@ def stm_add_incremental_recal_nad_nmad(
     for date in stm["time"].values:
         # determine the time crop and recalibration index for the current image
         if initialization_mode:
-            current_epoch = _npdatetime64_to_datetime(date)
+            current_epoch = npdatetime64_to_datetime(date)
             current_epoch_formatted = f"{current_epoch.year}{current_epoch.month:0>2d}{current_epoch.day:0>2d}"
 
             if current_epoch_formatted < stm.ps_selection_start_date:
@@ -246,8 +246,8 @@ def stm_add_incremental_recal_nad_nmad(
                 # should be loaded
                 recalibration_idx %= recalibration_jump_size
         else:
-            start_date = _npdatetime64_to_datetime(stm["time"].values[0])
-            end_date = _npdatetime64_to_datetime(date)
+            start_date = npdatetime64_to_datetime(stm["time"].values[0])
+            end_date = npdatetime64_to_datetime(date)
             recalibration_idx += 1  # add, and do modulo the jump size, so that it will be 0 every time a new image
             # should be loaded
             recalibration_idx %= recalibration_jump_size

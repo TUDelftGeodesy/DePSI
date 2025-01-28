@@ -107,7 +107,7 @@ def _orbit_fit(orbit, verbose=0, der=True):
     return orbit_fit
 
 
-def _npdatetime64_to_datetime(date: np.datetime64) -> datetime:
+def npdatetime64_to_datetime(date: np.datetime64) -> datetime:
     """Convert a numpy datetime64 object to a python datetime object.
 
     Parses the np.datetime64 object into a datetime object.
@@ -257,7 +257,7 @@ def crop_slc_spacetime(
     elif isinstance(end_date, datetime):
         format_end_date = datetime(end_date.year, end_date.month, end_date.day, tzinfo=pytz.UTC)
     elif isinstance(end_date, int):
-        fmt_dates = [_npdatetime64_to_datetime(date) for date in slcs["time"].values]
+        fmt_dates = [npdatetime64_to_datetime(date) for date in slcs["time"].values]
         valid_dates = [date for date in fmt_dates if date >= format_start_date]
         end_idx = fmt_dates.index(valid_dates[0]) + end_date - 1
         end_idx = min(end_idx, len(fmt_dates) - 1)
@@ -273,7 +273,7 @@ def crop_slc_spacetime(
         # first the last assertion
         assert "time" in slcs.keys(), "Expected axis 'time' in SLCs but it is not present!"
 
-        fmt_dates = np.array([_npdatetime64_to_datetime(date) for date in slcs["time"].values])
+        fmt_dates = np.array([npdatetime64_to_datetime(date) for date in slcs["time"].values])
         time_mask = (format_start_date <= fmt_dates) & (fmt_dates <= format_end_date)
         slcs = slcs.sel(time=slcs["time"].values[time_mask])
 
@@ -356,7 +356,7 @@ def add_stm_time_deltas(stm: xr.Dataset) -> xr.Dataset:
     # Add extra time coordinate variables for time intervals since first image
     days = np.array(
         [
-            (_npdatetime64_to_datetime(date) - _npdatetime64_to_datetime(stm["time"].values[0])).days
+            (npdatetime64_to_datetime(date) - npdatetime64_to_datetime(stm["time"].values[0])).days
             for date in stm["time"].values
         ]
     )
@@ -407,7 +407,7 @@ def stm_compute_single_time_differences(
             single_difference_mother.year, single_difference_mother.month, single_difference_mother.day, tzinfo=pytz.UTC
         )
         mother_index = [
-            idx for idx, date in enumerate(stm["time"].values) if format_mother_date == _npdatetime64_to_datetime(date)
+            idx for idx, date in enumerate(stm["time"].values) if format_mother_date == npdatetime64_to_datetime(date)
         ]
     elif isinstance(single_difference_mother, str):
         if single_difference_mother == "auto":
@@ -422,7 +422,7 @@ def stm_compute_single_time_differences(
             mother_index = [
                 idx
                 for idx, date in enumerate(stm["time"].values)
-                if format_mother_date == _npdatetime64_to_datetime(date)
+                if format_mother_date == npdatetime64_to_datetime(date)
             ]
         else:
             raise ValueError(f'Cannot parse {single_difference_mother}, not of type "auto" or "YYYYMMDD"!')
@@ -436,7 +436,7 @@ def stm_compute_single_time_differences(
         )
     sd_mother_index = mother_index[0]  # 0 in case somehow more than 1 image is detected
     # In that case we take the first image that was detected, as this is expected
-    sd_mother = _npdatetime64_to_datetime(stm["time"].values[sd_mother_index])
+    sd_mother = npdatetime64_to_datetime(stm["time"].values[sd_mother_index])
 
     # Format the single difference mother, and save it to the STM
     sd_mother_formatted = f"{sd_mother.year}{sd_mother.month:0>2d}{sd_mother.day:0>2d}"
