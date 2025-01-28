@@ -310,6 +310,9 @@ def _estimate_breakpoints(
     np.ndarray
       integer data array where each partition has been assigned a unique identifier.
     """
+    # Rechunk in time since no partitions can be there
+    amplitude_array = amplitude_array.chunk({"time": -1})
+
     if db_partitioning:
         amplitude_ts = 10 * da.log10(amplitude_array)
     else:
@@ -497,6 +500,10 @@ def detect_outliers_stm(
     """
     for key in ["space", "time", "amplitude"]:
         assert key in stm.keys(), f"Expected {key} in stm but it is missing!"
+
+    # Rechunk in time since no partitions can be there
+    stm = stm.chunk({"time": -1})
+
     outliers = xr.map_blocks(
         _detect_outliers,
         stm["amplitude"],
