@@ -539,13 +539,10 @@ def _detect_outliers(
       A boolean dataset with True indicating an outlier detected for that point at that epoch
 
     """
-    match db_outlier_detection:
-        case True:
-            amplitude_ts = 10 * np.log10(amplitude_array)
-        case False:
-            amplitude_ts = amplitude_array
-        case _:
-            raise ValueError(f"db_outlier_detection should be boolean but is {db_outlier_detection}!")
+    if db_outlier_detection:
+        amplitude_ts = 10 * np.log10(amplitude_array)
+    else: 
+        amplitude_ts = amplitude_array
 
     # Set up the filter value using a hampel filter with the window size
     filter_value = np.zeros((amplitude_ts.shape[0], amplitude_ts.shape[1], window_size))
