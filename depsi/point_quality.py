@@ -310,6 +310,10 @@ def _estimate_breakpoints(
     np.ndarray
       integer data array where each partition has been assigned a unique identifier.
     """
+    # define the search method function based on the method. This is in the function since it requires
+    # _pelt_block and _binseg_block to already be defined.
+    search_method_functions = {"pelt": _pelt_block, "binseg": _binseg_block}
+
     # Rechunk in time since no partitions can be there
     amplitude_array = amplitude_array.chunk({"time": -1})
 
@@ -318,23 +322,15 @@ def _estimate_breakpoints(
     else:
         amplitude_ts = amplitude_array
 
-    match search_method:
-        case "pelt":
-            breakpoints = xr.map_blocks(
-                _pelt_block,
-                amplitude_ts,
-                args=(cost_model, min_partition_size),
-                template=amplitude_ts,
-            )
-        case "binseg":
-            breakpoints = xr.map_blocks(
-                _binseg_block,
-                amplitude_ts,
-                args=(cost_model, min_partition_size),
-                template=amplitude_ts,
-            )
-        case _:
-            raise ValueError(f"search_method should be 'pelt' or 'binseg' but is {search_method}!")
+    if search_method not in search_method_functions.keys():
+        raise ValueError(f"search_method should be 'pelt' or 'binseg' but is {search_method}!")
+
+    breakpoints = xr.map_blocks(
+        search_method_functions[search_method],
+        amplitude_ts,
+        args=(cost_model, min_partition_size),
+        template=amplitude_ts,
+    )
 
     # Compute the breakpoints (necessary for the identifiers since the chunking breaks)
     computed_breakpoints = breakpoints.values
