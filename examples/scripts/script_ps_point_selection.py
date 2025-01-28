@@ -66,8 +66,7 @@ stm = ps_selection(cropped_slcs,
                    ps_selection_start_date=start_date_ps_selection,
                    ps_selection_end_date=initialization_length,
                    output_chunks=chunks_ps_selection,
-                   mem_persist=False
-                   )
+                   mem_persist=False)
 
 # Add the incremental or recalibration NAD / NMAD to the STM
 stm = stm_add_incremental_recal_nad_nmad(stm,
