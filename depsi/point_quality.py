@@ -206,9 +206,8 @@ def stm_add_incremental_recal_nad_nmad(
     initialization_mode = True
     first_epoch = npdatetime64_to_datetime(stm["time"].values[0])
     last_epoch = npdatetime64_to_datetime(stm["time"].values[-1])
-    if stm.ps_selection_start_date == f"{first_epoch.year}{first_epoch.month:0>2d}{first_epoch.day:0>2d}":
-        if stm.ps_selection_end_date == f"{last_epoch.year}{last_epoch.month:0>2d}{last_epoch.day:0>2d}":
-            initialization_mode = False
+    if (stm.ps_selection_start_date == first_epoch.strftime("%Y%m%d")) and (stm.ps_selection_end_date == last_epoch.strftime("%Y%m%d")):
+        initialization_mode = False
 
     # loop over the time values
     for date in stm["time"].values:
