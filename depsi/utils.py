@@ -294,7 +294,7 @@ def crop_slc_spacetime(
     return slcs
 
 
-def project_stm_coordinates(stm: xr.Dataset, projection: Literal["RD"] | str = "RD") -> xr.Dataset:
+def project_stm_coordinates(stm: xr.Dataset, projection: str = "RD") -> xr.Dataset:
     """Project the latitude and longitude of a space-time matrix to another reference frame.
 
     The latitude and longitude layers are transformed into the desired projection, default Rijksdriehoek or RD.
