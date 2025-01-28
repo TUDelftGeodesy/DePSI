@@ -256,19 +256,14 @@ def stm_add_incremental_recal_nad_nmad(
             current_crop = crop_slc_spacetime(stm, start_date=start_date, end_date=end_date)
             match method:
                 case "nad":
-                    nad = xr.map_blocks(
-                        _nad_block,
-                        current_crop["amplitude"],
-                        template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
-                    )
-                    current_image = nad.copy()
+                    block_func = _nad_block
                 case "nmad":
-                    nmad = xr.map_blocks(
-                        _nmad_block,
-                        current_crop["amplitude"],
-                        template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
-                    )
-                    current_image = nmad.copy()
+                    block_func = _nmad_block
+            current_image = xr.map_blocks(
+                block_func,
+                current_crop["amplitude"],
+                template=current_crop["amplitude"].isel(time=0).drop_vars("time"),
+            )
 
         imgs.append(current_image.copy())
 
