@@ -108,6 +108,5 @@ if do_ps_outlier_detection:
     stm = detect_outliers_stm(stm, db_outlier_detection=ps_outlier_detection_db, window_size=ps_window_size_outliers,
                               n_sigma=ps_n_sigma_outliers)
 
-import pdb; pdb.set_trace()
 # Save
 stm.to_zarr(stm_save_path, mode='w')
