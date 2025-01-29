@@ -260,6 +260,8 @@ def stm_add_incremental_recal_nad_nmad(
                     block_func = _nad_block
                 case "nmad":
                     block_func = _nmad_block
+                case _:
+                    raise NotImplementedError(f"Unknown method {method}, known are nad and nmad!")
             current_image = xr.map_blocks(
                 block_func,
                 current_crop["amplitude"],
