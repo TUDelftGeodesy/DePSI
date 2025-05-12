@@ -16,8 +16,6 @@ config_path = "./generate_stm_extended_s1_asc_t088.yml"
 # Read the config file
 cfg = ConfigGenerateSTM.from_yaml(config_path)
 print(f"Using config file {config_path}.")
-print(cfg)
-stop_here
 
 ## FUNCTIONALITY
 # Start cluster

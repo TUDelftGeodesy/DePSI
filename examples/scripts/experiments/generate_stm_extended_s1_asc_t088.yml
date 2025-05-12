@@ -4,9 +4,9 @@ description: This config file sets parameters to run `generate_stm` scripts.
 
 paths:
   # The input directory where the input files are located
-  working_dir: /home/sarah/temp/depsi
-  slc_file: /home/sarah/temp/depsi/nl_amsterdam_extended_s1_asc_t088.zarr
-  stm_file: /home/sarah/temp/depsi/nl_amsterdam_extended_s1_asc_t088_stm.zarr
+  working_dir: path/to/working_dir
+  slc_file: path/to/nl_amsterdam_extended_s1_asc_t088.zarr
+  stm_file: path/to/nl_amsterdam_extended_s1_asc_t088_stm.zarr
 
 # PS selection method
 ps_selection:
