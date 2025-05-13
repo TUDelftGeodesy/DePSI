@@ -39,8 +39,8 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
             return
 
     # Collect point coordinates.
-    indexes = [stm_points[coord] for coord in [x, y]]
-    coordinates = np.column_stack(indexes)
+    indices = [stm_points[coord] for coord in [x, y]]
+    coordinates = np.column_stack(indices)
 
     arcs = None
 
