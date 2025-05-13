@@ -4,9 +4,56 @@ import logging
 import math
 
 import numpy as np
+import xarray as xr
 from scipy.spatial import Delaunay
 
 logger = logging.getLogger(__name__)
+
+
+def stm_to_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=None, min_links=12, num_partitions=8):
+    """Get a list of STM arcs from a list of STM points.
+
+    Args:
+    ----
+        stm_points: Xarray.Dataset, input Space-Time Matrix.
+        method: method to form the network; either "delaunay" or "redundant".
+        x: str, first coordinate used to describe a point.
+        y: str, second coordinate used to describe a point.
+        max_length: float, maximum length of any generated arc or None.
+        min_links: int, minimum number of arcs per node, limited by max_length. Only used for the redundant method.
+        num_partitions: int, number of partitions to split the nodes into based on orientation from the current node.
+          Only used for the redundant method.
+
+    Returns:
+    -------
+        arcs: list of STM arcs, point indices describing the adjacent nodes with the difference in their phase.
+          The index pairs are sorted, as is the list.
+          The phase difference is the phase of the second point subtracted from the first.
+    """
+    # Generate the network arcs.
+    _, arcs = generate_arcs(stm_points, method, x, y, max_length, min_links, num_partitions)
+
+    # Compute the phase difference.
+    arcs_unzipped = list(zip(*arcs, strict=False))
+    arcs_unzipped = [list(arcs_unzipped[0]), list(arcs_unzipped[1])]
+    d_phase = stm_points.phase[arcs_unzipped[1]] - stm_points.phase[arcs_unzipped[0]]
+
+    # Change the name of the data array.
+    d_phase.name = "d_phase"
+
+    # Assign source and target coordinates, as indices into the points STM.
+    d_phase = d_phase.assign_coords(
+        {
+            "source": (["space"], arcs_unzipped[0]),
+            "target": (["space"], arcs_unzipped[1]),
+            "time": (d_phase["time"].values),
+        }
+    )
+
+    # Create a dataset to hold the array.
+    stm_arcs = xr.Dataset({"d_phase": d_phase})
+
+    return stm_arcs
 
 
 def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=None, min_links=12, num_partitions=8):
