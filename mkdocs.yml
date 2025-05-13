@@ -8,7 +8,9 @@ nav:
   - Usage:
     - SLC methods: usages/slc.md
   - API Reference: api_reference.md
-  - Developer Guide: dev_guide.md
+  - Contributing: 
+    - Contributing guide: CONTRIBUTING.md
+    - Practical info for developers: dev_guide.md
 
 
 theme:

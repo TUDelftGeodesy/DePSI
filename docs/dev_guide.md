@@ -1,4 +1,4 @@
-# Developer Guide
+# Practical info for developers
 
 ## Installation guide
 
