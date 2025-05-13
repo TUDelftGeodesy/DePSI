@@ -11,10 +11,14 @@ nav:
   - Contributing: 
     - Contributing guide: CONTRIBUTING.md
     - Practical info for developers: dev_guide.md
+  - Example Notebooks:
+    - DePSI Dependencies walkthrough: notebooks/demo_sarxarray_and_stmtools.ipynb
+    - DePSI example processing: notebooks/demo_depsi.ipynb
 
 
 theme:
   name: material
+  custom_dir: docs/notebooks/download_button
   palette:
     # Palette toggle for light mode
     - scheme: default
