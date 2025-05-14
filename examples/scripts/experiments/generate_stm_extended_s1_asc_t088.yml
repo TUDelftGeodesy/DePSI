@@ -1,13 +1,13 @@
-name: Generate_STM_extended_s1_asc_t088
+# General information
+name: Generate_STM
 
 description: This config file sets parameters to run `generate_stm` scripts.
 
 paths:
-  # The input directory where the input files are located
-  working_dir: path/to/working_dir
-  slc_file: path/to/nl_amsterdam_extended_s1_asc_t088.zarr
-  stm_file: path/to/nl_amsterdam_extended_s1_asc_t088_stm.zarr
+  slc_file: path/to/nl_amsterdam_s1_dsc_t037.zarr
+  stm_file: path/to/nl_amsterdam_s1_dsc_t037_stm.zarr
 
+# Steps; functions to run
 # PS selection method
 ps_selection:
   method: nmad
@@ -29,7 +29,6 @@ stm_single_difference_mother: auto
 # Input variables for the partitioning
 do_stm_partitioning: True
 stm_partitioning:
-  db_partitioning: False
   search_method: pelt
   cost_model: l2
   min_partition_size: 27
@@ -47,6 +46,5 @@ stm_partitioning_single_difference:
 # Input variables for the outlier detection
 do_detect_outliers_stm: True
 detect_outliers_stm:
-  db_outlier_detection: True
   window_size: 15
   n_sigma: 3
