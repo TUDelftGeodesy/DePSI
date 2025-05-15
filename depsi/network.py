@@ -20,7 +20,7 @@ def stm_to_arcs(
     num_partitions=8,
     difference="subtract",
 ) -> xr.Dataset:
-    """Get a list of STM arcs and phase differences from a list of STM points.
+    """Get an STM of arcs and phase differences from an STM of points.
 
     Args:
     ----
@@ -36,9 +36,12 @@ def stm_to_arcs(
 
     Returns:
     -------
-        arcs: list of STM arcs, point indices describing the adjacent nodes with the difference in their phase.
-          The index pairs are sorted, as is the list.
-          The phase difference is the phase of the second point subtracted from the first.
+        arcs: Xarray.Dataset, STM of arcs, pairs of point indices describing the adjacent nodes and the difference
+          between their phases.
+          The index pairs are sorted, as is the list of pairs.
+          The phase difference depends on the method used:
+            either the source phase subtracted from the target phase,
+            or the wrapped conjugate multiplication of these phases.
     """
     # Generate the network arcs.
     _, arcs = generate_arcs(
