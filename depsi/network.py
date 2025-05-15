@@ -48,13 +48,13 @@ def stm_to_arcs(
     # Compute the phase difference.
     arcs_unzipped = list(zip(*arcs, strict=False))
     arcs_unzipped = [list(arcs_unzipped[0]), list(arcs_unzipped[1])]
-    dd_phase = _compute_phase_difference(stm_points, arcs_unzipped[0], arcs_unzipped[1], method=difference)
+    d_phase = _compute_phase_difference(stm_points, arcs_unzipped[0], arcs_unzipped[1], method=difference)
 
     # Store the phase difference in a DataArray,
     # with source and target coordinates as indices into the points STM.
-    dd_phase_array = xr.DataArray(
-        dd_phase,
-        name="dd_phase",
+    d_phase_array = xr.DataArray(
+        d_phase,
+        name="d_phase",
         dims=("space", "time"),
         coords={
             "source": (["space"], arcs_unzipped[0]),
@@ -64,7 +64,7 @@ def stm_to_arcs(
     )
 
     # Create a dataset to hold the array.
-    stm_arcs = xr.Dataset({"dd_phase": dd_phase_array})
+    stm_arcs = xr.Dataset({"d_phase": d_phase_array})
 
     return stm_arcs
 
@@ -226,8 +226,8 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
 def _compute_direct_phase_difference(stm_points, source_idx, target_idx):
     # Calculate the unwrapped direct phase difference between two points,
     # as the phase of the target minus the phase of the source.
-    dd_phase = stm_points.phase[target_idx].values - stm_points.phase[source_idx].values
-    return dd_phase
+    d_phase = stm_points.phase[target_idx].values - stm_points.phase[source_idx].values
+    return d_phase
 
 
 def _compute_wrapped_phase_difference(stm_points, source_idx, target_idx):
@@ -243,19 +243,20 @@ def _compute_wrapped_phase_difference(stm_points, source_idx, target_idx):
     complex_target = stm_points.isel(space=target_idx).complex
 
     # Compute DD phase for the arc
-    complex_conj_i = complex_source.conj()
-    dd_phase = complex_target * complex_conj_i
+    complex_conj_source = complex_source.conj()
+    d_phase = complex_target * complex_conj_source
 
     # Get the wrapped phase
-    wrapped_dd_phase = np.angle(dd_phase)
+    d_phase_wrapped = np.angle(d_phase)
 
-    return wrapped_dd_phase
+    return d_phase_wrapped
 
 
 def _compute_phase_difference(stm_points, source_idx, target_idx, method="subtract"):
     # Calculate the phase difference between two points.
+    # The method can either be "subtract" or "conjmult".
     if method == "subtract":
-        dd_phase = _compute_direct_phase_difference(stm_points, source_idx, target_idx)
+        d_phase = _compute_direct_phase_difference(stm_points, source_idx, target_idx)
     elif method == "conjmult":
-        dd_phase = _compute_wrapped_phase_difference(stm_points, source_idx, target_idx)
-    return dd_phase
+        d_phase = _compute_wrapped_phase_difference(stm_points, source_idx, target_idx)
+    return d_phase
