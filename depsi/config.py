@@ -123,7 +123,7 @@ def get_config_file():
     if os.environ.get("CONFIG_PATH"):
         return os.environ.get("CONFIG_PATH")
     elif os.path.exists(config_path):
-        yml_files = Path.glob(config_path, "*.yml")
+        yml_files = list(Path.glob(config_path, "*.yml"))
         if len(yml_files) > 1:
             raise ValueError(f"Multiple config files found in {config_path}. Please specify one.")
         return config_path / yml_files[0]
