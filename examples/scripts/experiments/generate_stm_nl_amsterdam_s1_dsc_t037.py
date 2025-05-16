@@ -7,7 +7,7 @@ from depsi.point_quality import detect_outliers_stm, stm_partitioning, stm_add_i
 
 # Get config path either from the environment variable or default config
 # diretory or from current directory
-config_path = "./generate_stm_extended_s1_asc_t088.yml"
+config_path = "./generate_stm_nl_amsterdam_s1_dsc_t037.yml"
 
 # Read the config file
 cfg = ConfigGenerateSTM.from_yaml(config_path)
