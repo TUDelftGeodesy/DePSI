@@ -76,8 +76,8 @@ def write_config_file(params, dir):
 class TestConfig:
     def test_config_loading(self, basic_config_params, tmp_path):
         """Test loading configuration from a YAML file."""
-        cofig_path = write_config_file(basic_config_params, tmp_path)
-        config = Config.from_yaml(cofig_path)
+        config_path = write_config_file(basic_config_params, tmp_path)
+        config = Config.from_yaml(config_path)
         assert config.name == "test_config"
         assert config.description == "Test configuration."
         assert config.paths["work_dir"] == "."
