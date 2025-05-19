@@ -62,3 +62,5 @@ markdown_extensions:
 
 extra:
   generator: false
+  version:
+    provider: mike
