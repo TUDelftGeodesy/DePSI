@@ -6,7 +6,11 @@ nav:
   - Getting started: 
     - About DePSI: index.md
   - Usage:
-    - SLC methods: usages/slc.md
+    - Handle SLCs: usages/slc.md
+    - Select PS and DS: usages/classification.md
+    - Quality improvement: usages/quality.md
+    - Network unwrapping: usages/network.md
+
   - API Reference: api_reference.md
   - Contributing: 
     - Contributing guide: CONTRIBUTING.md
