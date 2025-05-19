@@ -11,7 +11,7 @@ install it from the GitHub repository:
 
 `pip install git+https://github.com/TUDelftGeodesy/DePSI.git@main`
 
-If you are contributing to DePSI, please refer to the [Developer Guide](docs/CONTRIBUTING.md) for installation instructions, testing, and other development-related information.
+If you are contributing to DePSI, please refer to the [Developer Guide](CONTRIBUTING.md) for installation instructions, testing, and other development-related information.
 
 ## References
 

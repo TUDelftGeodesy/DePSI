@@ -3,7 +3,6 @@
 from datetime import datetime
 from typing import Literal
 
-import dask.array as da
 import numpy as np
 import xarray as xr
 from scipy.spatial import KDTree
@@ -49,18 +48,18 @@ def ps_selection(
     mem_persist : bool, optional
         If true persist the NAD or NMAD in memory, by default False.
     ps_selection_start_date : datetime | str | None, optional
-      the start date of the time window to be used for the ps_selection, in one of three formats:
-      - datetime object
-      - str object, formatted as YYYYMMDD
-      - None, no cropping in time requested for the ps_selection (default)
+        the start date of the time window to be used for the ps_selection, in one of three formats:
+        - datetime object
+        - str object, formatted as YYYYMMDD
+        - None, no cropping in time requested for the ps_selection (default)
     ps_selection_end_date : datetime | str | int | None, optional
-      the end date of the time window to be used for the ps_selection, in one of four formats:
-      - datetime object
-      - str object, formatted as YYYYMMDD
-      - int object, which is interpreted as the number of images intended in the crop (including the start date). If
-        more images are requested than exist since the start date, all images from start_date until the last image
-        are provided.
-      - None, no cropping in time requested for the ps_selection (default)
+        the end date of the time window to be used for the ps_selection, in one of four formats:
+        - datetime object
+        - str object, formatted as YYYYMMDD
+        - int object, which is interpreted as the number of images intended in the crop (including the start date). If
+            more images are requested than exist since the start date, all images from start_date until the last image
+            are provided.
+        - None, no cropping in time requested for the ps_selection (default)
 
     Returns
     -------

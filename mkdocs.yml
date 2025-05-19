@@ -15,6 +15,7 @@ nav:
   - Contributing: 
     - Contributing guide: CONTRIBUTING.md
     - Practical info for developers: dev_guide.md
+    - Code of conduct: CODE_OF_CONDUCT.md
   - Example Notebooks:
     - DePSI Dependencies walkthrough: notebooks/demo_sarxarray_and_stmtools.ipynb
     - DePSI example processing: notebooks/demo_depsi.ipynb
