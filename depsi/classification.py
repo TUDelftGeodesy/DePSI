@@ -220,7 +220,8 @@ def network_stm_selection(
     stm : xr.Dataset
         candidate Space-Time Matrix (STM).
     min_dist : int | float
-        Minimum distance between selected points.
+        Minimum distance between selected points. The unit is determined by `crs`.
+        When `crs` is "radar", the unit is the same as `azimuth_spacing` and `range_spacing`.
     include_index : list[int], optional
         Index of points in the candidate STM that must be included in the selection, by default None
     sortby_var : str, optional
@@ -234,9 +235,9 @@ def network_stm_selection(
     y_var : str, optional
         Data variable name for y coordinate, by default "range"
     azimuth_spacing : float, optional
-        Azimuth spacing, by default None. Required if crs is "radar".
+        Azimuth pixel spacing, by default None. Required if crs is "radar".
     range_spacing : float, optional
-        Range spacing, by default None. Required if crs is "radar".
+        Range pixel spacing, by default None. Required if crs is "radar".
 
     Returns
     -------
