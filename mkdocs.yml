@@ -6,7 +6,7 @@ nav:
   - Getting started: 
     - About DePSI: index.md
   - Usage:
-    - Handle SLCs: usages/slc.md
+    - Load data: usages/io.md
     - Select PS and DS: usages/classification.md
     - Quality improvement: usages/quality.md
     - Network unwrapping: usages/network.md
