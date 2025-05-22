@@ -35,6 +35,10 @@ class TestNetwork:
         result = generate_arcs(stm_sparse, method="redundant", num_partitions=0)
         assert result is None
 
+        # Test incorrect method fail.
+        with pytest.raises(NotImplementedError):
+            result = generate_arcs(stm_sparse, method="unknown")
+
     def test_generate_arcs_delaunay(self, stm_sparse):
         # Generate a Delaunay network with long edges removed.
         coordinates, arcs = generate_arcs(stm_sparse, method="delaunay", max_length=0.05)
@@ -84,3 +88,10 @@ class TestNetwork:
 
         assert len(stm_arcs["space"]) == 442
         assert all([all([-np.pi <= phase <= np.pi for phase in phases]) for phases in stm_arcs["d_phase"].values])
+
+    def test_stm_to_srcs_fail(self, stm_sparse):
+        # Test incorrect method fail.
+        with pytest.raises(NotImplementedError):
+            stm_to_arcs(stm_sparse, network="unknown", difference="subtract")
+        with pytest.raises(NotImplementedError):
+            stm_to_arcs(stm_sparse, network="delaunay", difference="unknown")
