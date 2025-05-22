@@ -229,7 +229,7 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
 def _compute_direct_phase_difference(stm_points, source_idx, target_idx):
     # Calculate the unwrapped direct phase difference between two points,
     # as the phase of the target minus the phase of the source.
-    d_phase = stm_points.phase[target_idx].values - stm_points.phase[source_idx].values
+    d_phase = stm_points.isel(space=target_idx).phase - stm_points.isel(space=source_idx).phase
     return d_phase
 
 
