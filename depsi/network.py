@@ -42,6 +42,11 @@ def stm_to_arcs(
           The phase difference depends on the method used:
             either the source phase subtracted from the target phase,
             or the wrapped conjugate multiplication of these phases.
+
+    Raises:
+    ------
+    NotImplementedError
+        Raised when an unknown network or difference method is provided.
     """
     # Generate the network arcs.
     _, arcs = generate_arcs(
@@ -92,6 +97,11 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
     -------
         coordinates: list, [x, y] point coordinates extracted from stm_points.
         arcs: list of pairs, point indices describing the adjacent nodes. The pairs are sorted, as is the list.
+
+    Raises:
+    ------
+    NotImplementedError
+        Raised when an unknown method is provided.
     """
     if method == "redundant":
         if min_links <= 0:
@@ -100,6 +110,8 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
         if num_partitions <= 0:
             logger.error(f"num_partitions must be strictly positive (currently: {num_partitions})")
             return
+    elif method != "delaunay":
+        raise NotImplementedError(f"Unknown network method {method}, known are delaunay and redundant")
 
     # Collect point coordinates.
     indices = [stm_points[coord] for coord in [x, y]]
@@ -262,4 +274,6 @@ def _compute_phase_difference(stm_points, source_idx, target_idx, method="subtra
         d_phase = _compute_direct_phase_difference(stm_points, source_idx, target_idx)
     elif method == "conjmult":
         d_phase = _compute_wrapped_phase_difference(stm_points, source_idx, target_idx)
+    else:
+        raise NotImplementedError(f"Unknown difference method {method}, known are subtract and conjmult")
     return d_phase
