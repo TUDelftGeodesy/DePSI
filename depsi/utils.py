@@ -26,6 +26,24 @@ import pytz
 import xarray as xr
 
 
+def wrap_phase(phs_abs):
+    """Wrap the absolute phase to the range [-pi, pi).
+
+    Parameters
+    ----------
+    phs_abs : array_like or float
+        The absolute phase.
+
+    Returns
+    -------
+    ndarray or float
+        The wrapped phase in the range [-pi, pi).
+    """
+    phs_wrapped = np.remainder(phs_abs + np.pi, 2 * np.pi) - np.pi
+
+    return phs_wrapped
+
+
 def _orbit_fit(orbit, verbose=0, der=True):
     """Return a orbit_fit dict.
 
