@@ -1,6 +1,6 @@
 # Network Unwrapping
 
-In this section, we will demonstrate how to form a network from STM, and perform netork unwrapping.
+In this section, we will demonstrate how to form a network from STM, and perform network unwrapping.
 
 - Network stm selection
 - Arc formation
