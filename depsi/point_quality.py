@@ -278,6 +278,7 @@ def stm_add_incremental_recal_nad_nmad(
 
     return stm
 
+
 def detect_side_lobes(
     stm: xr.Dataset,
     max_pixel_dist: float,
@@ -294,7 +295,7 @@ def detect_side_lobes(
     ----------
     stm : xarray.Dataset
       An input stm must include 'range', 'azimuth' variables.
-      The complex and phase viariables are required but customized names are allowed.
+      The complex and phase variables are required but customized names are allowed.
     max_pixel_dist : float
       The maximum allowed spatial distance (in pixels) between points to be considered potential side-lobes.
     min_correlation : float
@@ -384,6 +385,7 @@ def detect_side_lobes(
     mask_side_lobes[side_lobes_array] = False
 
     return side_lobes_array, mask_side_lobes
+
 
 def _estimate_breakpoints(
     amplitude_array: xr.DataArray,
@@ -741,6 +743,7 @@ def _compute_partition_nad_nmad_amp_stats(amp: xr.DataArray) -> xr.DataArray:
     amp["partition_mad"] = (amp.dims, np.ones_like(data) * mad)
     amp["partition_amplitude_median"] = (amp.dims, np.ones_like(data) * median)
     return amp
+
 
 def _calculate_phase_correlation(dd_complex, nr_epochs):
     """Compute correlation between phase time series of two pixels based on their double-difference (DD) phasors.
