@@ -15,8 +15,8 @@ WAVELENGTH = 0.055465763  # m, sentinel-1 wavelength
 def periodogram(
     stm: xr.Dataset,
     key_phs: str,
-    key_yeartime: str,
     key_h2ph: str,
+    key_yeartime: str,
     std_obs: float = 1.0,
     std_height: float = 5.0,
     std_vel: float = 1e-4,
@@ -27,6 +27,9 @@ def periodogram(
     min_searches: int = 11,
 ):
     """Perform the periodogram unwrapping algorithm."""
+    # Grow temporal baseline array to the size of the space dimension to allow for broadcasting
+    # This does not occupy memory since we call np.tile on a dask array
+    # TODO: check do we need to grow btemp to the size of the space dimension?
     da_btemp = xr.DataArray(
         np.tile(stm[key_yeartime].data, (stm[key_phs].sizes["space"], 1)).rechunk((stm[key_phs].sizes["space"], -1)),
         dims=["space", "time"],
@@ -36,8 +39,8 @@ def periodogram(
     results = xr.apply_ufunc(
         _periodogram_single,
         stm[key_phs],
-        da_btemp,
         stm[key_h2ph],
+        da_btemp,
         std_obs,
         std_height,
         std_vel,
@@ -57,8 +60,8 @@ def periodogram(
 
 def _periodogram_single(
     phs_obs_wrapped: np.ndarray,
-    Btemp: np.ndarray,
     h2ph: np.ndarray,
+    Btemp: np.ndarray,
     std_obs: float,
     std_height: float,
     std_vel: float,
