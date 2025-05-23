@@ -28,7 +28,7 @@ def periodogram(
 ):
     """Perform the periodogram unwrapping algorithm."""
     da_btemp = xr.DataArray(
-        np.tile(stm[key_yeartime].data, (stm[key_phs].sizes["space"], 1)),
+        np.tile(stm[key_yeartime].data, (stm[key_phs].sizes["space"], 1)).rechunk((stm[key_phs].sizes["space"], -1)),
         dims=["space", "time"],
         coords=stm[key_phs].coords,
     )
