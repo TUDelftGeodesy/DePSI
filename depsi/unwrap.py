@@ -18,12 +18,12 @@ def periodogram(
     key_h2ph: str,
     key_yeartime: str,
     std_obs: float = 1.0,
-    std_height: float = 5.0,
-    std_vel: float = 1e-4,
+    std_height: float = 50.0,
+    std_vel: float = 0.02,
     init_height: float = 0.0,
     init_vel: float = 0.0,
-    init_step_height: float = 1.0,
-    init_step_vel: float = 1e-4,
+    init_step_height: float = 2.0,
+    init_step_vel: float = 1e-3,
     min_searches: int = 11,
 ):
     """Perform the periodogram unwrapping algorithm."""
