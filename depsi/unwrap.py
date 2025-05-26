@@ -9,7 +9,7 @@ from depsi.utils import wrap_phase
 STOP_HEIGHT = 1e-4  # Stop search step for height
 STOP_VEL = 1e-7  # Stop search step for velocity
 MAX_COUNT = 10  # Maximum number of search iterations
-WAVELENGTH = 0.055465763  # m, sentinel-1 wavelength
+WAVELENGTH_S1 = 0.055465763  # m, sentinel-1 wavelength
 
 
 def periodogram(
@@ -25,34 +25,67 @@ def periodogram(
     init_step_height: float = 2.0,
     init_step_vel: float = 1e-3,
     min_searches: int = 11,
+    wavelength: float = None,
 ):
     """Perform the periodogram unwrapping algorithm."""
-    # Grow temporal baseline array to the size of the space dimension to allow for broadcasting
-    # This does not occupy memory since we call np.tile on a dask array
-    # TODO: check do we need to grow btemp to the size of the space dimension?
-    da_btemp = xr.DataArray(
-        np.tile(stm[key_yeartime].data, (stm[key_phs].sizes["space"], 1)).rechunk((stm[key_phs].sizes["space"], -1)),
-        dims=["space", "time"],
-        coords=stm[key_phs].coords,
-    )
+    # If wavelength is not provided, use the default sentinel-1 wavelength
+    # TODO: get wavelength from metadata stm.attrs
+    if wavelength is None:
+        m2ph = -4 * np.pi / WAVELENGTH_S1
 
+    # Set up functional and stochastic model for all arcs
+    # Here we use the same h2ph (average over all arcs) for all arcs and correct the effect later
+    # Doing this avoids perform matrix inversion for each arc
+    h2ph_mean = stm[key_h2ph].mean(dim="space").data  # Mean h2ph of all arcs
+
+    # Design matrix B, size n_obs x n_params
+    # In B, h2ph should also be multiplied by m2ph since it did not when it was created
+    B = np.stack([h2ph_mean * m2ph, stm[key_yeartime] * m2ph]).T.compute()
+
+    # Stochastic model Qyy, size n_obs x n_obs
+    # This is the covariance matrix of the observations
+    Qyy = np.diag(np.repeat(std_obs**2, stm[key_h2ph].sizes["time"]))
+
+    # Covenience matrix R and rhs for the least squares solution
+    R = B.T @ np.linalg.inv(Qyy) @ B  # B.T * Qyy^-1 * B , size n_params x n_params
+    rhs = np.linalg.inv(R) @ B.T @ np.linalg.inv(Qyy)  # (B.T * Qyy^-1 * B)^-1 * B.T * Qyy^-1, size n_params x n_obs
+
+    # Set up core dimensions, which are the dimensions _periodogram_single will be applied to
+    # We are broadcasting _periodogram_single on stm[key_phs] along the space dimension
+    # Threfore, we are calling it on the "time" dimension of every space entry
+    # So we have the input_core_dims as ["time"]
+    input_core_dims = [
+        ["time"],
+    ]
+    # There are 5 outputs from _periodogram_single
+    # The first two are np arrays with time dimension
+    # The other three are scalars, so they have no dimensions
+    output_core_dims = [["time"], ["time"], [], [], []]
+
+    # Apply the _periodogram_single on stm[key_phs] along "space" dimension
+    # Other parameters are duplicated for each space entry
+    # Therefore they can be passed as kwargs
     results = xr.apply_ufunc(
         _periodogram_single,
         stm[key_phs],
-        stm[key_h2ph],
-        da_btemp,
-        std_obs,
-        std_height,
-        std_vel,
-        init_height,
-        init_vel,
-        init_step_height,
-        init_step_vel,
-        min_searches,
-        input_core_dims=[["time"]] * 3 + [[]] * 8,  # first three inputs have time core dimension
-        output_core_dims=[["time"]] * 2 + [[]] * 3,  # first two outputs have time core dimension
+        input_core_dims=input_core_dims,
+        output_core_dims=output_core_dims,
+        kwargs={
+            "B": B,
+            "Qyy": Qyy,
+            "R": R,
+            "rhs": rhs,
+            "std_height": std_height,
+            "std_vel": std_vel,
+            "init_height": init_height,
+            "init_vel": init_vel,
+            "init_step_height": init_step_height,
+            "init_step_vel": init_step_vel,
+            "min_searches": min_searches,
+        },
         vectorize=True,
         dask="parallelized",
+        output_dtypes=[np.float64, np.float64, np.float64, np.float64, np.complex128],
     )
 
     return results
@@ -60,27 +93,18 @@ def periodogram(
 
 def _periodogram_single(
     phs_obs_wrapped: np.ndarray,
-    h2ph: np.ndarray,
-    Btemp: np.ndarray,
-    std_obs: float,
+    B: np.ndarray,
+    Qyy: np.ndarray,
+    R: np.ndarray,
+    rhs: np.ndarray,
     std_height: float,
     std_vel: float,
     init_height: float,
     init_vel: float,
     init_step_height: float,
     init_step_vel: float,
-    min_searches: int,
+    min_searches: float,
 ):
-    n_obs = phs_obs_wrapped.shape[0]  # Number of observations
-    m2ph = -4 * np.pi / WAVELENGTH
-
-    # Set up functional and stochastic model
-    # In B, h2ph should also be multiplied by m2ph since it did not when it was created
-    B = np.stack([h2ph * m2ph, Btemp * m2ph]).T
-    Qyy = np.diag(np.repeat(std_obs**2, n_obs))  # Construct covariance matrix for observations
-    R = B.T @ np.linalg.inv(Qyy) @ B  # B.T * Qyy^-1 * B
-    rhs = np.linalg.inv(R) @ B.T @ np.linalg.inv(Qyy)  # (B.T * Qyy^-1 * B)^-1 * B.T * Qyy^-1
-
     # Build initial search space for height and velocity
     param_height = init_height
     param_vel = init_vel
@@ -105,7 +129,9 @@ def _periodogram_single(
         # No need to repeat phs_obs_wrapped since the minus operation will broadcast to the shape of phs_model
         # Sum along axis=0 which is the observation axis
         # Reference: van Leijen 2014, Eq. 4.55
-        coh_search_space = np.exp(1j * (np.expand_dims(phs_obs_wrapped, axis=1) - phs_model)).sum(axis=0) / n_obs
+        coh_search_space = (
+            np.exp(1j * (np.expand_dims(phs_obs_wrapped, axis=1) - phs_model)).sum(axis=0) / phs_obs_wrapped.shape[0]
+        )
 
         # Get the best temporal coherence value and its index
         coh_idx = np.argmax(np.abs(coh_search_space))
@@ -124,7 +150,6 @@ def _periodogram_single(
 
     phs_model_abs = B @ np.array([param_height, param_vel])  # Absolute modelled phase
     phs_model_wrapped = wrap_phase(phs_model_abs)  # Wrapped modelled phase
-    # TODO: double check math of ambiguities
     ambigs = np.round((phs_model_abs + phs_model_wrapped - phs_obs_wrapped) / (2 * np.pi))  # Ambiguities
     phs_obs_unwrapped = 2 * np.pi * ambigs + phs_obs_wrapped  # Unwrapped phase
     param = rhs @ phs_obs_unwrapped  # [height_est, velocity_est]
