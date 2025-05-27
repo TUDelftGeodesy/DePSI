@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.unwrap import periodogram
+from depsi.unwrap import _build_search_space, _periodogram_single, periodogram
 from depsi.utils import wrap_phase
 
 
@@ -50,19 +50,21 @@ def get_arcs_stm(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     [
         (13, 4, -1e-3, 1e-4, -1, 1),  # stable point
         (6, 6, -2.3e-3, 1.5e-4, -0.03, 0.02),  # stable point, extra short time series, low height
-        (39, 3, -5e-3, 2e-4, -5, 10),  # non-stable point, long time series, high height
+        (30, 3, -5e-3, 2e-4, -5, 10),  # non-stable point, long time series, high height
     ],
 )
 def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     arcs = get_arcs_stm(n_obs, n_arcs, velo_min, velo_max, height_min, height_max)
+    std_height = 5  # standard deviation for height
+    std_vel = 0.01  # standard deviation for velocity
 
     results = periodogram(
         stm=arcs,
         key_phs="phs_obs_wrapped",
         key_yeartime="years",
         key_h2ph="h2ph_values",
-        std_height=5,
-        std_vel=0.01,
+        std_height=std_height,
+        std_vel=std_vel,
         init_step_height=abs(height_max - height_min) / 10,
         init_step_vel=abs(velo_max - velo_min) / 10,
         init_height=(height_min + height_max) / 2,
@@ -78,4 +80,77 @@ def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     assert results[4].shape == (n_arcs,)  # coherence
 
     # Unwrapped phase almost equal
-    assert np.allclose(results[0].compute(), arcs["phs_obs"].values, atol=1e-5)
+    assert np.allclose(results[0].values, arcs["phs_obs"].values, atol=1e-6)
+    # height est should have >1 percent precision
+    assert np.allclose(results[2].values, arcs["height"].values, atol=std_height)
+    # velocity est should have >1 percent precision
+    assert np.allclose(results[3].values, arcs["velo"].values, atol=std_vel)
+
+
+@pytest.mark.parametrize(
+    "n_obs, n_arcs, velo_min, velo_max, height_min, height_max",
+    [
+        (13, 1, -2e-3, 2e-4, -1, 1),
+        (6, 1, -2.1e-3, 2.5e-4, -0.03, 0.02),
+        (25, 1, -6e-3, 1.9e-4, -2, 3),
+    ],
+)
+def test_periodogram_single(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
+    std_obs = 0.1
+    std_height = 5  # standard deviation for height
+    std_vel = 0.01  # standard deviation for velocity
+    m2ph, n_obs, n_arcs, velo, height, h2ph = get_test_consts(n_obs, n_arcs, velo_min, velo_max, height_min, height_max)
+    arcs = get_arcs_stm(n_obs, n_arcs, velo_min, velo_max, height_min, height_max)
+    arcs = arcs.isel(space=0)  # single arc
+    years = arcs["years"].values
+    B = np.stack([arcs["h2ph_values"].values * m2ph, years * m2ph]).T
+    Qyy = np.diag(np.repeat(std_obs**2, arcs.sizes["time"]))
+    R = B.T @ np.linalg.inv(Qyy) @ B  # B.T * Qyy^-1 * B , size n_params x n_params
+    rhs = np.linalg.inv(R) @ B.T @ np.linalg.inv(Qyy)  # (B.T * Qyy^-1 * B)^-1 * B.T * Qyy^-1, size n_params x n_obs
+
+    results = _periodogram_single(
+        phs_obs_wrapped=arcs["phs_obs_wrapped"].values,
+        h2ph=arcs["h2ph_values"].values,
+        h2ph_approx=arcs["h2ph_values"].values,
+        B=B,
+        Qyy=Qyy,
+        R=R,
+        rhs=rhs,
+        std_height=std_height,
+        std_vel=std_vel,
+        init_step_height=abs(height_max - height_min) / 10,
+        init_step_vel=abs(velo_max - velo_min) / 10,
+        init_height=(height_min + height_max) / 2,
+        init_vel=(velo_min + velo_max) / 2,
+        min_searches=11,
+    )
+
+    assert len(results) == 5
+    assert results[0].shape == (n_obs,)  # unwrapped phase
+    assert results[1].shape == (n_obs,)  # ambiguities
+
+
+def test_build_search_space():
+    """Test the build_search_space function."""
+
+    # Test with a simple case
+    height_center = 5
+    vel_center = 0.2
+    step_height = 1
+    step_vel = 0.1
+    num_height_search = 2
+    num_vel_search = 3
+
+    expect_vels = np.array([-0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5])
+    expect_heights = np.array([3, 4, 5, 6, 7])
+    expect_search_space = np.array(np.meshgrid(expect_heights, expect_vels)).T.reshape(-1, 2)
+
+    search_space = _build_search_space(
+        height_center, vel_center, step_height, step_vel, num_height_search, num_vel_search
+    )
+
+    # Sort the search space for comparison
+    expect_search_space = expect_search_space[np.lexsort((expect_search_space[:, 1], expect_search_space[:, 0]))]
+    search_space = search_space[np.lexsort((search_space[:, 1], search_space[:, 0]))]
+
+    assert np.allclose(search_space, expect_search_space)
