@@ -8,17 +8,17 @@ from depsi.utils import wrap_phase
 
 def get_test_consts(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     """function to get constants for testing"""
-    wavelength = 0.055465763  # sentinel， in meters
+    wavelength = 0.055465763  # Sentinel-1, in meters
     m2ph = -4 * np.pi / wavelength
 
     rng = np.random.default_rng(42)  # reset every time for reproducibility
     h2ph = rng.random((n_obs, n_arcs)) * 1e-3  # fixed
     velo = (velo_min - velo_max) * rng.random(
         (n_arcs,)
-    ) + velo_max  # velo [-0.02, 0.005), uniform distriution, in meters per year
+    ) + velo_max  # velo [-0.02, 0.005), uniform distribution, in meters per year
     height = (height_min - height_max) * rng.random(
         (n_arcs,)
-    ) + height_max  # height [-1, 5), uniform distriution, in meters
+    ) + height_max  # height [-1, 5), uniform distribution, in meters
     return m2ph, n_obs, n_arcs, velo, height, h2ph
 
 

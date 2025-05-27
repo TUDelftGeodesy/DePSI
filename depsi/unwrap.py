@@ -91,7 +91,8 @@ def periodogram(
     # TODO: get wavelength from metadata stm.attrs
     if wavelength is None:
         m2ph = -4 * np.pi / WAVELENGTH_S1
-
+    else:
+        m2ph = -4 * np.pi / wavelength
     # Make sure year time only contains the time dimension
     assert (len(stm[key_yeartime].dims) == 1) and (
         "time" in stm[key_yeartime].dims
@@ -115,9 +116,9 @@ def periodogram(
     # This is the covariance matrix of the observations
     Qyy = np.diag(np.repeat(std_obs**2, stm[key_h2ph].sizes["time"]))
 
-    # Covenience matrix R and rhs for the least squares solution
-    R = B.T @ np.linalg.inv(Qyy) @ B  # B.T * Qyy^-1 * B , size n_params x n_params
-    rhs = np.linalg.inv(R) @ B.T @ np.linalg.inv(Qyy)  # (B.T * Qyy^-1 * B)^-1 * B.T * Qyy^-1, size n_params x n_obs
+    # Convenience matrix R and rhs for the least squares solution
+    R = B.T @ np.linalg.solve(Qyy, B)  # B.T * Qyy^-1 * B , size n_params x n_params
+    rhs = np.linalg.solve(R, B.T @ np.linalg.solve(Qyy, stm[key_h2ph].values))  # Solve (B.T * Qyy^-1 * B) * x = B.T * Qyy^-1
 
     # Set up core dimensions, which are the dimensions _periodogram_single will be applied to
     # We are broadcasting _periodogram_single on stm[key_phs] along the space dimension
@@ -229,7 +230,7 @@ def _periodogram_single(
             param_height, param_vel, step_height, step_vel, n_search_height, n_search_vel
         )
 
-        # Calculate the wrpped model phase for all candidates
+        # Calculate the wrapped model phase for all candidates
         phs_model = wrap_phase(B @ search_space.T)  # size n_obs x n_search
 
         # Calculate the temporal coherence for all search candidates
