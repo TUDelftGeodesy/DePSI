@@ -1,6 +1,5 @@
 """modules for phase unwrapping."""
 
-import dask.array as da
 import numpy as np
 import xarray as xr
 
@@ -103,13 +102,11 @@ def periodogram(
     # Set up functional and stochastic model for all arcs
     # Here we use the same h2ph (average over all arcs) for all arcs and correct the effect later
     # Doing this avoids perform matrix inversion for each arc
-    h2ph_mean = stm[key_h2ph].mean(dim="space").data  # Mean h2ph of all arcs
-    if isinstance(h2ph_mean, da.Array):
-        h2ph_mean = h2ph_mean.compute()  # If h2ph_mean is a dask array, compute it
+    h2ph_approx = stm[key_h2ph].mean(dim="space").values  # Mean h2ph of all arcs
 
     # Design matrix B, size n_obs x n_params
     # In B, h2ph should also be multiplied by m2ph since it did not when it was created
-    B = np.stack([h2ph_mean * m2ph, years * m2ph]).T
+    B = np.stack([h2ph_approx * m2ph, years * m2ph]).T
 
     # Stochastic model Qyy, size n_obs x n_obs
     # This is the covariance matrix of the observations
@@ -120,12 +117,10 @@ def periodogram(
     rhs = np.linalg.inv(R) @ B.T @ np.linalg.inv(Qyy)  # (B.T * Qyy^-1 * B)^-1 * B.T * Qyy^-1, size n_params x n_obs
 
     # Set up core dimensions, which are the dimensions _periodogram_single will be applied to
-    # We are broadcasting _periodogram_single on stm[key_phs] along the space dimension
+    # We are broadcasting _periodogram_single on stm[key_phs] and stm[key_h2ph] along the space dimension
     # Threfore, we are calling it on the "time" dimension of every space entry
-    # So we have the input_core_dims as ["time"]
-    input_core_dims = [
-        ["time"],
-    ]
+    # So we have the input_core_dims as  [["time"], ["time"]]
+    input_core_dims = [["time"], ["time"]]
     # There are 5 outputs from _periodogram_single
     # The first two are np arrays with time dimension
     # The other three are scalars, so they have no dimensions
@@ -137,9 +132,11 @@ def periodogram(
     results = xr.apply_ufunc(
         _periodogram_single,
         stm[key_phs],
+        stm[key_h2ph],
         input_core_dims=input_core_dims,
         output_core_dims=output_core_dims,
         kwargs={
+            "h2ph_approx": h2ph_approx,
             "B": B,
             "Qyy": Qyy,
             "R": R,
@@ -161,7 +158,9 @@ def periodogram(
 
 
 def _periodogram_single(
-    phs_obs_wrapped: np.ndarray | da.Array,
+    phs_obs_wrapped: np.ndarray,
+    h2ph: np.ndarray,
+    h2ph_approx: np.ndarray,
     B: np.ndarray,
     Qyy: np.ndarray,
     R: np.ndarray,
@@ -180,6 +179,10 @@ def _periodogram_single(
     ----------
     phs_obs_wrapped : np.ndarray
         Wrapped phase observations in radians, shape (n_obs,).
+    h2ph : np.ndarray:
+        Height-to-phase factor of the arc, shape (n_obs,).
+    h2ph_approx : np.ndarray
+        Approximate height-to-phase factor calculated by spatial average all h2ph, shape (n_obs,).
     B : np.ndarray
         Design matrix, size n_obs x n_params, where n_params = 2 (height and velocity).
     Qyy : np.ndarray
@@ -256,6 +259,12 @@ def _periodogram_single(
 
         count += 1
 
+    # Correct the height parameter for using h2ph_approx
+    # Method copied from MATLAB DePSI code
+    factor = np.median(h2ph / h2ph_approx)  # correct factor
+    param_height = param_height / factor
+
+    # Calculate the modelled phase and unwrapped phase
     phs_model_abs = B @ np.array([param_height, param_vel])  # Absolute modelled phase
     phs_model_wrapped = wrap_phase(phs_model_abs)  # Wrapped modelled phase
     ambigs = np.round((phs_model_abs + phs_model_wrapped - phs_obs_wrapped) / (2 * np.pi))  # Ambiguities
