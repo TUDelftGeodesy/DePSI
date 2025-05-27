@@ -115,7 +115,9 @@ def periodogram(
 
     # Convenience matrix R and rhs for the least squares solution
     R = B.T @ np.linalg.solve(Qyy, B)  # B.T * Qyy^-1 * B , size n_params x n_params
-    rhs = np.linalg.solve(R, B.T @ np.linalg.solve(Qyy, stm[key_h2ph].values))  # Solve (B.T * Qyy^-1 * B) * x = B.T * Qyy^-1
+    # Solve (B.T * Qyy^-1 * B) * x = B.T * Qyy^-1
+    # Essentially the same as (B.T * Qyy^-1 * B)^-1 * B.T * Qyy^-1
+    rhs = np.linalg.solve(R, B.T @ np.linalg.solve(Qyy, stm[key_h2ph].values))
 
     # Set up core dimensions, which are the dimensions _periodogram_single will be applied to
     # We are broadcasting _periodogram_single on stm[key_phs] and stm[key_h2ph] along the space dimension
