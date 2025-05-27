@@ -1,5 +1,6 @@
 """modules for phase unwrapping."""
 
+import dask.array as da
 import numpy as np
 import xarray as xr
 
@@ -91,14 +92,24 @@ def periodogram(
     if wavelength is None:
         m2ph = -4 * np.pi / WAVELENGTH_S1
 
+    # Make sure year time only contains the time dimension
+    assert (len(stm[key_yeartime].dims) == 1) and (
+        "time" in stm[key_yeartime].dims
+    ), "year time should and only should contain the 'time' dimension."
+
+    # Load year time in memory
+    years = stm[key_yeartime].values
+
     # Set up functional and stochastic model for all arcs
     # Here we use the same h2ph (average over all arcs) for all arcs and correct the effect later
     # Doing this avoids perform matrix inversion for each arc
     h2ph_mean = stm[key_h2ph].mean(dim="space").data  # Mean h2ph of all arcs
+    if isinstance(h2ph_mean, da.Array):
+        h2ph_mean = h2ph_mean.compute()  # If h2ph_mean is a dask array, compute it
 
     # Design matrix B, size n_obs x n_params
     # In B, h2ph should also be multiplied by m2ph since it did not when it was created
-    B = np.stack([h2ph_mean * m2ph, stm[key_yeartime] * m2ph]).T.compute()
+    B = np.stack([h2ph_mean * m2ph, years * m2ph]).T
 
     # Stochastic model Qyy, size n_obs x n_obs
     # This is the covariance matrix of the observations
@@ -150,7 +161,7 @@ def periodogram(
 
 
 def _periodogram_single(
-    phs_obs_wrapped: np.ndarray,
+    phs_obs_wrapped: np.ndarray | da.Array,
     B: np.ndarray,
     Qyy: np.ndarray,
     R: np.ndarray,
@@ -269,21 +280,21 @@ def _build_search_space(param_height, param_vel, step_height, step_vel, n_search
     ----------
     param_height : float
         Initial height parameter in meters.
-    param_vel : _type_
+    param_vel : float
         Initial velocity parameter in meters per year.
-    step_height : _type_
+    step_height : int
         Step size of search for height parameter, in meters.
-    step_vel : _type_
+    step_vel : int
         Step size of search for velocity parameter, in meters per year.
-    n_search_height : _type_
+    n_search_height : int
         Number of searches for height parameter on each side of the initial value.
-    n_search_vel : _type_
+    n_search_vel : int
         Number of searches for velocity parameter on each side of the initial value.
 
     Returns
     -------
-    _type_
-        _description_
+    np.ndarray
+        Search space for height and velocity parameters, shape (n_candidates_vel * n_candidates_height, 2)
     """
     height_candidates = np.arange(
         param_height - n_search_height * step_height,
