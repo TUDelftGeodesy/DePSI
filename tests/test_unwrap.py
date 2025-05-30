@@ -50,7 +50,7 @@ def get_arcs_stm(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     [
         (13, 4, -1e-3, 1e-4, -1, 1),  # stable point
         (6, 6, -2.3e-3, 1.5e-4, -0.03, 0.02),  # stable point, extra short time series, low height
-        (30, 3, -5e-3, 2e-4, -5, 10),  # non-stable point, long time series, high height
+        (77, 3, -5e-3, 2e-4, -5, 10),  # non-stable point, long time series, high height
     ],
 )
 def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
@@ -79,7 +79,9 @@ def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     assert results[3].shape == (n_arcs,)  # velocity
     assert results[4].shape == (n_arcs,)  # coherence
 
-    # Unwrapped phase almost equal
+    # Solved velocity should be close to the original velocity, tolerance of std_vel
+    # Here we only check the velocity estimation
+    # there unwrapping errors are allowed for the phase time series
     assert np.allclose(results[3].values, arcs["velo"].values, atol=std_vel)
 
 
@@ -88,7 +90,7 @@ def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     [
         (13, 1, -2e-3, 2e-4, -1, 1),
         (6, 1, -2.1e-3, 2.5e-4, -0.03, 0.02),
-        (25, 1, -6e-3, 1.9e-4, -2, 3),
+        (72, 1, -6e-3, 1.9e-4, -2, 3),
     ],
 )
 def test_periodogram_single(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
