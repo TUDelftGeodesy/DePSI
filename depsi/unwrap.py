@@ -119,21 +119,21 @@ def periodogram(
     # Essentially the same as (B.T * Qyy^-1 * B)^-1 * B.T * Qyy^-1
     rhs = np.linalg.solve(R, B.T) @ np.linalg.solve(Qyy, np.eye(stm[key_h2ph].sizes["time"]))
 
-    # Set up core dimensions, which are the dimensions _periodogram_single will be applied to
-    # We are broadcasting _periodogram_single on stm[key_phs] and stm[key_h2ph] along the space dimension
+    # Set up core dimensions, which are the dimensions _periodogram_arc will be applied to
+    # We are broadcasting _periodogram_arc on stm[key_phs] and stm[key_h2ph] along the space dimension
     # Threfore, we are calling it on the "time" dimension of every space entry
     # So we have the input_core_dims as  [["time"], ["time"]]
     input_core_dims = [["time"], ["time"]]
-    # There are 5 outputs from _periodogram_single
+    # There are 5 outputs from _periodogram_arc
     # The first two are np arrays with time dimension
     # The other three are scalars, so they have no dimensions
     output_core_dims = [["time"], ["time"], [], [], []]
 
-    # Apply the _periodogram_single on stm[key_phs] along "space" dimension
+    # Apply the _periodogram_arc on stm[key_phs] along "space" dimension
     # Other parameters are duplicated for each space entry
     # Therefore they can be passed as kwargs
     results = xr.apply_ufunc(
-        _periodogram_single,
+        _periodogram_arc,
         stm[key_phs],
         stm[key_h2ph],
         input_core_dims=input_core_dims,
@@ -160,7 +160,7 @@ def periodogram(
     return results
 
 
-def _periodogram_single(
+def _periodogram_arc(
     phs_obs_wrapped: np.ndarray,
     h2ph: np.ndarray,
     h2ph_approx: np.ndarray,
@@ -268,9 +268,9 @@ def _periodogram_single(
     param_height = param_height / factor
 
     # Calculate the modelled phase and unwrapped phase
-    phs_model_abs = B @ np.array([param_height, param_vel])  # Absolute modelled phase
-    phs_model_wrapped = wrap_phase(phs_model_abs)  # Wrapped modelled phase
-    ambigs = np.round((phs_model_abs + phs_model_wrapped - phs_obs_wrapped) / (2 * np.pi))  # Ambiguities
+    model_est = B @ np.array([param_height, param_vel]) + np.angle(coh_best)  # Absolute modelled phase
+    dphase_new = wrap_phase(phs_obs_wrapped - model_est)  # Wrapped modelled phase
+    ambigs = np.round((model_est + dphase_new - phs_obs_wrapped) / (2 * np.pi))  # Ambiguities
     phs_obs_unwrapped = 2 * np.pi * ambigs + phs_obs_wrapped  # Unwrapped phase
     param = rhs @ phs_obs_unwrapped  # [height_est, velocity_est]
 
