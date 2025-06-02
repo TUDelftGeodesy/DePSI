@@ -14,9 +14,9 @@ WAVELENGTH_S1 = 0.055465763  # m, sentinel-1 wavelength
 
 def periodogram(
     stm: xr.Dataset,
-    key_phs: str,
+    key_dphase: str,
     key_h2ph: str,
-    key_yeartime: str,
+    key_Btemp: str,
     std_obs: float = 1.0,
     std_height: float = 50.0,
     std_vel: float = 0.02,
@@ -40,12 +40,13 @@ def periodogram(
     ----------
     stm : xr.Dataset
         Input Space-Time Matrix (STM) containing the wrapped phase, height-to-phase conversion factor, and year-time.
-    key_phs : str
-        Key for the wrapped phase data variable in the STM.
+    key_dphase : str
+        Key for the wrapped differential phase data variable in the STM.
     key_h2ph : str
         Key for the height-to-phase conversion factor in the STM.
-    key_yeartime : str
-        key for the year-time data variable in the STM.
+    key_Btemp : str
+        key for the temporal baseline in the STM.
+        The value should be in decimal years.
     std_obs : float, optional
         A-poriori standard deviation of the observations in rads, by default 1.0.
         This value is used to construct the stochastic model (Qyy) of the observations.
@@ -93,12 +94,12 @@ def periodogram(
     else:
         m2ph = -4 * np.pi / wavelength
     # Make sure year time only contains the time dimension
-    assert (len(stm[key_yeartime].dims) == 1) and (
-        "time" in stm[key_yeartime].dims
+    assert (len(stm[key_Btemp].dims) == 1) and (
+        "time" in stm[key_Btemp].dims
     ), "year time should and only should contain the 'time' dimension."
 
     # Load year time in memory
-    years = stm[key_yeartime].values
+    Btemp = stm[key_Btemp].values
 
     # Set up functional and stochastic model for all arcs
     # Here we use the same h2ph (average over all arcs) for all arcs and correct the effect later
@@ -107,7 +108,7 @@ def periodogram(
 
     # Design matrix B, size n_obs x n_params
     # In B, h2ph should also be multiplied by m2ph since it did not when it was created
-    B = np.stack([h2ph_approx * m2ph, years * m2ph]).T
+    B = np.stack([h2ph_approx * m2ph, Btemp * m2ph]).T
 
     # Stochastic model Qyy, size n_obs x n_obs
     # This is the covariance matrix of the observations
@@ -120,7 +121,7 @@ def periodogram(
     rhs = np.linalg.solve(R, B.T) @ np.linalg.solve(Qyy, np.eye(stm[key_h2ph].sizes["time"]))
 
     # Set up core dimensions, which are the dimensions _periodogram_arc will be applied to
-    # We are broadcasting _periodogram_arc on stm[key_phs] and stm[key_h2ph] along the space dimension
+    # We are broadcasting _periodogram_arc on stm[key_dphase] and stm[key_h2ph] along the space dimension
     # Threfore, we are calling it on the "time" dimension of every space entry
     # So we have the input_core_dims as  [["time"], ["time"]]
     input_core_dims = [["time"], ["time"]]
@@ -129,12 +130,20 @@ def periodogram(
     # The other three are scalars, so they have no dimensions
     output_core_dims = [["time"], ["time"], [], [], []]
 
-    # Apply the _periodogram_arc on stm[key_phs] along "space" dimension
+    # Build initial search space for height and velocity
+    n_search_height = max(round(2 * std_height / init_step_height), min_searches)
+    n_search_vel = max(round(2 * std_vel / init_step_vel), min_searches)
+
+    init_search_space = _build_search_space(
+        init_height, init_vel, init_step_height, init_step_vel, n_search_height, n_search_vel
+    )
+
+    # Apply the _periodogram_arc on stm[key_dphase] along "space" dimension
     # Other parameters are duplicated for each space entry
     # Therefore they can be passed as kwargs
     results = xr.apply_ufunc(
         _periodogram_arc,
-        stm[key_phs],
+        stm[key_dphase],
         stm[key_h2ph],
         input_core_dims=input_core_dims,
         output_core_dims=output_core_dims,
@@ -144,10 +153,7 @@ def periodogram(
             "Qyy": Qyy,
             "R": R,
             "rhs": rhs,
-            "std_height": std_height,
-            "std_vel": std_vel,
-            "init_height": init_height,
-            "init_vel": init_vel,
+            "init_search_space": init_search_space,
             "init_step_height": init_step_height,
             "init_step_vel": init_step_vel,
             "min_searches": min_searches,
@@ -168,10 +174,7 @@ def _periodogram_arc(
     Qyy: np.ndarray,
     R: np.ndarray,
     rhs: np.ndarray,
-    std_height: float,
-    std_vel: float,
-    init_height: float,
-    init_vel: float,
+    init_search_space: float,
     init_step_height: float,
     init_step_vel: float,
     min_searches: float,
@@ -194,14 +197,8 @@ def _periodogram_arc(
         Covariance matrix of the parameters, size n_params x n_params.
     rhs : np.ndarray
         Right-hand side matrix for the least squares solution, size n_params x n_obs.
-    std_height : float
-        A-poriori standard deviation of the height in meters.
-    std_vel : float
-        A-poriori standard deviation of the velocity in meters per year.
-    init_height : float
-        Initial guess for the height parameter in meters.
-    init_vel : float
-        Initial guess for the velocity parameter in meters per year.
+    init_search_space : np.ndarray
+        Initial search space for height and velocity parameters, shape (n_candidates, 2).
     init_step_height : float
         Initial step size for the height parameter in meters.
     init_step_vel : float
@@ -219,22 +216,12 @@ def _periodogram_arc(
         - Estimated velocity: in meters per year, scalar, dtype np.float64.
         - Temporal coherence: unitless complex number, scalar, dtype np.complex128.
     """
-    # Build initial search space for height and velocity
-    param_height = init_height
-    param_vel = init_vel
-    step_height = init_step_height
-    step_vel = init_step_vel
-    n_search_height = max(round(2 * std_height / step_height), min_searches)
-    n_search_vel = max(round(2 * std_vel / step_vel), min_searches)
-
     # Search loop
+    step_height = init_step_height  # Initial step size for height
+    step_vel = init_step_vel  # Initial step size for velocity
+    search_space = init_search_space  # Initial search space for height and velocity
     count = 0
     while step_height > STOP_HEIGHT and step_vel > STOP_VEL and count < MAX_COUNT:
-        # Build search space
-        search_space = _build_search_space(
-            param_height, param_vel, step_height, step_vel, n_search_height, n_search_vel
-        )
-
         # Calculate the wrapped model phase for all candidates
         phs_model = wrap_phase(B @ search_space.T)  # size n_obs x n_search
 
@@ -259,6 +246,11 @@ def _periodogram_arc(
         step_vel /= 10
         n_search_height = min_searches
         n_search_vel = min_searches
+
+        # Build search space
+        search_space = _build_search_space(
+            param_height, param_vel, step_height, step_vel, n_search_height, n_search_vel
+        )
 
         count += 1
 
