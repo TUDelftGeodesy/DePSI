@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.unwrap import _build_search_space, _periodogram_single, periodogram
+from depsi.unwrap import _build_search_space, periodogram
 from depsi.utils import wrap_phase
 
 
@@ -60,8 +60,8 @@ def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
 
     results = periodogram(
         stm=arcs,
-        key_phs="phs_obs_wrapped",
-        key_yeartime="years",
+        key_dphase="phs_obs_wrapped",
+        key_Btemp="years",
         key_h2ph="h2ph_values",
         std_height=std_height,
         std_vel=std_vel,
@@ -83,49 +83,6 @@ def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     # Here we only check the velocity estimation
     # there unwrapping errors are allowed for the phase time series
     assert np.allclose(results[3].values, arcs["velo"].values, atol=std_vel)
-
-
-@pytest.mark.parametrize(
-    "n_obs, n_arcs, velo_min, velo_max, height_min, height_max",
-    [
-        (13, 1, -2e-3, 2e-4, -1, 1),
-        (6, 1, -2.1e-3, 2.5e-4, -0.03, 0.02),
-        (72, 1, -6e-3, 1.9e-4, -2, 3),
-    ],
-)
-def test_periodogram_single(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
-    std_obs = 0.1
-    std_height = 5  # standard deviation for height
-    std_vel = 0.01  # standard deviation for velocity
-    m2ph, n_obs, n_arcs, velo, height, h2ph = get_test_consts(n_obs, n_arcs, velo_min, velo_max, height_min, height_max)
-    arcs = get_arcs_stm(n_obs, n_arcs, velo_min, velo_max, height_min, height_max)
-    arcs = arcs.isel(space=0)  # single arc
-    years = arcs["years"].values
-    B = np.stack([arcs["h2ph_values"].values * m2ph, years * m2ph]).T
-    Qyy = np.diag(np.repeat(std_obs**2, arcs.sizes["time"]))
-    R = B.T @ np.linalg.inv(Qyy) @ B  # B.T * Qyy^-1 * B , size n_params x n_params
-    rhs = np.linalg.inv(R) @ B.T @ np.linalg.inv(Qyy)  # (B.T * Qyy^-1 * B)^-1 * B.T * Qyy^-1, size n_params x n_obs
-
-    results = _periodogram_single(
-        phs_obs_wrapped=arcs["phs_obs_wrapped"].values,
-        h2ph=arcs["h2ph_values"].values,
-        h2ph_approx=arcs["h2ph_values"].values,
-        B=B,
-        Qyy=Qyy,
-        R=R,
-        rhs=rhs,
-        std_height=std_height,
-        std_vel=std_vel,
-        init_step_height=abs(height_max - height_min) / 10,
-        init_step_vel=abs(velo_max - velo_min) / 10,
-        init_height=(height_min + height_max) / 2,
-        init_vel=(velo_min + velo_max) / 2,
-        min_searches=11,
-    )
-
-    assert len(results) == 5
-    assert results[0].shape == (n_obs,)  # unwrapped phase
-    assert results[1].shape == (n_obs,)  # ambiguities
 
 
 def test_build_search_space():
