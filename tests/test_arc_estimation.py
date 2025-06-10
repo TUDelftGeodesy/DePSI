@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.unwrap import _build_search_space, periodogram
+from depsi.arc_estimation import _build_search_space, periodogram
 from depsi.utils import wrap_phase
 
 
