@@ -3,6 +3,9 @@
 import logging
 import math
 
+# from depsi.arc_estimation import periodogram
+from typing import Literal
+
 import numpy as np
 import xarray as xr
 from scipy.spatial import Delaunay
@@ -10,43 +13,83 @@ from scipy.spatial import Delaunay
 logger = logging.getLogger(__name__)
 
 
+# def network_unwrap(
+#     stm,
+#     key_phase: str,
+#     key_h2ph: str,
+#     key_Btemp: str,
+#     key_xlabel: str = "lon",
+#     key_ylabel: str = "lat",
+#     key_complex: str = "complex",
+#     network_method: Literal["redundant", "delaunay"] = "redundant",
+#     max_length: float = None,
+#     min_links: int = 12,
+#     num_partitions: int = 8,
+#     dphase_method="subtract",
+# ):
+#     # generate arcs
+#     arcs = generate_arcs(stm, key_phase, key_h2ph, key_Btemp)
+
+#     ss = 1
+
+
 def generate_arcs(
-    stm,
-    network_method="redundant",
-    x="lon",
-    y="lat",
-    max_length=None,
-    min_links=12,
-    num_partitions=8,
-    difference="subtract",
+    stm: xr.Dataset,
+    key_phase: str,
+    key_h2ph: str,
+    key_Btemp: str,
+    key_complex: str = "complex",
+    key_xlabel: str = "lon",
+    key_ylabel: str = "lat",
+    network_method: Literal["redundant", "delaunay"] = "redundant",
+    max_length: float = None,
+    min_links: int = 12,
+    num_partitions: int = 8,
+    dphase_method: Literal["conjmult", "subtract"] = "subtract",
 ) -> xr.Dataset:
-    """Get an STM of arcs and phase differences from an STM of points.
+    """Generate an STM of arcs from an STM of points.
 
-    Args:
-    ----
-        stm: Xarray.Dataset, input Space-Time Matrix.
-        network_method: method to form the network; either "delaunay" or "redundant".
-        x: str, first coordinate used to describe a point.
-        y: str, second coordinate used to describe a point.
-        max_length: float, maximum length of any generated arc or None.
-        min_links: int, minimum number of arcs per node, limited by max_length. Only used for the redundant method.
-        num_partitions: int, number of partitions to split the nodes into based on orientation from the current node.
-          Only used for the redundant method.
-        difference: str, method for computing the phase difference; either "subtract" or "conjmult".
+    Parameters
+    ----------
+    stm : xr.Dataset
+        Space-Time Matrix of scatteres.
+    key_phase : str
+        Key of the phase values in the STM.
+        This phase will be used to compute the differential arc phase.
+    key_h2ph : str
+        Key of the h2ph values in the STM.
+        The arc h2ph will be computed as the average between source and target.
+    key_Btemp : str
+        Key of the Btemp values in the STM.
+    key_complex : str, optional
+        Key of the complex values, by default "complex"
+    key_xlabel : str, optional
+        Key of the x coordinates for calulating arc length, by default "lon"
+    key_ylabel : str, optional
+        Key of the y coordinates for calulating arc length, by default "lat"
+    network_method : Literal["redundant", "delaunay"], optional
+        network formation method, by default "redundant"
+    max_length : float, optional
+        maximum arc length, by default None
+    min_links : int, optional
+        minimum links per point, by default 12
+        only effective when network_method is "redundant"
+    num_partitions : int, optional
+        number of partitions of searching when forming redundant network, by default 8
+        only effective when network_method is "redundant"
+    dphase_method : Literal["conjmult", "subtract"], optional
+        method of computing phase difference, by default "subtract"
+        "subtract" method subtracts the source phase from the target phase;
+        "conjmult" method computes the phase difference by conjugate multiplication:
+            d_phase = np.angle(complex_target * complex_source.conj())
 
-    Returns:
+    Returns
     -------
-        arcs: Xarray.Dataset, STM of arcs, pairs of point indices describing the adjacent nodes and the difference
-          between their phases.
-          The index pairs are sorted, as is the list of pairs.
-          The phase difference depends on the method used:
-            either the source phase subtracted from the target phase,
-            or the wrapped conjugate multiplication of these phases.
-
-    Raises:
-    ------
-    NotImplementedError
-        Raised when an unknown network or difference method is provided.
+    xr.Dataset
+        Space-Time Matrix of arcs, containing the following variables:
+        - d_phase: the arc phase, which is the difference between source and target points
+        - Btemp: the temporal baseline, which is the same for all arcs
+        - h2ph: the arc h2ph, which is the average between source and target points
     """
     # Generate the network arcs.
     if network_method == "redundant":
@@ -60,7 +103,7 @@ def generate_arcs(
         raise NotImplementedError(f"Unknown network method {network_method}, known are delaunay and redundant")
 
     # Collect point coordinates.
-    indices = [stm[coord] for coord in [x, y]]
+    indices = [stm[coord] for coord in [key_xlabel, key_ylabel]]
     coordinates = np.column_stack(indices)
 
     arcs = None
@@ -73,24 +116,22 @@ def generate_arcs(
 
     # Compute the phase difference.
     arcs_unzipped = list(zip(*arcs, strict=False))
-    arcs_unzipped = [list(arcs_unzipped[0]), list(arcs_unzipped[1])]
-    d_phase = _compute_phase_difference(stm, arcs_unzipped[0], arcs_unzipped[1], method=difference)
+    source_idx = list(arcs_unzipped[0])
+    target_idx = list(arcs_unzipped[1])
+    d_phase = _compute_phase_difference(stm, source_idx, target_idx, key_phase, key_complex, method=dphase_method)
 
-    # Store the phase difference in a DataArray,
-    # with source and target coordinates as indices into the points STM.
-    d_phase_array = xr.DataArray(
-        d_phase,
-        name="d_phase",
-        dims=("space", "time"),
-        coords={
-            "source": (["space"], arcs_unzipped[0]),
-            "target": (["space"], arcs_unzipped[1]),
-            "time": stm.time,
+    Btemp = stm[key_Btemp].data
+
+    h2ph = (stm[key_h2ph].isel(space=source_idx).data + stm[key_h2ph].isel(space=target_idx).data) / 2
+
+    stm_arcs = xr.Dataset(
+        data_vars={
+            "d_phase": (["space", "time"], d_phase),
+            "Btemp": (["time"], Btemp),
+            "h2ph": (["space", "time"], h2ph),
         },
+        coords={"source": (["space"], source_idx), "target": (["space"], target_idx)},
     )
-
-    # Create a dataset to hold the array.
-    stm_arcs = xr.Dataset({"d_phase": d_phase_array})
 
     return stm_arcs
 
@@ -123,6 +164,7 @@ def _get_distance(s, t):
 
 
 def _generate_arcs_delaunay(coordinates, max_length=None):
+    """Create a network using Delaunay triangulation."""
     # Create network and collect neighbors.
     network = Delaunay(coordinates)
     neighbors_ptr, neighbors_idx = network.vertex_neighbor_vertices
@@ -142,14 +184,15 @@ def _generate_arcs_delaunay(coordinates, max_length=None):
 
 
 def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_partitions=8):
-    # Create a network with at least min_links arcs per node.
-    # Arcs are created ordered by length.
-    # However, the orientations around the node are split into num_partitions partitions;
-    # each partition can only get an (x+1)th arc if every other partition either
-    # already has x arcs connected or already has all allowed arcs connected
-    # (e.g. there are no more nodes in that partition, or they are all too far away).
-    # Note that a node may get less than min_links arcs if there are not enough neighbors within max_length.
+    """Create a network with at least min_links arcs per node.
 
+    Arcs are created ordered by length.
+    However, the orientations around the node are split into num_partitions partitions;
+    each partition can only get an (x+1)th arc if every other partition either
+    already has x arcs connected or already has all allowed arcs connected
+    (e.g. there are no more nodes in that partition, or they are all too far away).
+    Note that a node may get less than min_links arcs if there are not enough neighbors within max_length.
+    """
     arcs = []
     indices = range(len(coordinates))
     for cur_index in indices:
@@ -205,42 +248,24 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
     return arcs
 
 
-def _compute_direct_phase_difference(stm, source_idx, target_idx):
-    # Calculate the unwrapped direct phase difference between two points,
-    # as the phase of the target minus the phase of the source.
-    d_phase = stm.isel(space=target_idx).phase - stm.isel(space=source_idx).phase
-    return d_phase
+def _compute_phase_difference(
+    stm,
+    source_idx,
+    target_idx,
+    key_phase: str,
+    key_complex: str,
+    method: Literal["subtract", "conjmult"],
+) -> np.ndarray:
+    """Calculate the phase difference between two points.
 
-
-def _compute_wrapped_phase_difference(stm, source_idx, target_idx):
-    # Calculate the wrapped phase difference between two points,
-    # as the wrapped complex conjugate multiplication of the phases of the target and the source.
-
-    # The original code in `demo_dynamic_estimation.ipynb` used `.sd_complex` (single difference complex),
-    # which is computed as the SD (Single (temporal) Difference) phase values between the stm and a mother epoch
-    # (`compute_sd` function called from `output_stm.ipynb`; probably imported from `arc_estimation_toolbox`).
-
-    # Extract information of the two points of the arc
-    complex_source = stm.isel(space=source_idx).complex
-    complex_target = stm.isel(space=target_idx).complex
-
-    # Compute DD phase for the arc
-    complex_conj_source = complex_source.conj()
-    d_phase = complex_target * complex_conj_source
-
-    # Get the wrapped phase
-    d_phase_wrapped = np.angle(d_phase)
-
-    return d_phase_wrapped
-
-
-def _compute_phase_difference(stm, source_idx, target_idx, method="subtract"):
-    # Calculate the phase difference between two points.
-    # The method can either be "subtract" or "conjmult".
+    The method can either be "subtract" or "conjmult".
+    """
     if method == "subtract":
-        d_phase = _compute_direct_phase_difference(stm, source_idx, target_idx)
+        d_phase = stm[key_phase].isel(space=target_idx).data - stm[key_phase].isel(space=source_idx).data
     elif method == "conjmult":
-        d_phase = _compute_wrapped_phase_difference(stm, source_idx, target_idx)
+        complex_source = stm[key_complex].isel(space=source_idx).data
+        complex_target = stm[key_complex].isel(space=target_idx).data
+        d_phase = np.angle(complex_target * complex_source.conj())
     else:
         raise NotImplementedError(f"Unknown difference method {method}, known are subtract and conjmult")
     return d_phase
