@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def generate_arcs(
-    stm_points,
+    stm,
     network_method="redundant",
     x="lon",
     y="lat",
@@ -24,7 +24,7 @@ def generate_arcs(
 
     Args:
     ----
-        stm_points: Xarray.Dataset, input Space-Time Matrix.
+        stm: Xarray.Dataset, input Space-Time Matrix.
         network_method: method to form the network; either "delaunay" or "redundant".
         x: str, first coordinate used to describe a point.
         y: str, second coordinate used to describe a point.
@@ -60,7 +60,7 @@ def generate_arcs(
         raise NotImplementedError(f"Unknown network method {network_method}, known are delaunay and redundant")
 
     # Collect point coordinates.
-    indices = [stm_points[coord] for coord in [x, y]]
+    indices = [stm[coord] for coord in [x, y]]
     coordinates = np.column_stack(indices)
 
     arcs = None
@@ -74,7 +74,7 @@ def generate_arcs(
     # Compute the phase difference.
     arcs_unzipped = list(zip(*arcs, strict=False))
     arcs_unzipped = [list(arcs_unzipped[0]), list(arcs_unzipped[1])]
-    d_phase = _compute_phase_difference(stm_points, arcs_unzipped[0], arcs_unzipped[1], method=difference)
+    d_phase = _compute_phase_difference(stm, arcs_unzipped[0], arcs_unzipped[1], method=difference)
 
     # Store the phase difference in a DataArray,
     # with source and target coordinates as indices into the points STM.
@@ -85,7 +85,7 @@ def generate_arcs(
         coords={
             "source": (["space"], arcs_unzipped[0]),
             "target": (["space"], arcs_unzipped[1]),
-            "time": stm_points.time,
+            "time": stm.time,
         },
     )
 
@@ -205,14 +205,14 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
     return arcs
 
 
-def _compute_direct_phase_difference(stm_points, source_idx, target_idx):
+def _compute_direct_phase_difference(stm, source_idx, target_idx):
     # Calculate the unwrapped direct phase difference between two points,
     # as the phase of the target minus the phase of the source.
-    d_phase = stm_points.isel(space=target_idx).phase - stm_points.isel(space=source_idx).phase
+    d_phase = stm.isel(space=target_idx).phase - stm.isel(space=source_idx).phase
     return d_phase
 
 
-def _compute_wrapped_phase_difference(stm_points, source_idx, target_idx):
+def _compute_wrapped_phase_difference(stm, source_idx, target_idx):
     # Calculate the wrapped phase difference between two points,
     # as the wrapped complex conjugate multiplication of the phases of the target and the source.
 
@@ -221,8 +221,8 @@ def _compute_wrapped_phase_difference(stm_points, source_idx, target_idx):
     # (`compute_sd` function called from `output_stm.ipynb`; probably imported from `arc_estimation_toolbox`).
 
     # Extract information of the two points of the arc
-    complex_source = stm_points.isel(space=source_idx).complex
-    complex_target = stm_points.isel(space=target_idx).complex
+    complex_source = stm.isel(space=source_idx).complex
+    complex_target = stm.isel(space=target_idx).complex
 
     # Compute DD phase for the arc
     complex_conj_source = complex_source.conj()
@@ -234,13 +234,13 @@ def _compute_wrapped_phase_difference(stm_points, source_idx, target_idx):
     return d_phase_wrapped
 
 
-def _compute_phase_difference(stm_points, source_idx, target_idx, method="subtract"):
+def _compute_phase_difference(stm, source_idx, target_idx, method="subtract"):
     # Calculate the phase difference between two points.
     # The method can either be "subtract" or "conjmult".
     if method == "subtract":
-        d_phase = _compute_direct_phase_difference(stm_points, source_idx, target_idx)
+        d_phase = _compute_direct_phase_difference(stm, source_idx, target_idx)
     elif method == "conjmult":
-        d_phase = _compute_wrapped_phase_difference(stm_points, source_idx, target_idx)
+        d_phase = _compute_wrapped_phase_difference(stm, source_idx, target_idx)
     else:
         raise NotImplementedError(f"Unknown difference method {method}, known are subtract and conjmult")
     return d_phase
