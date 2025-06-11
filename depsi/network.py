@@ -10,9 +10,9 @@ from scipy.spatial import Delaunay
 logger = logging.getLogger(__name__)
 
 
-def stm_to_arcs(
+def generate_arcs(
     stm_points,
-    network="delaunay",
+    network_method="redundant",
     x="lon",
     y="lat",
     max_length=None,
@@ -25,7 +25,7 @@ def stm_to_arcs(
     Args:
     ----
         stm_points: Xarray.Dataset, input Space-Time Matrix.
-        network: method to form the network; either "delaunay" or "redundant".
+        network_method: method to form the network; either "delaunay" or "redundant".
         x: str, first coordinate used to describe a point.
         y: str, second coordinate used to describe a point.
         max_length: float, maximum length of any generated arc or None.
@@ -49,9 +49,27 @@ def stm_to_arcs(
         Raised when an unknown network or difference method is provided.
     """
     # Generate the network arcs.
-    _, arcs = generate_arcs(
-        stm_points, method=network, x=x, y=y, max_length=max_length, min_links=min_links, num_partitions=num_partitions
-    )
+    if network_method == "redundant":
+        if min_links <= 0:
+            logger.error(f"min_links must be strictly positive (currently: {min_links})")
+            return
+        if num_partitions <= 0:
+            logger.error(f"num_partitions must be strictly positive (currently: {num_partitions})")
+            return
+    elif network_method != "delaunay":
+        raise NotImplementedError(f"Unknown network method {network_method}, known are delaunay and redundant")
+
+    # Collect point coordinates.
+    indices = [stm_points[coord] for coord in [x, y]]
+    coordinates = np.column_stack(indices)
+
+    arcs = None
+
+    # Create network arcs.
+    if network_method == "delaunay":
+        arcs = _generate_arcs_delaunay(coordinates, max_length)
+    elif network_method == "redundant":
+        arcs = _generate_arcs_redundant(coordinates, max_length, min_links, num_partitions)
 
     # Compute the phase difference.
     arcs_unzipped = list(zip(*arcs, strict=False))
@@ -75,57 +93,6 @@ def stm_to_arcs(
     stm_arcs = xr.Dataset({"d_phase": d_phase_array})
 
     return stm_arcs
-
-
-def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=None, min_links=12, num_partitions=8):
-    """Generate a network from a list of STM points.
-
-    The network is undirected and without self-loops.
-
-    Args:
-    ----
-        stm_points: Xarray.Dataset, input Space-Time Matrix.
-        method: str, method to form the network; either "delaunay" or "redundant".
-        x: str, first coordinate used to describe a point.
-        y: str, second coordinate used to describe a point.
-        max_length: float, maximum length of any generated arc or None.
-        min_links: int, minimum number of arcs per node, limited by max_length. Only used for the redundant method.
-        num_partitions: int, number of partitions to split the nodes into based on orientation from the current node.
-          Only used for the redundant method.
-
-    Returns:
-    -------
-        coordinates: list, [x, y] point coordinates extracted from stm_points.
-        arcs: list of pairs, point indices describing the adjacent nodes. The pairs are sorted, as is the list.
-
-    Raises:
-    ------
-    NotImplementedError
-        Raised when an unknown method is provided.
-    """
-    if method == "redundant":
-        if min_links <= 0:
-            logger.error(f"min_links must be strictly positive (currently: {min_links})")
-            return
-        if num_partitions <= 0:
-            logger.error(f"num_partitions must be strictly positive (currently: {num_partitions})")
-            return
-    elif method != "delaunay":
-        raise NotImplementedError(f"Unknown network method {method}, known are delaunay and redundant")
-
-    # Collect point coordinates.
-    indices = [stm_points[coord] for coord in [x, y]]
-    coordinates = np.column_stack(indices)
-
-    arcs = None
-
-    # Create network arcs.
-    if method == "delaunay":
-        arcs = _generate_arcs_delaunay(coordinates, max_length)
-    elif method == "redundant":
-        arcs = _generate_arcs_redundant(coordinates, max_length, min_links, num_partitions)
-
-    return coordinates, arcs
 
 
 def _get_distance(s, t):
