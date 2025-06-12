@@ -2,8 +2,6 @@
 
 import logging
 import math
-
-# from depsi.arc_estimation import periodogram
 from typing import Literal
 
 import numpy as np
@@ -13,27 +11,7 @@ from scipy.spatial import Delaunay
 logger = logging.getLogger(__name__)
 
 
-# def network_unwrap(
-#     stm,
-#     key_phase: str,
-#     key_h2ph: str,
-#     key_Btemp: str,
-#     key_xlabel: str = "lon",
-#     key_ylabel: str = "lat",
-#     key_complex: str = "complex",
-#     network_method: Literal["redundant", "delaunay"] = "redundant",
-#     max_length: float = None,
-#     min_links: int = 12,
-#     num_partitions: int = 8,
-#     dphase_method="subtract",
-# ):
-#     # generate arcs
-#     arcs = generate_arcs(stm, key_phase, key_h2ph, key_Btemp)
-
-#     ss = 1
-
-
-def generate_arcs(
+def form_network(
     stm: xr.Dataset,
     key_phase: str,
     key_h2ph: str,

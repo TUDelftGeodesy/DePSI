@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.network import _compute_phase_difference, generate_arcs
+from depsi.network import _compute_phase_difference, form_network
 
 
 @pytest.fixture
@@ -42,7 +42,7 @@ def stm_random():
 class TestNetwork:
     @pytest.mark.parametrize("method", ["subtract", "conjmult"])
     def test_compute_phase_difference(self, stm_random, method):
-        arcs = generate_arcs(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
+        arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
         d_phase_subtract_0_0 = _compute_phase_difference(
             stm_random, arcs["source"], arcs["source"], "phase", "complex", method=method
         )
@@ -56,7 +56,7 @@ class TestNetwork:
 
     def test_stm_to_arcs_subtract(self, stm_random):
         # Generate arcs of a Delaunay network with subtracted phase differences.
-        stm_arcs = generate_arcs(
+        stm_arcs = form_network(
             stm_random,
             key_phase="phase",
             key_h2ph="h2ph",
@@ -72,7 +72,7 @@ class TestNetwork:
 
     def test_stm_to_arcs_conjmult(self, stm_random):
         # Generate arcs of a Delaunay network with conjugate multiplication phase differences.
-        stm_arcs = generate_arcs(
+        stm_arcs = form_network(
             stm_random,
             key_phase="phase",
             key_h2ph="h2ph",
@@ -87,7 +87,7 @@ class TestNetwork:
     def test_stm_to_arcs_fail(self, stm_random):
         # Test incorrect method fail.
         with pytest.raises(NotImplementedError):
-            generate_arcs(
+            form_network(
                 stm_random,
                 key_phase="phase",
                 key_h2ph="h2ph",
@@ -96,7 +96,7 @@ class TestNetwork:
                 dphase_method="subtract",
             )
         with pytest.raises(NotImplementedError):
-            generate_arcs(
+            form_network(
                 stm_random,
                 key_phase="phase",
                 key_h2ph="h2ph",
