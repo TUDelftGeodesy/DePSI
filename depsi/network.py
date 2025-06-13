@@ -86,7 +86,7 @@ def form_network(
 
     arcs = None
 
-    # Create network arcs.
+    # Create network arcs as list of tuples of point ids.
     if network_method == "delaunay":
         arcs = _generate_arcs_delaunay(coordinates, max_length)
     elif network_method == "redundant":
@@ -112,6 +112,71 @@ def form_network(
     )
 
     return stm_arcs
+
+
+def arc_selection(
+    arcs: xr.Dataset,
+    threshold: float,
+    selection_method: Literal["ens_coh"] = "ens_coh",
+    min_n_connection: int = 2,
+) -> xr.Dataset:
+    """Select aracs based on creteria.
+
+    This function selects arcs in two steps:
+    1. It selects arcs based on a threshold value(e.g., ens_coh).
+    2. It removes arcs connected to points which have less than a minimum number of connections.
+
+    Parameters
+    ----------
+    arcs : xr.Dataset
+        arcs to select from, in space-time matrix
+    threshold : float
+        threshold value for selection
+    selection_method : Literal["ens_coh"]
+        values to use for selection, by default "ens_coh". The available options are:
+        - "ens_coh": ensemble coherence, arcs with ens_coh > threshold are selected.
+          assumes that arcs have a variable "ens_coh" in the dataset.
+    min_n_connection : int, optional
+        minimum number of connections, by default 2
+
+    Returns
+    -------
+    xr.Dataset
+        selected arcs in space-time matrix
+    """
+    # Threshold selection
+    match selection_method:
+        case "ens_coh":
+            mask = np.abs(arcs["ens_coh"]) > threshold  # mask as DataArray
+            arcs_selected = arcs.where(mask, drop=True)
+        case _:
+            raise NotImplementedError
+
+    # Remove arcs which can not be tested
+    # These arcs are identified by the points which has <= min_n_connection arcs connected to them
+    # All arcs connected to such points are removed
+    # An iterative approach is used to remove all arcs connected to such points
+    point_ids_all = np.concat(
+        [arcs_selected["source"].data, arcs_selected["target"].data]
+    )  # all occurrances of point ids
+    point_ids_unique, counts = np.unique(point_ids_all, return_counts=True)  # unique point ids and their counts
+
+    while np.any(counts <= min_n_connection):
+        # Find points with <=3 arcs connected
+        point_ids_to_remove = point_ids_unique[counts <= min_n_connection]
+        # Create a mask for arcs to remove
+        mask_remove = np.isin(arcs_selected["source"].data, point_ids_to_remove) | np.isin(
+            arcs_selected["target"].data, point_ids_to_remove
+        )
+        idx_select = np.where(~mask_remove)[0]  # indices of arcs to remove
+        # Remove these arcs
+        arcs_selected = arcs_selected.isel(space=idx_select)
+
+        # Update point ids and counts
+        point_ids_all = np.concat([arcs_selected["source"].data, arcs_selected["target"].data])
+        point_ids_unique, counts = np.unique(point_ids_all, return_counts=True)
+
+    return arcs_selected
 
 
 def _get_distance(s, t):
