@@ -45,11 +45,11 @@ def estimate_non_linear_deformation(
     # Build low_pass filter
     half_width = 0.5 * filter_length
     if method == 'block':
-        low_pass_filter = np.zeros_like(baseline_years)
+        low_pass_filter = np.zeros_like(baseline_years, dtype=float)
         no_points = int(round(half_width)) + 1
         low_pass_filter[:no_points] = signal.windows.boxcar(no_points)
     elif method == 'triangle':
-        low_pass_filter = np.zeros_like(baseline_years)
+        low_pass_filter = np.zeros_like(baseline_years, dtype=float)
         no_points = int(round(half_width)) + 1
         low_pass_filter[:no_points] = signal.windows.triang(no_points)
     elif method == 'gaussian':
