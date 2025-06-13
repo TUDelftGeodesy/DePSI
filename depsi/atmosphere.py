@@ -36,6 +36,19 @@ def estimate_non_linear_deformation(
     xr.DataArray
         The non-linear deformation estimated from the time series.
     """
+
+    # Check if baseline_years size is equal to psc_phase size
+    if baseline_years.size != psc_phase["time"].size:
+        raise ValueError(
+            "The size of baseline_years must match the time dimension of psc_phase."
+        )
+    # Check baseline_years is monotonic
+    is_monotonic_increasing = np.all(np.diff(baseline_years.values) >= 0)
+    is_monotonic_decreasing = np.all(np.diff(baseline_years.values) <= 0)
+    if not (is_monotonic_increasing or is_monotonic_decreasing):
+        raise ValueError("baseline_years must be monotonic.")
+
+
     # Build low_pass filter
     # TODO: check why * 1000.0
     # TODO: check why half width is used
@@ -56,24 +69,12 @@ def estimate_non_linear_deformation(
             "Available methods are: 'block', 'triangle', 'gaussian'."
         )
 
-    # Check if baseline_years size is equal to psc_phase size
-    if baseline_years.size != psc_phase["time"].size:
-        raise ValueError(
-            "The size of baseline_years must match the time dimension of psc_phase."
-        )
-    # Check baseline_years is monotonic
-    is_monotonic_increasing = (baseline_years.diff("time") >= 0).all().item()
-    is_monotonic_decreasing = (baseline_years.diff("time") <= 0).all().item()
-    if not (is_monotonic_increasing or is_monotonic_decreasing):
-        raise ValueError("baseline_years must be monotonic.")
-
     # Distances in time
-    distances_matrix = np.abs(
-        baseline_years.values[:, None] - baseline_years.values[None, :]
-    )
+    indices = np.arange(baseline_years.size)
+    distances_matrix = np.abs(indices[:, None] - indices[None, :])
 
     # Create a low-pass filter and compute weights matrix
-    weights_matrix = low_pass_filter[distances_matrix.astype(int)]
+    weights_matrix = low_pass_filter[distances_matrix]
     weights_matrix = weights_matrix / weights_matrix.sum(axis=1, keepdims=True)  # Normalize weights
 
      # Apply the low-pass filter and return the non-linear deformation
