@@ -12,7 +12,6 @@ epoch.
 import numpy as np
 import xarray as xr
 from scipy import signal
-from scipy.ndimage import convolve1d
 
 
 def estimate_non_linear_deformation(
@@ -44,17 +43,17 @@ def estimate_non_linear_deformation(
     # TODO: check why half width is used
 
     # Build low_pass filter
+    half_width = 0.5 * filter_length
     if method == 'block':
-        low_pass_filter = np.zeros(baseline_years.size)
-        no_points = int(round(0.5 * filter_length)) + 1
+        low_pass_filter = np.zeros_like(baseline_years)
+        no_points = int(round(half_width)) + 1
         low_pass_filter[:no_points] = signal.windows.boxcar(no_points)
     elif method == 'triangle':
-        low_pass_filter = np.zeros(baseline_years.size)
-        no_points = int(round(0.5 * filter_length)) + 1
+        low_pass_filter = np.zeros_like(baseline_years)
+        no_points = int(round(half_width)) + 1
         low_pass_filter[:no_points] = signal.windows.triang(no_points)
     elif method == 'gaussian':
-        no_points = baseline_years.size
-        low_pass_filter = signal.windows.gaussian(no_points, std=0.5 * filter_length / 3)
+        low_pass_filter = signal.windows.gaussian(baseline_years.size, std=half_width / 3)
     else:
         raise NotImplementedError(
             f"Method {method} is not implemented. "
@@ -70,10 +69,24 @@ def estimate_non_linear_deformation(
 
     # Create a low-pass filter and compute weights matrix
     weights_matrix = low_pass_filter[distances_matrix.astype(int)]
-    weights_matrix /= weights_matrix.sum(axis=1, keepdims=True)  # Normalize weights
+    weights_matrix = weights_matrix / weights_matrix.sum(axis=1, keepdims=True)  # Normalize weights
 
-    # Apply the low-pass filter and return the non-linear deformation
-    return np.dot(weights_matrix, residual_phase.values)
+     # Apply the low-pass filter and return the non-linear deformation
+    def apply_filter(residual_vector, weights):
+        return np.dot(weights, residual_vector)
+
+    # Function to apply filter to residual phase across time
+    return xr.apply_ufunc(
+        apply_filter,
+        residual_phase,
+        kwargs={'weights': weights_matrix},
+        input_core_dims=[['time']],
+        output_core_dims=[['time']],
+        vectorize=True,
+        dask='parallelized',
+        output_dtypes=[residual_phase.dtype]
+    )
+
 
 
 def krige_in_space():
