@@ -1,0 +1,86 @@
+import numpy as np
+import xarray as xr
+from scipy import signal
+
+import pytest
+from depsi.atmosphere import estimate_non_linear_deformation
+from numpy.testing import assert_array_equal
+
+class TestEstimateNonLinearDeformation:
+    def test_estimate_non_linear_deformation_block(self):
+        """Test the block method for estimating non-linear deformation."""
+        residual_phase = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
+        baseline_years = xr.DataArray(np.arange(10), dims='time')
+
+        # Actual
+        result = estimate_non_linear_deformation(
+            residual_phase=residual_phase,
+            baseline_years=baseline_years,
+            filter_length=2,
+            method='block'
+        )
+        actual = result.isel(space=0).data
+
+        # Expected
+        low_pass_filter = np.zeros_like(baseline_years, dtype=float)
+        low_pass_filter[:2] = signal.windows.boxcar(2)
+        distances_matrix = np.abs(
+            baseline_years.values[:, None] - baseline_years.values[None, :]
+        )
+        weights_matrix = low_pass_filter[distances_matrix.astype(int)]
+        weights_matrix = weights_matrix / weights_matrix.sum(axis=1, keepdims=True)
+        expected = np.dot(weights_matrix, residual_phase.isel(space=0).values)
+
+        assert_array_equal(actual, expected)
+
+
+    def test_estimate_non_linear_deformation_triangle(self):
+        """Test the triangle method for estimating non-linear deformation."""
+        residual_phase = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
+        baseline_years = xr.DataArray(np.arange(10), dims='time')
+
+        # Actual
+        result = estimate_non_linear_deformation(
+            residual_phase=residual_phase,
+            baseline_years=baseline_years,
+            filter_length=2,
+            method='triangle'
+        )
+        actual = result.isel(space=0).data
+
+        # Expected
+        low_pass_filter = np.zeros_like(baseline_years, dtype=float)
+        low_pass_filter[:2] = signal.windows.triang(2)
+        distances_matrix = np.abs(
+            baseline_years.values[:, None] - baseline_years.values[None, :]
+        )
+        weights_matrix = low_pass_filter[distances_matrix.astype(int)]
+        weights_matrix = weights_matrix / weights_matrix.sum(axis=1, keepdims=True)
+        expected = np.dot(weights_matrix, residual_phase.isel(space=0).values)
+
+        assert_array_equal(actual, expected)
+
+    def test_estimate_non_linear_deformation_gaussian(self):
+        """Test the gaussian method for estimating non-linear deformation."""
+        residual_phase = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
+        baseline_years = xr.DataArray(np.arange(10), dims='time')
+
+        # Actual
+        result = estimate_non_linear_deformation(
+            residual_phase=residual_phase,
+            baseline_years=baseline_years,
+            filter_length=2,
+            method='gaussian'
+        )
+        actual = result.isel(space=0).data
+
+        # Expected
+        low_pass_filter = signal.windows.gaussian(baseline_years.size, std=1 / 3)
+        distances_matrix = np.abs(
+            baseline_years.values[:, None] - baseline_years.values[None, :]
+        )
+        weights_matrix = low_pass_filter[distances_matrix.astype(int)]
+        weights_matrix = weights_matrix / weights_matrix.sum(axis=1, keepdims=True)
+        expected = np.dot(weights_matrix, residual_phase.isel(space=0).values)
+
+        assert_array_equal(actual, expected)
