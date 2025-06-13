@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import xarray as xr
 from numpy.testing import assert_array_equal
 from scipy import signal
@@ -84,3 +85,43 @@ class TestEstimateNonLinearDeformation:
         expected = np.dot(weights_matrix, psc_phase.isel(space=0).values)
 
         assert_array_equal(actual, expected)
+
+    def test_estimate_non_linear_deformation_invalid_method(self):
+        """Test that an error is raised for an invalid method."""
+        psc_phase = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
+        baseline_years = xr.DataArray(np.arange(10), dims='time')
+
+        with pytest.raises(NotImplementedError):
+            estimate_non_linear_deformation(
+                psc_phase=psc_phase,
+                baseline_years=baseline_years,
+                filter_length=2,
+                method='invalid_method'
+            )
+
+
+    def test_estimate_non_linear_deformation_mismatched_sizes(self):
+        """Test that an error is raised for mismatched sizes of psc_phase and baseline_years."""
+        psc_phase = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
+        baseline_years = xr.DataArray(np.arange(5), dims='time')
+
+        with pytest.raises(ValueError):
+            estimate_non_linear_deformation(
+                psc_phase=psc_phase,
+                baseline_years=baseline_years,
+                filter_length=2,
+                method='block'
+            )
+
+    def test_estimate_non_linear_deformation_non_monotonic_years(self):
+        """Test that an error is raised for non-monotonic baseline_years."""
+        psc_phase = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
+        baseline_years = xr.DataArray(np.array([0, 2, 1, 3]), dims='time')
+
+        with pytest.raises(ValueError):
+            estimate_non_linear_deformation(
+                psc_phase=psc_phase,
+                baseline_years=baseline_years,
+                filter_length=2,
+                method='block'
+            )

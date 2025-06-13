@@ -56,8 +56,17 @@ def estimate_non_linear_deformation(
             "Available methods are: 'block', 'triangle', 'gaussian'."
         )
 
-    # TODO check baseline_years is monotonic
-    # TODO check baseline_years size is equal to psc_phase size
+    # Check if baseline_years size is equal to psc_phase size
+    if baseline_years.size != psc_phase["time"].size:
+        raise ValueError(
+            "The size of baseline_years must match the time dimension of psc_phase."
+        )
+    # Check baseline_years is monotonic
+    is_monotonic_increasing = (baseline_years.diff("time") >= 0).all().item()
+    is_monotonic_decreasing = (baseline_years.diff("time") <= 0).all().item()
+    if not (is_monotonic_increasing or is_monotonic_decreasing):
+        raise ValueError("baseline_years must be monotonic.")
+
     # Distances in time
     distances_matrix = np.abs(
         baseline_years.values[:, None] - baseline_years.values[None, :]
