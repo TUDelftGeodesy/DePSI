@@ -4,6 +4,7 @@ import logging
 import math
 from typing import Literal
 
+import networkx as nx
 import numpy as np
 import xarray as xr
 from scipy.spatial import Delaunay
@@ -160,7 +161,6 @@ def arc_selection(
         [arcs_selected["source"].data, arcs_selected["target"].data]
     )  # all occurrances of point ids
     point_ids_unique, counts = np.unique(point_ids_all, return_counts=True)  # unique point ids and their counts
-
     while np.any(counts <= min_n_connection):
         # Find points with <=3 arcs connected
         point_ids_to_remove = point_ids_unique[counts <= min_n_connection]
@@ -176,7 +176,40 @@ def arc_selection(
         point_ids_all = np.concat([arcs_selected["source"].data, arcs_selected["target"].data])
         point_ids_unique, counts = np.unique(point_ids_all, return_counts=True)
 
+    # Check if the network has more than one component
+    # NetworkX is used. It should have good performance on large datasets.
+    G = nx.Graph()
+    G.add_edges_from(np.stack((arcs_selected["source"].data, arcs_selected["target"].data)).T)
+    if nx.number_connected_components(G) > 1:
+        logger.warning(
+            "The network has more than one component. Currently, this is not supported by DePSI. "
+            "Please adjust the network formation parameters, or decrease the threshold, "
+            "to increase the connectivity of the network."
+        )
+
     return arcs_selected
+
+
+def remove_isolated_stm(stm: xr.Dataset, arcs: xr.Dataset) -> xr.Dataset:
+    """Remove isolated points from the STM."""
+    # Load source and target indices from arcs
+    # these are 1d arrays so should fit in memory
+    idx_source = arcs["source"].values
+    idx_target = arcs["target"].values
+
+    # Select STM points that are in arcs
+    idx_selected = np.sort(np.unique(np.concatenate([idx_source, idx_target])))
+    stm_updated = stm.isel(space=idx_selected)
+
+    # The shape of STM changes, hence an update in arcs coordinates is needed
+    # Map old indices in arcs to new indices
+    idx_map = {old_idx: new_idx for new_idx, old_idx in enumerate(idx_selected)}
+    # apply the mapping to the source and target indices in arcs
+    arcs_updated = arcs.copy()
+    arcs_updated["source"] = xr.DataArray(np.vectorize(idx_map.get)(arcs["source"].values), dims="space")
+    arcs_updated["target"] = xr.DataArray(np.vectorize(idx_map.get)(arcs["target"].values), dims="space")
+
+    return stm_updated, arcs_updated
 
 
 def _get_distance(s, t):
