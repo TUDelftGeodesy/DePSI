@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.network import _compute_phase_difference, form_network
+from depsi.network import _compute_phase_difference, arc_selection, form_network, remove_isolated_stm
 
 
 @pytest.fixture
@@ -39,7 +39,22 @@ def stm_random():
     return stm
 
 
-class TestNetwork:
+@pytest.fixture
+def arcs_random(stm_random):
+    """Fixture to create a random STM dataset."""
+    # Fully connected arcs
+    arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
+
+    # All arcs has quality 0.9, exept the last two are 0.0
+    real_ens_coh = np.zeros((arcs.sizes["space"],))  # Put all values in real, all imaginary are 0
+    real_ens_coh[:-2] = 0.9
+    real_ens_coh[:5] = 0.99
+    arcs["ens_coh"] = (("space"), real_ens_coh + 1j * np.zeros((arcs.sizes["space"],)))
+
+    return arcs
+
+
+class TestNetworkFormation:
     @pytest.mark.parametrize("method", ["subtract", "conjmult"])
     def test_compute_phase_difference(self, stm_random, method):
         arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
@@ -104,3 +119,59 @@ class TestNetwork:
                 network_method="delaunay",
                 dphase_method="unknown",
             )
+
+
+class TestArcSelection:
+    @pytest.mark.parametrize("thres, min_n_connection", [(0.99, 0), (0.5, 999)])
+    def test_select_arcs_return_zero(self, arcs_random, thres, min_n_connection):
+        """Should return zero arcs, two high threshold or too high min_n_connection."""
+        # Select arcs based on ens_coh threshold.
+        selected_arcs = arc_selection(
+            arcs_random,
+            threshold=thres,
+            selection_method="ens_coh",
+            min_n_connection=min_n_connection,
+        )
+
+        assert selected_arcs.sizes["space"] == 0
+
+    @pytest.mark.parametrize("thres, min_n_connection", [(0.5, 2), (0.5, 1)])
+    def test_select_arcs_discard_two(self, arcs_random, thres, min_n_connection):
+        """Should only discard two arcs, with ens_coh < 0.5."""
+        # Select arcs based on ens_coh threshold.
+        selected_arcs = arc_selection(
+            arcs_random,
+            threshold=thres,
+            selection_method="ens_coh",
+            min_n_connection=min_n_connection,
+        )
+
+        assert selected_arcs.sizes["space"] == arcs_random.sizes["space"] - 2
+
+    def test_select_arcs_non_connected(self, arcs_random, caplog):
+        """Should only discard two arcs, with ens_coh < 0.5."""
+        # this should raise a logger warning
+        with caplog.at_level("WARNING"):
+            _ = arc_selection(
+                arcs_random,
+                threshold=0.99,
+                selection_method="ens_coh",
+                min_n_connection=0,
+            )
+
+    def test_remove_isolated_stm_keep_all_pnts(self, stm_random, arcs_random):
+        """Should remove isolated STM points."""
+        stm_updated, arcs_updated = remove_isolated_stm(stm_random, arcs_random)
+
+        assert stm_updated.sizes["space"] == stm_random.sizes["space"]
+        assert arcs_updated.sizes["space"] == arcs_random.sizes["space"]
+
+    def test_remove_isolated_stm_discard_one(self, stm_random, arcs_random):
+        """Should remove isolated STM points."""
+        # remove arcs with source or target == 1
+        arcs = arcs_random.copy(deep=True)
+        arcs = arcs.where((arcs["source"] != 1) & (arcs["target"] != 1), drop=True)
+
+        stm_updated, arcs_updated = remove_isolated_stm(stm_random, arcs)
+
+        assert stm_updated.sizes["space"] == stm_random.sizes["space"] - 1

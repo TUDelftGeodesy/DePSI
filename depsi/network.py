@@ -6,6 +6,7 @@ from typing import Literal
 
 import networkx as nx
 import numpy as np
+import sparse
 import xarray as xr
 from scipy.spatial import Delaunay
 
@@ -103,7 +104,7 @@ def form_network(
 
     h2ph = (stm[key_h2ph].isel(space=source_idx).data + stm[key_h2ph].isel(space=target_idx).data) / 2
 
-    stm_arcs = xr.Dataset(
+    arcs = xr.Dataset(
         data_vars={
             "d_phase": (["space", "time"], d_phase),
             "Btemp": (["time"], Btemp),
@@ -112,7 +113,7 @@ def form_network(
         coords={"source": (["space"], source_idx), "target": (["space"], target_idx)},
     )
 
-    return stm_arcs
+    return arcs
 
 
 def arc_selection(
@@ -121,7 +122,7 @@ def arc_selection(
     selection_method: Literal["ens_coh"] = "ens_coh",
     min_n_connection: int = 2,
 ) -> xr.Dataset:
-    """Select aracs based on creteria.
+    """Select aracs based on arc quality and connectivity.
 
     This function selects arcs in two steps:
     1. It selects arcs based on a threshold value(e.g., ens_coh).
@@ -201,7 +202,9 @@ def remove_isolated_stm(stm: xr.Dataset, arcs: xr.Dataset) -> xr.Dataset:
     idx_selected = np.sort(np.unique(np.concatenate([idx_source, idx_target])))
     stm_updated = stm.isel(space=idx_selected)
 
-    # The shape of STM changes, hence an update in arcs coordinates is needed
+    # The space size of the STM changes, resulting non-contiguous indices in space dimension
+    # hence an update in arcs space coordinates is needed
+    # Here we use a mapping solution, since the maximum number of network points is usually <100k
     # Map old indices in arcs to new indices
     idx_map = {old_idx: new_idx for new_idx, old_idx in enumerate(idx_selected)}
     # apply the mapping to the source and target indices in arcs
@@ -345,3 +348,20 @@ def _compute_phase_difference(
     else:
         raise NotImplementedError(f"Unknown difference method {method}, known are subtract and conjmult")
     return d_phase
+
+
+def _network_relation_matirx(idx_source, idx_target, n_points):
+    n_arcs = len(idx_source)
+    A_sparse_start = sparse.COO(
+        (np.arange(n_arcs), idx_source),
+        np.full_like(np.arange(n_arcs), -1, dtype=np.int8),
+        shape=(n_arcs, n_points),
+    )
+    A_sparse_end = sparse.COO(
+        (np.arange(n_arcs), idx_target),
+        np.full_like(np.arange(n_arcs), 1, dtype=np.int8),
+        shape=(n_arcs, n_points),
+    )
+    A_sparse = A_sparse_start + A_sparse_end
+
+    return A_sparse
