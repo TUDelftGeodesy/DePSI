@@ -25,7 +25,7 @@ def estimate_non_linear_deformation(
     Parameters
     ----------
     psc_phase: xr.DataArray
-        The residual phase time series to apply the filter to.
+        The PSC time series to apply the filter to.
     baseline_years: xr.DataArray
         The baseline years corresponding to the time series.
     filter_length: int
@@ -53,7 +53,6 @@ def estimate_non_linear_deformation(
     if not (is_monotonic_increasing or is_monotonic_decreasing):
         raise ValueError("baseline_years must be monotonic.")
 
-
     # Build the window for the low-pass filter
     std_dev = filter_length / 3
     window_size = int(6 * std_dev) | 1
@@ -79,7 +78,6 @@ def estimate_non_linear_deformation(
     def apply_filter(data):
         return convolve1d(data, window, mode=mode)
 
-    # Function to apply filter to residual phase across time
     return xr.apply_ufunc(
         apply_filter,
         psc_phase,
@@ -89,7 +87,6 @@ def estimate_non_linear_deformation(
         dask='parallelized',
         output_dtypes=[psc_phase.dtype]
     )
-
 
 
 def krige_in_space():
@@ -107,8 +104,8 @@ def estimate_atmosphere_phase(stm):
     non_linear = estimate_non_linear_deformation(
         psc_phase=stm["d_phase"],
         baseline_years=stm["time"],
-        filter_length=5,
-        method='block'
+        filter_length=30,
+        method='gaussian'
     )
     stm["atmosphere_estimated"] = stm["d_phase"] - non_linear + stm["atmosphere_base"]
 
