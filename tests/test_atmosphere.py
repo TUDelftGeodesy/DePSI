@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
 import xarray as xr
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_almost_equal
 from scipy import signal
+from scipy.ndimage import convolve1d
 
 from depsi.atmosphere import estimate_non_linear_deformation
 
@@ -10,59 +11,60 @@ from depsi.atmosphere import estimate_non_linear_deformation
 class TestEstimateNonLinearDeformation:
     def test_estimate_non_linear_deformation_block(self):
         """Test the block method for estimating non-linear deformation."""
-        psc_phase = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
+        psc_phase = xr.DataArray(np.random.rand(5, 10), dims=('space', 'time'))
         baseline_years = xr.DataArray(np.sort(np.random.rand(10)), dims='time')
+        filter_length = 2
 
         # Actual
         result = estimate_non_linear_deformation(
             psc_phase=psc_phase,
             baseline_years=baseline_years,
-            filter_length=2,
+            filter_length=filter_length,
             method='block'
         )
         actual = result.isel(space=0).data
 
         # Expected
-        low_pass_filter = np.zeros_like(baseline_years, dtype=float)
-        low_pass_filter[:2] = signal.windows.boxcar(2)
-        indices = np.arange(baseline_years.size)
-        distances_matrix = np.abs(indices[:, None] - indices[None, :])
-        weights_matrix = low_pass_filter[distances_matrix.astype(int)]
-        weights_matrix = weights_matrix / weights_matrix.sum(axis=1, keepdims=True)
-        expected = np.dot(weights_matrix, psc_phase.isel(space=0).values)
+        std_dev = filter_length / 3
+        window_size = int(6 * std_dev) | 1
+        window = signal.windows.boxcar(window_size)
+        window = window / window.sum()
+        result = convolve1d(psc_phase, window, mode='mirror')
+        expected = result[0, :]
 
-        assert_array_equal(actual, expected)
+        assert_almost_equal(actual, expected)
 
 
     def test_estimate_non_linear_deformation_triangle(self):
         """Test the triangle method for estimating non-linear deformation."""
-        psc_phase = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
+        psc_phase = xr.DataArray(np.random.rand(5, 10), dims=('space', 'time'))
         baseline_years = xr.DataArray(np.sort(np.random.rand(10)), dims='time')
+        filter_length = 2
 
         # Actual
         result = estimate_non_linear_deformation(
             psc_phase=psc_phase,
             baseline_years=baseline_years,
-            filter_length=2,
+            filter_length=filter_length,
             method='triangle'
         )
         actual = result.isel(space=0).data
 
         # Expected
-        low_pass_filter = np.zeros_like(baseline_years, dtype=float)
-        low_pass_filter[:2] = signal.windows.triang(2)
-        indices = np.arange(baseline_years.size)
-        distances_matrix = np.abs(indices[:, None] - indices[None, :])
-        weights_matrix = low_pass_filter[distances_matrix.astype(int)]
-        weights_matrix = weights_matrix / weights_matrix.sum(axis=1, keepdims=True)
-        expected = np.dot(weights_matrix, psc_phase.isel(space=0).values)
+        std_dev = filter_length / 3
+        window_size = int(6 * std_dev) | 1
+        window = signal.windows.triang(window_size)
+        window = window / window.sum()
+        result = convolve1d(psc_phase, window, mode='mirror')
+        expected = result[0, :]
 
-        assert_array_equal(actual, expected)
+        assert_almost_equal(actual, expected)
 
     def test_estimate_non_linear_deformation_gaussian(self):
         """Test the gaussian method for estimating non-linear deformation."""
-        psc_phase = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
+        psc_phase = xr.DataArray(np.random.rand(5, 10), dims=('space', 'time'))
         baseline_years = xr.DataArray(np.sort(np.random.rand(10)), dims='time')
+        filter_length = 2
 
         # Actual
         result = estimate_non_linear_deformation(
@@ -74,14 +76,14 @@ class TestEstimateNonLinearDeformation:
         actual = result.isel(space=0).data
 
         # Expected
-        low_pass_filter = signal.windows.gaussian(baseline_years.size, std=1 / 3)
-        indices = np.arange(baseline_years.size)
-        distances_matrix = np.abs(indices[:, None] - indices[None, :])
-        weights_matrix = low_pass_filter[distances_matrix.astype(int)]
-        weights_matrix = weights_matrix / weights_matrix.sum(axis=1, keepdims=True)
-        expected = np.dot(weights_matrix, psc_phase.isel(space=0).values)
+        std_dev = filter_length / 3
+        window_size = int(6 * std_dev) | 1
+        window = signal.windows.gaussian(window_size, std=std_dev)
+        window = window / window.sum()
+        result = convolve1d(psc_phase, window, mode='mirror')
+        expected = result[0, :]
 
-        assert_array_equal(actual, expected)
+        assert_almost_equal(actual, expected)
 
     def test_estimate_non_linear_deformation_invalid_method(self):
         """Test that an error is raised for an invalid method."""
