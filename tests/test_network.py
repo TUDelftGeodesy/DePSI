@@ -4,7 +4,13 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.network import _compute_phase_difference, arc_selection, form_network, remove_isolated_stm
+from depsi.network import (
+    _compute_phase_difference,
+    _network_relation_matirx,
+    arc_selection,
+    form_network,
+    remove_isolated_stm,
+)
 
 
 @pytest.fixture
@@ -41,11 +47,15 @@ def stm_random():
 
 @pytest.fixture
 def arcs_random(stm_random):
-    """Fixture to create a random STM dataset."""
+    """Fixture of fully connected arcs from stm_random."""
     # Fully connected arcs
+    # Defaul method is redundant
+    # No max_length, so all points are connected
     arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
 
-    # All arcs has quality 0.9, exept the last two are 0.0
+    # Most arcs has quality 0.9
+    # Except the last two are 0.0
+    # The first five are 0.99
     real_ens_coh = np.zeros((arcs.sizes["space"],))  # Put all values in real, all imaginary are 0
     real_ens_coh[:-2] = 0.9
     real_ens_coh[:5] = 0.99
@@ -146,11 +156,13 @@ class TestArcSelection:
             min_n_connection=min_n_connection,
         )
 
+        # Threshold is 0.5, so only the last two arcs are discarded
+        # The min_n_connection should not affect the selection
         assert selected_arcs.sizes["space"] == arcs_random.sizes["space"] - 2
 
     def test_select_arcs_non_connected(self, arcs_random, caplog):
-        """Should only discard two arcs, with ens_coh < 0.5."""
-        # this should raise a logger warning
+        """Should keep the first five arcs which are disconnected."""
+        # this should raise a logger warning of disconnected arcs
         with caplog.at_level("WARNING"):
             _ = arc_selection(
                 arcs_random,
@@ -160,18 +172,47 @@ class TestArcSelection:
             )
 
     def test_remove_isolated_stm_keep_all_pnts(self, stm_random, arcs_random):
-        """Should remove isolated STM points."""
+        """No STM points removed since no arc is discarded."""
         stm_updated, arcs_updated = remove_isolated_stm(stm_random, arcs_random)
 
         assert stm_updated.sizes["space"] == stm_random.sizes["space"]
         assert arcs_updated.sizes["space"] == arcs_random.sizes["space"]
 
     def test_remove_isolated_stm_discard_one(self, stm_random, arcs_random):
-        """Should remove isolated STM points."""
+        """Remove one STM point."""
         # remove arcs with source or target == 1
         arcs = arcs_random.copy(deep=True)
         arcs = arcs.where((arcs["source"] != 1) & (arcs["target"] != 1), drop=True)
 
         stm_updated, arcs_updated = remove_isolated_stm(stm_random, arcs)
 
+        # Should remove the point with index 1
         assert stm_updated.sizes["space"] == stm_random.sizes["space"] - 1
+
+
+class TestNetworkUnwrap:
+    @pytest.mark.parametrize(
+        ["idx_source", "idx_target", "n_points"],
+        [
+            (np.array([0, 1, 2]), np.array([1, 2, 3]), 4),  # 4 points, 3 arcs
+            (np.array([0, 1, 2]), np.array([1, 2, 3]), 7),  # 7 points, 3 arcs
+            (np.array([1, 1, 2, 2]), np.array([0, 2, 1, 3]), 4),  # 4 points, 4 arcs, unsorted
+            (np.array([0, 0, 0, 1, 1, 2, 2]), np.array([1, 2, 3, 3, 4, 3, 4]), 5),  # 5 points, 6 arcs
+        ],
+    )
+    def test_init_network_relation_matrix(
+        self,
+        idx_source,
+        idx_target,
+        n_points,
+    ):
+        A = _network_relation_matirx(idx_source, idx_target, n_points)
+
+        # Create expected matrix in a for loop
+        A_exp = np.zeros((idx_source.shape[0], n_points), dtype=int)
+        for i, (src, tgt) in enumerate(zip(idx_source, idx_target, strict=False)):
+            A_exp[i, src] = -1
+            A_exp[i, tgt] = 1
+
+        assert A.shape == A_exp.shape
+        assert np.all(A.todense() == A_exp)
