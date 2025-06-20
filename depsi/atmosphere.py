@@ -10,13 +10,15 @@ epoch.
 import numpy as np
 import xarray as xr
 from scipy import signal
+from scipy.ndimage import convolve1d
 
 
 def estimate_non_linear_deformation(
         psc_phase: xr.DataArray,
         baseline_years: xr.DataArray,
         filter_length: int,
-        method='block'
+        method='block',
+        mode='mirror'
     ):
     """Apply a low-pass filter to the time series to remove the non-linear deformation.
 
@@ -28,8 +30,12 @@ def estimate_non_linear_deformation(
         The baseline years corresponding to the time series.
     filter_length: int
         Length of the filter (year) to apply a low-pass filter to the time series.
-    method: str
-        Method to use for the estimation, e.g. 'block', 'triangle', or 'gaussian'.
+    method: str, optional
+        Method to use for building the window , e.g. 'block', 'triangle', or
+        'gaussian', default is 'block', see `scipy.signal.windows` for more
+    mode: str, optional
+        The mode to use for the convolution, default is 'mirror', see
+        `scipy.ndimage.convolve1d` for more.
 
     Returns
     -------
@@ -49,43 +55,35 @@ def estimate_non_linear_deformation(
         raise ValueError("baseline_years must be monotonic.")
 
 
-    # Build low_pass filter
-    # TODO: check why * 1000.0
-    # TODO: check why half width is used
-    half_width = 0.5 * filter_length
+    # Build the window for the low-pass filter
+    std_dev = filter_length / 3
+    window_size = int(6 * std_dev) | 1
     if method == 'block':
-        low_pass_filter = np.zeros_like(baseline_years, dtype=float)
-        no_points = int(round(half_width)) + 1
-        low_pass_filter[:no_points] = signal.windows.boxcar(no_points)
+        window = signal.windows.boxcar(window_size)
+
     elif method == 'triangle':
-        low_pass_filter = np.zeros_like(baseline_years, dtype=float)
-        no_points = int(round(half_width)) + 1
-        low_pass_filter[:no_points] = signal.windows.triang(no_points)
+        window = signal.windows.triang(window_size)
+
     elif method == 'gaussian':
-        low_pass_filter = signal.windows.gaussian(baseline_years.size, std=half_width / 3)
+        window = signal.windows.gaussian(window_size, std=std_dev)
+
     else:
         raise NotImplementedError(
             f"Method {method} is not implemented. "
             "Available methods are: 'block', 'triangle', 'gaussian'."
         )
 
-    # Distances in time
-    indices = np.arange(baseline_years.size)
-    distances_matrix = np.abs(indices[:, None] - indices[None, :])
-
-    # Create a low-pass filter and compute weights matrix
-    weights_matrix = low_pass_filter[distances_matrix]
-    weights_matrix = weights_matrix / weights_matrix.sum(axis=1, keepdims=True)  # Normalize weights
+    # normalize the window
+    window = window / window.sum()
 
      # Apply the low-pass filter and return the non-linear deformation
-    def apply_filter(residual_vector, weights):
-        return np.dot(weights, residual_vector)
+    def apply_filter(data):
+        return convolve1d(data, window, mode=mode)
 
     # Function to apply filter to residual phase across time
     return xr.apply_ufunc(
         apply_filter,
         psc_phase,
-        kwargs={'weights': weights_matrix},
         input_core_dims=[['time']],
         output_core_dims=[['time']],
         vectorize=True,
