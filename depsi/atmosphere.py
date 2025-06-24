@@ -30,6 +30,7 @@ def estimate_non_linear_deformation(
         The baseline years corresponding to the time series.
     filter_length: int
         Length of the filter (year) to apply a low-pass filter to the time series.
+        This is used to determine the size of the window i.e. 2 * filter_length + 1.
     method: str, optional
         Method to use for building the window , e.g. 'block', 'triangle', or
         'gaussian', default is 'block', see `scipy.signal.windows` for more
@@ -54,8 +55,9 @@ def estimate_non_linear_deformation(
         raise ValueError("baseline_years must be monotonic.")
 
     # Build the window for the low-pass filter
-    std_dev = filter_length / 3
-    window_size = int(6 * std_dev) | 1
+    std_dev = filter_length / 3  # Standard deviation defined based on a Gaussian function
+    window_size = int(6 * std_dev) | 1  # Window size is ±3 standard deviations
+
     if method == 'block':
         window = signal.windows.boxcar(window_size)
 
