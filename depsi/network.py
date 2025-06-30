@@ -8,6 +8,8 @@ import networkx as nx
 import numpy as np
 from scipy.spatial import Delaunay, distance_matrix
 
+from depsi.arc_estimation import arc_estimation_control_network
+
 logger = logging.getLogger(__name__)
 
 
@@ -165,7 +167,7 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
     return arcs
 
 
-def get_ordered_arcs(stm, x_ref_search, y_ref_search, buffer_radius_ref, dist_to_quality, n_max_arcs):
+def get_ordered_arcs(stm, x_ref_search, y_ref_search, buffer_radius_ref, dist_to_quality, n_max_arcs, nad_max=2):
     """Get a list with ordered arcs based on pnt quality and a search area.
 
     Args:
@@ -176,6 +178,7 @@ def get_ordered_arcs(stm, x_ref_search, y_ref_search, buffer_radius_ref, dist_to
         buffer_radius_ref (float): The buffer (in m) around the centre coordinates where potential arcs are computed
         dist_to_quality (float): parameter that relates arc length to additional sigma
         n_max_arcs (float): The maximum nr of arcs to be outputed
+        nad_max (float): The maximum NAD, for the entire time series, for a point to be considered
 
     Returns:
     -------
@@ -186,12 +189,15 @@ def get_ordered_arcs(stm, x_ref_search, y_ref_search, buffer_radius_ref, dist_to
     rdx = stm["rd_x"].values
     rdy = stm["rd_y"].values
     slc_quality = stm["slc_quality"].values
+    nad_vals = stm["nad_full"].values
 
     # Find all points within the buffer around the starting location x, y
     idx_pnts_buffer_ref = find_points_within_buffer(rdx, rdy, x_ref_search, y_ref_search, buffer_radius_ref)
 
     # Get the a-priori quality of all potential arcs that can be made
-    arcs_and_quality = _ordered_arcs_all_points(rdx, rdy, slc_quality, idx_pnts_buffer_ref, dist_to_quality)
+    arcs_and_quality = _ordered_arcs_all_points(
+        rdx, rdy, slc_quality, idx_pnts_buffer_ref, dist_to_quality, nad_vals, nad_max=nad_max
+    )
 
     # We will only work with n_max_arcs, otherwise we need to load an extensive dataset everytime
     arcs_and_quality = arcs_and_quality[0:n_max_arcs]
@@ -250,7 +256,7 @@ def find_points_within_buffer(x_coords, y_coords, x_pnts, y_pnts, buffer_radius)
     return indices
 
 
-def _ordered_arcs_all_points(rdx, rdy, slc_quality, idx_pnts_buffer, dist_to_quality):
+def _ordered_arcs_all_points(rdx, rdy, slc_quality, idx_pnts_buffer, dist_to_quality, nad_vals, nad_max):
     """Generate a sorted list of unique arcs between all points within buffer, ranked by combined quality and distance.
 
     This function computes arcs between all points in a given buffer based on their spatial distance and
@@ -271,6 +277,8 @@ def _ordered_arcs_all_points(rdx, rdy, slc_quality, idx_pnts_buffer, dist_to_qua
         slc_quality (numpy.ndarray): Array of SLC quality time series for all points.
         idx_pnts_buffer (numpy.ndarray): Indices of the points within the buffer.
         dist_to_quality (float): Scaling factor for weighting the distance in combination with the quality.
+        nad_vals (numpy.ndarray): Array of NAD values of all points.
+        nad_max (float): The maximum NAD, for the entire time series, for a point to be considered
 
     Returns:
     -------
@@ -281,7 +289,14 @@ def _ordered_arcs_all_points(rdx, rdy, slc_quality, idx_pnts_buffer, dist_to_qua
     -------
         arcs_and_quality = ordered_arcs_all_points(rdx, rdy, slc_quality, idx_pnts_buffer, dist_to_quality)
     """
-    # Compute the distance matrix for all points within the buffer
+    # Compute NAD values of the points within the buffer
+    nad_buffer_vals = nad_vals[idx_pnts_buffer]
+
+    # Mask points that have an NAD value above the threshold
+    mask_nad = nad_buffer_vals < nad_max
+    idx_pnts_buffer = idx_pnts_buffer[mask_nad]
+
+    # Compute the distance matrix for all points (below the NAD threshold) within the buffer
     rdx_buffer = rdx[idx_pnts_buffer]
     rdy_buffer = rdy[idx_pnts_buffer]
     coords_points = np.vstack((rdx_buffer, rdy_buffer)).T
@@ -728,3 +743,304 @@ def ordered_arcs_connection_point_and_control_network(
     arcs[:, 1] = connection_point_idx.values  # connection_point
 
     return arcs, sorted_quality_values
+
+
+def construct_control_network_test_arcs(
+    stm,
+    x_ref_search,
+    y_ref_search,
+    buffer_radius_ref,
+    dist_to_quality,
+    N_max_arcs,
+    N_top,
+    N_batch,
+    deg_threshold,
+    min_nodes,
+    min_redundancy,
+    nad_max,
+    visualize_network,
+    sigma_post_over_sigma_prior,
+    nr_max_iter_control,
+    bounds,
+    m2ph,
+    years,
+    dates,
+    temperature,
+    sd_complex,
+    slc_quality,
+    cr2ph,
+    ampl_ts,
+    bkps_stm,
+    mean_ampl_sd,
+    sigma_ampl_sd,
+    mad_ampl_sd,
+    median_ampl_sd,
+    rdx,
+    rdy,
+):
+    """Test the arcs in the constructed control network.
+
+    Parameters
+    ----------
+    stm:
+        space_time_matrix
+    x_ref_search:
+        X coordinate of central point to search for reference point
+    y_ref_search:
+        Y coordinate of central point to search for reference point
+    buffer_radius_ref:
+        Size of search window for reference point
+    dist_to_quality:
+        ?
+    N_max_arcs:
+        Maximum number of arcs
+    N_top:
+        ?
+    N_batch:
+        ?
+    deg_threshold:
+        ?
+    min_nodes:
+        ?
+    min_redundancy:
+        ?
+    nad_max:
+        Maximum NAD
+    visualize_network:
+        Boolean whether or not to visualize the network
+    sigma_post_over_sigma_prior:
+        ?
+    nr_max_iter_control:
+        Maximum number of iterations in the network testing
+    bounds:
+        ?
+    m2ph
+        ?
+    years:
+        ?
+    dates:
+        ?
+    temperature:
+        ?
+    sd_complex:
+        Single-difference complex
+    slc_quality:
+        ?
+    cr2ph:
+        crossrange-to-phase
+    ampl_ts:
+        amplitude timeseries
+    bkps_stm:
+        Breakpoints stm
+    mean_ampl_sd:
+        Single difference mean amplitude
+    sigma_ampl_sd:
+        Single difference mean amplitude standard deviation
+    mad_ampl_sd:
+        Median absolute deviation of the single difference amplitude
+    median_ampl_sd:
+        Median single difference amplitude
+    rdx:
+        RD x coordinates
+    rdy:
+        RD y coordinates
+
+    Returns
+    -------
+    dict
+        Results of the accepted network
+    list
+        Reference point
+    list
+        Results of the accepted arcs
+    """
+    # At the start, no arcs are tested yet, so we don't have failed_arcs, and noisy_arcs
+    failed_arcs = []
+    noisy_arcs = []
+
+    # Get an ordered list of all potential arcs with a buffer area
+    arcs_search_area, _, quality_dict_arcs = get_ordered_arcs(
+        stm, x_ref_search, y_ref_search, buffer_radius_ref, dist_to_quality, N_max_arcs, nad_max
+    )
+
+    while True:
+        # Create a first network based on the ranked quality and leaving out the failed_arcs and noisy_arcs
+        ref_pnt, arcs_updated_network, ref_pnt_initial, arcs_initial_network = construct_control_network(
+            arcs_search_area,
+            quality_dict_arcs,
+            failed_arcs,
+            N_top,
+            N_batch,
+            deg_threshold,
+            min_nodes,
+            min_redundancy,
+            0,
+        )
+
+        print("Computing the solutions for the arcs")
+        # Test whether solutions for all arcs can be found (sometimes it happens that because of the complex
+        # functions no solutions can be found)
+        results_initial_control_network_v1 = arc_estimation_control_network(
+            arcs_updated_network,
+            bounds,
+            m2ph,
+            nr_max_iter_control,
+            years,
+            dates,
+            temperature,
+            sd_complex,
+            slc_quality,
+            cr2ph,
+            ampl_ts,
+            bkps_stm,
+            mean_ampl_sd,
+            sigma_ampl_sd,
+            mad_ampl_sd,
+            median_ampl_sd,
+            rdx,
+            rdy,
+        )
+
+        # Save the failed arcs to an array (such that they are not taken into account any more)
+        succeeded_arcs = [
+            arc
+            for arc, succeeded in zip(
+                arcs_updated_network, results_initial_control_network_v1["succeeded_arcs"], strict=True
+            )
+            if not np.isnan(succeeded).any()
+        ]
+
+        failed_arcs_temp = [
+            arc
+            for arc, succeeded in zip(
+                arcs_updated_network, results_initial_control_network_v1["succeeded_arcs"], strict=True
+            )
+            if np.isnan(succeeded).any() or not succeeded.any()
+        ]
+        failed_arcs = list(set(failed_arcs).union(failed_arcs_temp))
+        print(f"Failed arcs {failed_arcs}")
+
+        # Remove the failed arcs from the dictionary with all the results (as the estimated parameters etc)
+        results_initial_control_network_v2 = {}  # Make a new dictionary where we will not save
+        # the results of the failed_arcs
+
+        # Find the indices where the arcs are saved where no solution was found.
+        # These arcs have nan values
+        valid_indices = ~np.isnan(results_initial_control_network_v1["succeeded_arcs"]).any(axis=1)
+
+        # Filter all variables in the dictionary and only copy the values for the arcs where we found a solution
+        for key, value in results_initial_control_network_v1.items():
+            if (
+                isinstance(value, np.ndarray)
+                and value.shape[0] == results_initial_control_network_v1["succeeded_arcs"].shape[0]
+            ):
+                results_initial_control_network_v2[key] = value[valid_indices]
+            else:
+                results_initial_control_network_v2[key] = (
+                    value  # Variabelen die niet per rij corresponderen blijven ongewijzigd
+                )
+
+        print("Check if the network with the solved arcs still meets our requirements")
+
+        # Since we have 'failed_arcs', where no solution was found, the new network need to be tested
+        # It can happen that we have isolated points,
+        # or that the average degree of the network is not high enough anymore
+        network_check, arcs_updated_network, ref_pnt = test_succeeded_arcs_control_network(
+            succeeded_arcs, quality_dict_arcs, deg_threshold, min_nodes, min_redundancy, visualize_network
+        )
+
+        if network_check == 0:
+            print("Network fails requirements, starting again")
+
+        if network_check == 1:
+            print("Network meets requirements")
+            # After the last test, the isoltated arcs are removed (so they are still in
+            # 'succeeded_arcs' and in the dictionary)
+            # And these arcs need to be removed from the dictionary
+            missing_indices = [
+                idx for idx, arc in enumerate(succeeded_arcs) if arc not in arcs_updated_network
+            ]  # missing indices are the arcs that were isolated and removed. But they are still in the
+            # dictionary so there they need to be removed as well
+
+            results_control_network_temp = {}
+            for key, value in results_initial_control_network_v2.items():
+                if isinstance(value, np.ndarray):
+                    if value.ndim in {1, 2}:  # Zowel 1D als 2D arrays verwerken
+                        results_control_network_temp[key] = np.delete(value, missing_indices, axis=0)
+                    else:
+                        results_control_network_temp[key] = value
+                else:
+                    results_control_network_temp[key] = value
+
+            # Now we have a network that fullfills requirements but there might be noisy arcs
+            # We compute solutions for all arcs and computed RMSE
+            print("Calculate whether there are arcs where the solution that we found is noisy")
+
+            est_displ_phase = (
+                results_control_network_temp["unwrap_phases_arc"]
+                - results_control_network_temp["estimated_cross_range_phase"]
+                - results_control_network_temp["estimated_thermal_phase"]
+            )
+            displ_phase = results_control_network_temp["estimated_displ_phase"]
+
+            residues_per_arc = est_displ_phase - displ_phase
+            sigma_post_arc = np.std(residues_per_arc, axis=1)
+            mean_sigma_prior_arc = np.mean(results_control_network_temp["sigma_phases_arc"], axis=1)
+
+            idx_bad_arcs = np.where(sigma_post_arc >= sigma_post_over_sigma_prior * mean_sigma_prior_arc)[0]
+            idx_good_arcs = np.where(sigma_post_arc < sigma_post_over_sigma_prior * mean_sigma_prior_arc)[0]
+
+            bad_arcs = results_control_network_temp["succeeded_arcs"][idx_bad_arcs]
+            good_arcs = results_control_network_temp["succeeded_arcs"][idx_good_arcs].astype(int)
+            good_arcs = [tuple(row) for row in good_arcs]  # Change the output to a list
+
+            print(f"The value for sigma_post_over_prior is {sigma_post_over_sigma_prior}")
+
+            print("we removed acs")
+
+            print("The bad arcs are")
+            print(idx_bad_arcs)
+            print("The good arcs are")
+            print(idx_good_arcs)
+
+            # Add the noisy arcs to the list with failed_arcs
+            failed_arcs = list(set(failed_arcs).union([tuple(row.astype(int)) for row in bad_arcs]))
+            noisy_arcs = list(set(noisy_arcs).union([tuple(row.astype(int)) for row in bad_arcs]))
+
+            # Check whether the network without the noisy arcs still meets requirements
+            print("Check whether the network stil meets the requirements, even after the removal of bad arcs")
+            network_check_good, arcs_updated_network, ref_pnt = test_succeeded_arcs_control_network(
+                good_arcs, quality_dict_arcs, deg_threshold, min_nodes, min_redundancy, visualize_network=0
+            )
+
+            if network_check_good == 0:
+                print("Network does not meet requirements, start over")
+
+            if network_check_good == 1:
+                print("We are happy! The network consisting of the good arcs fulfills the requirements.")
+
+                # If there are noisy arcs, they need to be removed from the final network
+                # Zet noisy_arcs om in een set voor snelle lookup
+                noisy_arcs_set = {tuple(map(float, arc)) for arc in noisy_arcs}
+
+                # Haal de huidige succeeded_arcs op
+                succeeded_arcs = results_control_network_temp["succeeded_arcs"]
+
+                # Bepaal welke rijen moeten blijven (dus NIET in noisy_arcs_set zitten)
+                valid_indices = np.array([tuple(row) not in noisy_arcs_set for row in succeeded_arcs])
+
+                # Maak een nieuwe dictionary waarin alleen de geldige rijen worden behouden
+                results_control_network = {}
+
+                for key, value in results_control_network_temp.items():
+                    if isinstance(value, np.ndarray) and value.shape[0] == succeeded_arcs.shape[0]:
+                        results_control_network[key] = value[valid_indices]
+                    else:
+                        results_control_network[key] = value  # Laat ongerelateerde variabelen ongemoeid
+
+                break  # Stop de loop
+
+        # Als het netwerk niet meer aan de eisen voldoet, genereer een nieuw netwerk
+        print("Network does not meet the requirements. Recomputing the network with updated failed_arcs...")
+
+    return results_control_network, ref_pnt, arcs_updated_network

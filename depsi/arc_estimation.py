@@ -118,7 +118,7 @@ def _unwrap_phases_filter(filter_length, arc_dd, phase_arc, jump):
     return phase_arc_unwrap, pi_diff, filtered_phase_wrap, filter_real, filter_imag
 
 
-def _scipy_fit_partition_2nd_order_bounds(breakpoints, x_data, arc_obs, initial_guess, bounds, vcm):
+def _scipy_fit_partition_2nd_order_bounds(breakpoints, x_data, arc_obs, initial_guess, bounds, vcm, n_max_iter):
     """Estimate the parameters for an arc using a partitioned second-order polynomial fit.
 
     This function splits the time series of the arc observations into multiple partitions at the specified breakpoints.
@@ -140,6 +140,8 @@ def _scipy_fit_partition_2nd_order_bounds(breakpoints, x_data, arc_obs, initial_
         The bounds for the parameters during fitting. Each bound is an array of length n.
     vcm : np.ndarray
         The variance-covariance matrix of the observations. Shape (m, m).
+    n_max_iter : np.ndarray
+        The maximum nr of iterations for non-linear lsq per arc
 
     Returns
     -------
@@ -162,12 +164,12 @@ def _scipy_fit_partition_2nd_order_bounds(breakpoints, x_data, arc_obs, initial_
         Parameters
         ----------
         x_data : np.ndarray
-            The input data for the model, including time (`t`), temperature (`T`), and CR (`cr2ph`). Shape (m, n).
+            The input data for the model, including time (t), temperature (T), and CR (cr2ph). Shape (m, n).
         model_params : list of float
             The parameters for the model. These include amplitude, displacement model parameters, and cross range
             and temperature. The exact number and order of parameters depend on the number of breakpoints.
         bkps : list of int, optional
-            Breakpoints at which the time series is divided into partitions. Default is `breakpoints`.
+            Breakpoints at which the time series is divided into partitions. Default is breakpoints.
 
         Returns
         -------
@@ -214,7 +216,7 @@ def _scipy_fit_partition_2nd_order_bounds(breakpoints, x_data, arc_obs, initial_
         imag_part = ampl * np.sin(height * cr2ph + expansion * temp + displ)
         return np.append(real_part, imag_part)
 
-    estimated_params, pcov = curve_fit(
+    estimated_params, pcov, infodict, _, _ = curve_fit(
         f=_model_arc_2nd_order,
         xdata=x_data,
         ydata=arc_obs,
@@ -222,7 +224,137 @@ def _scipy_fit_partition_2nd_order_bounds(breakpoints, x_data, arc_obs, initial_
         bounds=bounds,
         sigma=vcm,
         absolute_sigma=True,
+        full_output=True,
+        max_nfev=n_max_iter,
     )
+    # Printing the number of function evaluations
+    # print(f"Needed {infodict['nfev']} function evaluations.")
+
+    return estimated_params, pcov
+
+
+def _scipy_fit_partition_2nd_order_bounds_derivative(
+    breakpoints, x_data, arc_obs, initial_guess, bounds, vcm, n_max_iter
+):
+    """Estimate the parameters for an arc using a partitioned second-order polynomial fit.
+
+    This function splits the time series of the arc observations into multiple partitions at the specified breakpoints.
+    For each partition, a 2nd order polynomial is fit, and the function ensures that the time series is continuous
+    at the breakpoints. The fitting process uses the `curve_fit` function with specified bounds and variance-covariance
+    matrix (vcm).
+
+    Parameters
+    ----------
+    breakpoints : list of int
+        Indices where the time series is divided into partitions.
+    x_data : np.ndarray
+        The input data for the model, typically including time-related variables. Shape (m, n).
+    arc_obs : np.ndarray
+        The observed arc, including both real and imaginary parts. Shape (m,).
+    initial_guess : np.ndarray
+        Initial guess for the unknown parameters. Shape (n,).
+    bounds : tuple of (lower_bounds, upper_bounds)
+        The bounds for the parameters during fitting. Each bound is an array of length n.
+    vcm : np.ndarray
+        The variance-covariance matrix of the observations. Shape (m, m).
+    n_max_iter : np.ndarray
+        The maximum nr of iterations for non-linear lsq per arc
+
+    Returns
+    -------
+    estimated_params : np.ndarray
+        The estimated parameters after fitting. Shape (n,).
+    pcov : np.ndarray
+        The covariance matrix of the estimated parameters. Shape (n, n).
+
+    """
+
+    def _model_arc_2nd_order_derivative(x_data, *model_params, bkps=breakpoints):
+        """Model for an arc using a second-order polynomial for each partition in the time series.
+
+        The arc time series is divided into partitions at the specified breakpoints, and for each partition, a 2nd
+        polynomial is fit. The model accounts for amplitude variations, displacement, cross range, and temperature.
+
+        This function needs to be defined inside _scipy_fit_partition_2nd_order_bounds since the model
+        uses breakpoints.
+
+        Parameters
+        ----------
+        x_data : np.ndarray
+            The input data for the model, including time (`t`), temperature (`T`), and CR (`cr2ph`). Shape (m, n).
+        model_params : list of float
+            The parameters for the model. These include amplitude, displacement model parameters, and cross range
+            and temperature. The exact number and order of parameters depend on the number of breakpoints.
+        bkps : list of int, optional
+            Breakpoints at which the time series is divided into partitions. Default is `breakpoints`.
+
+        Returns
+        -------
+        np.ndarray
+            The modeled arc, which includes both the real and imaginary parts of the arc observations.
+            Shape (2 * m,).
+        """
+        t, temp, cr2ph = x_data
+
+        nr_bkps = len(bkps)
+
+        # Define the amplitude per partition
+        aa = model_params[0:nr_bkps]
+
+        # Define the parameters for the displacement model (third order polynomial)
+        intercept = model_params[nr_bkps]
+        p1 = np.array(model_params[nr_bkps + 1 : 2 * nr_bkps + 1])
+        p2 = np.array(model_params[2 * nr_bkps + 1 : 3 * nr_bkps + 1])
+
+        # Define parameters for the cross range and temperature
+        height = model_params[-2]
+        expansion = model_params[-1]
+
+        # Define the displacement phase and ampltiudes (they vary per partition)
+        displ = np.zeros(len(t))
+        ampl = np.zeros(len(t))
+
+        # c is the start of a new partition
+        c = 0
+        prev_slope = 0
+
+        for i in range(nr_bkps):
+            # Define till what index the function should go (which is the end of the partition)
+            idx = int(bkps[i]) + 1
+            if i > 0:
+                p1[i] = prev_slope  # Zorg dat de eerste afgeleide overeenkomt met de vorige
+                intercept = displ[c]
+
+            # Define the displacement values
+            displ[c:idx] = intercept - (p1[i] * t[c] + p2[i] * t[c] ** 2) + (p1[i] * t[c:idx] + p2[i] * t[c:idx] ** 2)
+            ampl[c:idx] = aa[i]
+
+            # Define the 'intercept' of the new partition (that is the end of the next partition)
+            intercept = displ[idx - 1]
+
+            prev_slope = p1[i] + 2 * p2[i] * t[idx - 1]
+
+            # c is the starting point of a new partition
+            c = idx - 1
+
+        # Define the Real complex observation
+        real_part = ampl * np.cos(height * cr2ph + expansion * temp + displ)
+        imag_part = ampl * np.sin(height * cr2ph + expansion * temp + displ)
+        return np.append(real_part, imag_part)
+
+    estimated_params, pcov, infodict, _, _ = curve_fit(
+        f=_model_arc_2nd_order_derivative,
+        xdata=x_data,
+        ydata=arc_obs,
+        p0=initial_guess,
+        bounds=bounds,
+        sigma=vcm,
+        absolute_sigma=True,
+        full_output=True,
+        max_nfev=n_max_iter,
+    )
+    # Printing the number of function evaluations
+    # print(f"Needed {infodict['nfev']} function evaluations.")
 
     return estimated_params, pcov
 
@@ -401,6 +533,7 @@ def arc_estimation_xarray_input(
     stm_pnt_j,
     bounds,
     m2ph,
+    n_max_iter,
     filter_length_complex=30,
     jump_percentage_2pi=0.85,
     vcm_complex_method="mad_median",
@@ -423,6 +556,8 @@ def arc_estimation_xarray_input(
         Bounds for parameter estimation in the format (lower_bounds, upper_bounds).
     m2ph : float
         Conversion factor from meters to phase.
+    n_max_iter : np.ndarray
+        The maximum nr of iterations for non-linear lsq per arc
     filter_length_complex : int, optional
         Length of the filter for phase unwrapping (default: 30).
     jump_percentage_2pi : float, optional
@@ -505,8 +640,8 @@ def arc_estimation_xarray_input(
         "succeeded_arcs": [],
     }
 
-    print(f'idx pnt i: {int(stm_pnt_i['pnt_idx'].values)}')
-    print(f'idx pnt j: {int(stm_pnt_j['pnt_idx'].values)}')
+    print(f"idx pnt i: {int(stm_pnt_i['pnt_idx'].values)}")
+    print(f"idx pnt j: {int(stm_pnt_j['pnt_idx'].values)}")
 
     dates = stm_pnt_i["dates"].values
     years = stm_pnt_i["years"].values
@@ -665,11 +800,18 @@ def arc_estimation_xarray_input(
     # Estimate the unknown parameters:
     try:
         x_hat_2_p_b, pcov_2_p_b = _scipy_fit_partition_2nd_order_bounds(
-            bkps, X_data, arc_obs, x0_2_p, bounds_2_p, Q_dd_cmplx
+            bkps,
+            X_data,
+            arc_obs,
+            x0_2_p,
+            bounds_2_p,
+            Q_dd_cmplx,
+            n_max_iter,
         )
 
-    except (RuntimeError, ValueError):
+    except (RuntimeError, ValueError) as e:
         print(f"Optimal parameters not found. Skipping arc {(pnt_i_idx, pnt_j_idx)}")
+        print(f"Encountered error: {e}")
 
         ts_length = len(years)
 
@@ -829,6 +971,7 @@ def arc_estimation_control_network(
     arcs_to_analyse,
     bounds,
     m2ph,
+    n_max_iter,
     years,
     dates,
     temp,
@@ -863,6 +1006,8 @@ def arc_estimation_control_network(
         Bounds for parameter estimation in the format (lower_bounds, upper_bounds).
     m2ph : float
         Conversion factor from meters to phase.
+    n_max_iter : np.ndarray
+        The maximum nr of iterations for non-linear lsq per arc
     years : numpy.ndarray
         Array of decimal years corresponding to the time series epochs.
     dates : numpy.ndarray
@@ -1138,7 +1283,7 @@ def arc_estimation_control_network(
         # bounds and partitions
         try:
             x_hat_2_p_b, pcov_2_p_b = _scipy_fit_partition_2nd_order_bounds(
-                bkps, xx_data, arc_obs, x0_2_p, bounds_2_p, Q_dd_cmplx
+                bkps, xx_data, arc_obs, x0_2_p, bounds_2_p, Q_dd_cmplx, n_max_iter
             )
         except (RuntimeError, ValueError):
             print(f"Optimal parameters not found. Skipping arc {(pnt_i_idx, pnt_j_idx)}")

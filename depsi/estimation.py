@@ -52,9 +52,13 @@ def blue_q_yy_inv(A, y, Qyy_inv):
         The variance-covariance matrix of the estimated unknown parameters. Shape (n, n).
 
     """
-    Qx_hat = np.linalg.inv(A.T @ (Qyy_inv) @ A)
-    x_hat = Qx_hat @ A.T @ Qyy_inv @ y
+    try:
+        Qx_hat = np.linalg.inv(A.T @ (Qyy_inv) @ A)
+    except np.linalg.LinAlgError:
+        Qx_hat = np.linalg.pinv(A.T @ (Qyy_inv) @ A)
+        print("Warning: Normal inverse failed, therefore tried pseudo-inverse")
 
+    x_hat = Qx_hat @ A.T @ Qyy_inv @ y
     return x_hat, Qx_hat
 
 

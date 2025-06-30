@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-import dask as da
+import dask.array as da
 import numpy as np
 import xarray as xr
 from scipy.spatial import KDTree
@@ -321,7 +321,9 @@ def _idx_within_distance(coords_ref, coords_others, min_dist):
         return None
 
 
-def detect_side_lobes(stm: xr.Dataset, max_pixel_dist: float, min_correlation: float) -> tuple[np.ndarray]:
+def detect_side_lobes(
+    stm: xr.Dataset, max_pixel_dist: float, min_correlation: float, stm_version: float
+) -> tuple[np.ndarray]:
     """Detect and mask side-lobe points based on the phase correlation between points.
 
     It first finds points on the same range and azimuth and only considers points close by. Then it
@@ -336,6 +338,9 @@ def detect_side_lobes(stm: xr.Dataset, max_pixel_dist: float, min_correlation: f
     min_correlation : float
       The minimum correlation threshold to classify points as side-lobes. 0 means no correlation, 1 is maximum
       correlation
+    stm_version : float
+      Specify the version of the stm. v1 is the version that was created before jan 2025.
+      v2 belongs to stms that were created after jan 2025 by Simon
 
     Returns
     -------
@@ -347,11 +352,17 @@ def detect_side_lobes(stm: xr.Dataset, max_pixel_dist: float, min_correlation: f
     # Lazy load variables
     range_vals = stm["range"].data
     azimuth_vals = stm["azimuth"].data
-    sd_complex = stm["sd_complex"].data
-    amplitude_vals = stm["sd_amplitude"].data
     nr_epochs = len(stm.time)
-
     point_idx = stm["pnt_idx"].values
+    sd_complex = stm["sd_complex"].data
+
+    if stm_version == 1:
+        amplitude_vals = stm["sd_amplitude"].data
+    if stm_version == 2:
+        amplitude_vals = stm["sd_amplitude_unnormalized"].data
+
+    else:
+        print(f"Specified version number {stm_version} is not valid. Choose 1 or 2")
 
     # Define an empty set where the sidelobes will be stored
     side_lobes = set()
