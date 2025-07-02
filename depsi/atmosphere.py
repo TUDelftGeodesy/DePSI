@@ -228,6 +228,18 @@ def krige_in_space(
         output_sizes={'y': len(grid["y"].data), 'x': len(grid["x"].data)}
     )
 
+    # Update coords values
+    interpolated = interpolated.assign_coords(
+        x = grid["x"].data,
+        y = grid["y"].data,
+        time = ps_atmosphere["time"].data
+    )
+    sigmasq = sigmasq.assign_coords(
+        x = grid["x"].data,
+        y = grid["y"].data,
+        time = ps_atmosphere["time"].data
+    )
+
     return xr.Dataset({
         'interpolated': interpolated,
         'sigmasq': sigmasq
