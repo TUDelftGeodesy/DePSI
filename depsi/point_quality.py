@@ -319,23 +319,29 @@ def _estimate_breakpoints(
     # Rechunk in time since no partitions can be there
     amplitude_array = amplitude_array.chunk({"time": -1})
 
-    if db_partitioning:
-        amplitude_ts = 10 * da.log10(amplitude_array)
+    # #107 -> check if there are actually enough observations to do partitioning
+    if amplitude_array.time.shape[0] < 2 * min_partition_size:
+        # if not, there are no breakpoints
+        computed_breakpoints = np.zeros(amplitude_array.shape, dtype=bool)
     else:
-        amplitude_ts = amplitude_array
+        if db_partitioning:
+            amplitude_ts = 10 * da.log10(amplitude_array)
+        else:
+            amplitude_ts = amplitude_array
 
-    if search_method not in search_method_functions.keys():
-        raise ValueError(f"search_method should be 'pelt' or 'binseg' but is {search_method}!")
+        if search_method not in search_method_functions.keys():
+            raise ValueError(f"search_method should be 'pelt' or 'binseg' but is {search_method}!")
 
-    breakpoints = xr.map_blocks(
-        search_method_functions[search_method],
-        amplitude_ts,
-        args=(cost_model, min_partition_size),
-        template=amplitude_ts,
-    )
+        breakpoints = xr.map_blocks(
+            search_method_functions[search_method],
+            amplitude_ts,
+            args=(cost_model, min_partition_size),
+            template=amplitude_ts,
+        )
 
-    # Compute the breakpoints (necessary for the identifiers since the chunking breaks)
-    computed_breakpoints = breakpoints.values
+        # Compute the breakpoints (necessary for the identifiers since the chunking breaks)
+        computed_breakpoints = breakpoints.values
+
     # to compute statistics per partition we need to assign each partition a unique identifier.
     # This consists of two parts:
     # 1. a cumulative sum over the entire breakpoint True/False array. This will increase the identifier by 1 for each
