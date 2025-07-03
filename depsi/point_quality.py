@@ -319,7 +319,7 @@ def _estimate_breakpoints(
     # Rechunk in time since no partitions can be there
     amplitude_array = amplitude_array.chunk({"time": -1})
 
-    # #107 -> check if there are actually enough observations to do partitioning
+    # #107 -> check if there are actually enough observations to do partitioning (thus at least 2 partitions)
     if amplitude_array.time.shape[0] < 2 * min_partition_size:
         # if not, there are no breakpoints
         computed_breakpoints = np.zeros(amplitude_array.shape, dtype=bool)
