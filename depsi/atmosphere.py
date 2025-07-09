@@ -33,7 +33,7 @@ def estimate_non_linear_deformation(
         The temporal scale in milliseconds per year.
     method: str, optional
         Method to use for building the window , e.g. 'block', 'triangle', or
-        'gaussian', default is 'block', see `scipy.signal.windows` for more
+        'gaussian', default is 'gaussian', see `scipy.signal.windows` for more
 
     Returns
     -------
