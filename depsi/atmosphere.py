@@ -17,7 +17,7 @@ def estimate_non_linear_deformation(
         baseline_years: xr.DataArray,
         filter_length: int,
         temporal_scale: int = 1000,
-        method='block',
+        method='gaussian',
     ):
     """Apply a low-pass filter to the time series to remove the non-linear deformation.
 
