@@ -18,7 +18,7 @@ def estimate_non_linear_deformation(
         filter_length: int,
         temporal_scale: int = 1000,
         method='gaussian',
-    ):
+    ) -> xr.DataArray:
     """Apply a low-pass filter to the time series to remove the non-linear deformation.
 
     Parameters
@@ -102,7 +102,7 @@ def krige_in_space():
     """Kriging in space to estimate the atmosphere signal."""
 
 
-def estimate_atmosphere_phase(stm):
+def estimate_atmosphere_phase(stm: xr.Dataset) -> xr.Dataset:
     """Estimate the atmosphere phase.
 
     This function applies a temporal filter to extract the high-frequency
@@ -113,8 +113,7 @@ def estimate_atmosphere_phase(stm):
     non_linear = estimate_non_linear_deformation(
         psc_phase=stm["d_phase"],
         baseline_years=stm["time"],
-        filter_length=30,
-        method='gaussian'
+        filter_length=1,
     )
     stm["atmosphere_estimated"] = stm["d_phase"] - non_linear + stm["atmosphere_base"]
 
