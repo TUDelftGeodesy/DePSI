@@ -160,7 +160,7 @@ def periodogram(
         },
         vectorize=True,
         dask="parallelized",
-        output_dtypes=[np.float64, np.float64, np.float64, np.float64, np.complex128],
+        output_dtypes=[np.float64, np.float64, np.float64, np.float64, np.float64],
     )
 
     return results
@@ -214,7 +214,7 @@ def _periodogram_arc(
         - Ambiguities: unitless, shape (n_obs,), dtype np.float64.
         - Estimated height: in meters, scalar, dtype np.float64.
         - Estimated velocity: in meters per year, scalar, dtype np.float64.
-        - Temporal coherence: unitless complex number, scalar, dtype np.complex128.
+        - Temporal coherence: unitless float number, norm of the complex coherence, scalar, dtype np.float64.
     """
     # Search loop
     step_height = init_step_height  # Initial step size for height
@@ -266,7 +266,7 @@ def _periodogram_arc(
     phs_obs_unwrapped = 2 * np.pi * ambigs + phs_obs_wrapped  # Unwrapped phase
     param = rhs @ phs_obs_unwrapped  # [height_est, velocity_est]
 
-    return phs_obs_unwrapped, ambigs, param[0], param[1], coh_best
+    return phs_obs_unwrapped, ambigs, param[0], param[1], np.abs(coh_best)
 
 
 def _build_periodogram_search_space(param_height, param_vel, step_height, step_vel, n_steps_height, n_steps_vel):
