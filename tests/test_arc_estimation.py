@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.arc_estimation import _build_search_space, periodogram
+from depsi.arc_estimation import _build_periodogram_search_space, periodogram
 from depsi.utils import wrap_phase
 
 
@@ -85,7 +85,7 @@ def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     assert np.allclose(results[3].values, arcs["velo"].values, atol=std_vel)
 
 
-def test_build_search_space():
+def test_build_periodogram_search_space():
     """Test the build_search_space function."""
 
     # Test with a simple case
@@ -100,7 +100,7 @@ def test_build_search_space():
     expect_heights = np.array([3, 4, 5, 6, 7])
     expect_search_space = np.array(np.meshgrid(expect_heights, expect_vels)).T.reshape(-1, 2)
 
-    search_space = _build_search_space(
+    search_space = _build_periodogram_search_space(
         height_center, vel_center, step_height, step_vel, num_height_search, num_vel_search
     )
 
