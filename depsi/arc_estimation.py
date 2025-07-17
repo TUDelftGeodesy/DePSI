@@ -115,10 +115,10 @@ def periodogram(
     Qyy = np.diag(np.repeat(std_obs**2, stm[key_h2ph].sizes["time"]))
 
     # Normal matrix N and rhs for the least squares solution
-    R = B.T @ np.linalg.solve(Qyy, B)  # B.T * Qyy^-1 * B , size n_params x n_params
+    N = B.T @ np.linalg.solve(Qyy, B)  # B.T * Qyy^-1 * B , size n_params x n_params
     # Solve (B.T * Qyy^-1 * B) * x = B.T * Qyy^-1
     # Essentially the same as (B.T * Qyy^-1 * B)^-1 * B.T * Qyy^-1
-    rhs = np.linalg.solve(R, B.T) @ np.linalg.solve(Qyy, np.eye(stm[key_h2ph].sizes["time"]))
+    rhs = np.linalg.solve(N, B.T) @ np.linalg.solve(Qyy, np.eye(stm[key_h2ph].sizes["time"]))
 
     # Set up core dimensions, which are the dimensions _periodogram_arc will be applied to
     # We are broadcasting _periodogram_arc on stm[key_dphase] and stm[key_h2ph] along the space dimension
@@ -151,7 +151,7 @@ def periodogram(
             "h2ph_approx": h2ph_approx,
             "B": B,
             "Qyy": Qyy,
-            "R": R,
+            "N": N,
             "rhs": rhs,
             "init_search_space": init_search_space,
             "init_step_height": init_step_height,
@@ -172,7 +172,7 @@ def _periodogram_arc(
     h2ph_approx: np.ndarray,
     B: np.ndarray,
     Qyy: np.ndarray,
-    R: np.ndarray,
+    N: np.ndarray,
     rhs: np.ndarray,
     init_search_space: float,
     init_step_height: float,
@@ -193,7 +193,7 @@ def _periodogram_arc(
         Design matrix, size n_obs x n_params, where n_params = 2 (height and velocity).
     Qyy : np.ndarray
         Stochastic model of the observations, size n_obs x n_obs.
-    R : np.ndarray
+    N : np.ndarray
         Normal matrix, size n_params x n_params.
     rhs : np.ndarray
         Right-hand side matrix for the least squares solution, size n_params x n_obs.
