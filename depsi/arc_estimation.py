@@ -112,13 +112,13 @@ def periodogram(
 
     # Stochastic model Qyy, size n_obs x n_obs
     # This is the covariance matrix of the observations
-    Qyy = np.diag(np.repeat(std_obs**2, stm[key_h2ph].sizes["time"]))
+    n_obs = stm[key_dphase].sizes["time"]  # number of observations
+    Qyy = np.diag(np.repeat(std_obs**2, n_obs))
 
     # Normal matrix N and rhs for the least squares solution
-    N = B.T @ np.linalg.solve(Qyy, B)  # B.T * Qyy^-1 * B , size n_params x n_params
-    # Solve (B.T * Qyy^-1 * B) * x = B.T * Qyy^-1
-    # Essentially the same as (B.T * Qyy^-1 * B)^-1 * B.T * Qyy^-1
-    rhs = np.linalg.solve(N, B.T) @ np.linalg.solve(Qyy, np.eye(stm[key_h2ph].sizes["time"]))
+    N = B.T @ np.linalg.inv(Qyy) @ B  # B.T * Qyy^-1 * B , size n_params x n_params
+    # Solve N * x = B.T * Qyy^-1, then rhs =  N^-1 * B.T * Qyy^-1
+    rhs = np.linalg.inv(N) @ B.T @ np.linalg.inv(Qyy)
 
     # Set up core dimensions, which are the dimensions _periodogram_arc will be applied to
     # We are broadcasting _periodogram_arc on stm[key_dphase] and stm[key_h2ph] along the space dimension
