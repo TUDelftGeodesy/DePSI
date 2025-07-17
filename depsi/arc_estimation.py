@@ -269,7 +269,7 @@ def _periodogram_arc(
     return phs_obs_unwrapped, ambigs, param[0], param[1], np.abs(coh_best)
 
 
-def _build_periodogram_search_space(param_height, param_vel, step_height, step_vel, n_steps_height, n_steps_vel):
+def _build_periodogram_search_space(init_height, init_vel, step_height, step_vel, n_steps_height, n_steps_vel):
     """Construct the periodogram search space for height and velocity parameters.
 
     For both height and velocity, the candidates are generated around the initial values according to the step size
@@ -282,9 +282,9 @@ def _build_periodogram_search_space(param_height, param_vel, step_height, step_v
 
     Parameters
     ----------
-    param_height : float
+    init_height : float
         Initial height parameter in meters.
-    param_vel : float
+    init_vel : float
         Initial velocity parameter in meters per year.
     step_height : int
         Step size of search for height parameter, in meters.
@@ -301,13 +301,13 @@ def _build_periodogram_search_space(param_height, param_vel, step_height, step_v
         Search space for height and velocity parameters, shape (n_candidates_vel * n_candidates_height, 2)
     """
     height_candidates = np.arange(
-        param_height - n_steps_height * step_height,
-        param_height + n_steps_height * step_height + step_height,
+        init_height - n_steps_height * step_height,
+        init_height + n_steps_height * step_height + step_height,
         step_height,
     )
 
     vel_candidates = np.arange(
-        param_vel - n_steps_vel * step_vel, param_vel + n_steps_vel * step_vel + step_vel, step_vel
+        init_vel - n_steps_vel * step_vel, init_vel + n_steps_vel * step_vel + step_vel, step_vel
     )
 
     # All possible combinations of height and velocity
