@@ -9,7 +9,6 @@ from depsi.utils import wrap_phase
 STOP_HEIGHT = 1e-4  # Stop search step for height [m]
 STOP_VEL = 1e-7  # Stop search step for velocity [m/y]
 MAX_COUNT = 10  # Maximum number of search iterations
-WAVELENGTH_S1 = 0.055465763  # m, sentinel-1 wavelength
 
 
 def periodogram(
@@ -17,6 +16,7 @@ def periodogram(
     key_dphase: str,
     key_h2ph: str,
     key_Btemp: str,
+    wavelength: float = None,
     std_obs: float = 1.0,
     std_height: float = 50.0,
     std_vel: float = 0.02,
@@ -25,7 +25,6 @@ def periodogram(
     init_step_height: float = 1.0,
     init_step_vel: float = 1e-3,
     min_steps: int = 10,
-    wavelength: float = None,
 ):
     """Periodogram algorithm.
 
@@ -47,6 +46,11 @@ def periodogram(
     key_Btemp : str
         Key for the temporal baseline in the STM.
         The value should be in decimal years.
+    wavelength : float, optional
+        Wavelength of the sensor in meters, by default None.
+        This value is used to calculate the height-to-phase conversion factor (m2ph).
+        If not provided, function will look into stm.attrs for the "wavelength" key.
+        If not found, a ValueError will be raised.
     std_obs : float, optional
         A-poriori standard deviation of the observations in rads, by default 1.0.
         This value is used to construct the stochastic model (Qyy) of the observations.
@@ -72,10 +76,6 @@ def periodogram(
         Minimum number of steps in the search space for the height and velocity parameters, by default 10.
         If the number of steps in the initial search space is smaller than this value, it will be set to this value.
         After the first search, the number of steps will be set to this value.
-    wavelength : float, optional
-        Wavelength of the sensor in meters, by default None.
-        If not provided, the default wavelength for Sentinel-1 will be used.
-        This value is used to calculate the height-to-phase conversion factor (m2ph).
 
     Returns
     -------
@@ -87,12 +87,16 @@ def periodogram(
         - Estimated velocity: in meters per year, shape (n_arcs,), dtype np.float64.
         - Temporal coherence: unitless float number, norm of the complex coherence, scalar, dtype np.float64.
     """
-    # If wavelength is not provided, use the default sentinel-1 wavelength
-    # TODO: get wavelength from metadata stm.attrs
+    # Compute m2ph (meters to phase) conversion factor from wavelength
     if wavelength is None:
-        m2ph = -4 * np.pi / WAVELENGTH_S1
-    else:
-        m2ph = -4 * np.pi / wavelength
+        if "wavelength" in stm.attrs:
+            wavelength = stm.attrs.get("wavelength", None)
+        else:
+            raise ValueError("Wavelength is not provided and not found in the STM attributes.")
+    elif not isinstance(wavelength, float):
+        raise TypeError(f"Wavelength should be a float value in meters. Got {wavelength} instead.")
+    m2ph = -4 * np.pi / wavelength
+
     # Make sure year time only contains the time dimension
     assert (len(stm[key_Btemp].dims) == 1) and (
         "time" in stm[key_Btemp].dims
