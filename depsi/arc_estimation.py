@@ -85,7 +85,7 @@ def periodogram(
         - Ambiguities: unitless, shape (n_arcs, n_obs), dtype np.float64.
         - Estimated height: in meters, shape (n_arcs,), dtype np.float64.
         - Estimated velocity: in meters per year, shape (n_arcs,), dtype np.float64.
-        - Temporal coherence: unitless complex number, shape (n_arcs,), dtype np.complex128.
+        - Temporal coherence: unitless float number, norm of the complex coherence, scalar, dtype np.float64.
     """
     # If wavelength is not provided, use the default sentinel-1 wavelength
     # TODO: get wavelength from metadata stm.attrs
@@ -208,7 +208,7 @@ def _periodogram_arc(
 
     Returns
     -------
-    Tuple[np.ndarray, np.ndarray, float, float, complex]
+    Tuple[np.ndarray, np.ndarray, float, float, float]
         Returns the unwrapped phase, ambiguities, estimated height, estimated velocity, and temporal coherence.
         - Unwrapped phase: in rads, shape (n_obs,), dtype np.float64.
         - Ambiguities: unitless, shape (n_obs,), dtype np.float64.
