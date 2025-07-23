@@ -146,10 +146,17 @@ def krige_per_single_time(
     if 'x' not in grid.coords or 'y' not in grid.coords:
         raise ValueError("Grid must have coordinates 'x' and 'y'.")
 
+    # if there is "space" in dimension,
+    # style is points, otherwise it is a grid
+    if 'space' in grid.dims:
+        interpolation_style = 'points'
+    else:
+        interpolation_style = 'grid'
+
     # Calculates a kriged grid and the associated variance
     # result has shape (M, N): M y coords and N x coords
     return kriging_obj.execute(
-        'grid',
+        interpolation_style,
         grid.coords['x'],  # shape (N,)
         grid.coords['y'],  # shape (M,)
         backend=kwargs.get('backend', 'vectorized'),
@@ -170,12 +177,34 @@ def _create_grid(bbox, grid_size: int = 100):
 
 def krige_in_space(
     ps_atmosphere: xr.DataArray,
-    grid: xr.Dataset | None = None,
+    interpolation_style: str = "points",
     grid_size: int = 100,
     method='universal',
     **kwargs
 ):
-    """Kriging in space to estimate the atmosphere signal."""
+    """Kriging in space to estimate the atmosphere signal.
+
+    Parameters
+    ----------
+    ps_atmosphere: xr.DataArray
+        The DataArray containing the atmosphere signal with coordinates 'x' and 'y'.
+        It must have a time dimension.
+    interpolation_style: str
+        The style of interpolation, either 'points' or 'grid'. Default is 'points'.
+    grid_size: int
+        The size of the grid cells in meters. Default is 100. If the interpolation_style is 'grid'.
+    method: str
+        The kriging method to use, e.g. 'universal'. Default is 'universal'.
+    kwargs: dict
+        Additional keyword arguments to pass to the kriging method, such as
+        'variogram_model', 'variogram_parameters', etc.
+
+    Returns
+    -------
+    xr.Dataset
+        A dataset containing the interpolated atmosphere signal and the associated
+        variance (sigmasq) for each time step.
+    """
     # Check if ps_atmosphere has time dimension
     if 'time' not in ps_atmosphere.dims:
         raise ValueError(
@@ -187,14 +216,21 @@ def krige_in_space(
     if 'x' not in ps_atmosphere.coords or 'y' not in ps_atmosphere.coords:
         raise ValueError("ps_atmosphere must have coordinates 'x' and 'y'.")
 
-    # Check if ps_atmosphere is chunked in time
-    if ps_atmosphere.chunks is not None and 'time' not in ps_atmosphere.chunks:
-        logger.info(
-            "It is better if `ps_atmosphere` is chunked in time. "
-            "Use `chunk` method to chunk it in time."
-        )
+    # Remove "time" because we will apply kriging per time step
+    input_core_dims = list(ps_atmosphere.sizes)
+    if 'time' in input_core_dims:
+        input_core_dims.remove('time')
 
-    if grid is None:
+    # Check if `input_core_dims` are not chunked
+    if ps_atmosphere.chunks is not None:
+        chunk_sizes = dict(zip(list(ps_atmosphere.sizes), ps_atmosphere.chunks))
+        if any(len(chunk_sizes[dim]) !=1 for dim in input_core_dims):
+            raise ValueError(
+                "ps_atmosphere must not be chunked in the core dimensions "
+                f"{input_core_dims}."
+            )
+
+    if interpolation_style == "grid":
         bbox = [
             ps_atmosphere["x"].min(),
             ps_atmosphere["y"].min(),
@@ -202,41 +238,36 @@ def krige_in_space(
             ps_atmosphere["y"].max()
         ]
         grid = _create_grid(bbox, grid_size)
+    elif interpolation_style == "points":
+        grid = xr.Dataset(coords = ps_atmosphere.coords)
 
     def apply_krige_per_single_time(data: np.ndarray):
         """Apply kriging for a single time step."""
         da = xr.DataArray(
-            data,
-            dims=['space'],
-            coords={'x': ('space', ps_atmosphere["x"].data), 'y': ('space', ps_atmosphere["y"].data)}
+            data=data,
+            coords=ps_atmosphere.coords,
+            dims=input_core_dims
         )
 
         interpolated, sigmasq = krige_per_single_time(da, grid, method=method, **kwargs)
         return interpolated.data, sigmasq.data
 
-    # setting output_sizes gives `FutureWarning`, but it is needed when
-    # ps_atmosphere is chunked, see
-    # https://docs.xarray.dev/en/stable/generated/xarray.apply_ufunc.html
     interpolated, sigmasq = xr.apply_ufunc(
         apply_krige_per_single_time,
         ps_atmosphere,
-        input_core_dims=[['space']],
-        output_core_dims=[['y', 'x'], ['y', 'x']],
-        dask='parallelized',
+        input_core_dims=[input_core_dims],
+        output_core_dims=[list(grid.sizes)[::-1], list(grid.sizes)[::-1]], # result has shape (M, N): M y coords and N x coords
+        dask="parallelized",
         vectorize=True,
         output_dtypes=[ps_atmosphere.dtype, ps_atmosphere.dtype],
-        output_sizes={'y': len(grid["y"].data), 'x': len(grid["x"].data)}
+        dask_gufunc_kwargs = {"output_sizes": dict(grid.sizes)},  # this is needed when grid has "x" and "y" coordinates
     )
 
-    # Update coords values
+    # # Update time values
     interpolated = interpolated.assign_coords(
-        x = grid["x"].data,
-        y = grid["y"].data,
         time = ps_atmosphere["time"].data
     )
     sigmasq = sigmasq.assign_coords(
-        x = grid["x"].data,
-        y = grid["y"].data,
         time = ps_atmosphere["time"].data
     )
 
