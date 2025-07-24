@@ -95,7 +95,6 @@ def estimate_non_linear_deformation(
         output_dtypes=[psc_phase.dtype]
     )
 
-
 def krige_per_single_time(
         da: xr.DataArray,
         grid: xr.Dataset | xr.DataArray | None = None,
@@ -162,23 +161,9 @@ def krige_per_single_time(
         backend=kwargs.get('backend', 'vectorized'),
     )
 
-
-def _create_grid(bbox, grid_size: int = 100):
-    """Create a grid based on the bounding box and grid size."""
-    if isinstance(bbox, list | tuple) or len(bbox) == 4:
-        x_min, y_min, x_max, y_max = bbox
-    else:
-        raise ValueError("Bounding box must be a list or tuple of four elements: [x_min, y_min, x_max, y_max].")
-
-    new_x = np.arange(x_min, x_max + grid_size, grid_size)
-    new_y = np.arange(y_min, y_max + grid_size, grid_size)
-    return xr.Dataset(coords={'x': new_x, 'y': new_y})
-
-
 def krige_in_space(
     ps_atmosphere: xr.DataArray,
-    interpolation_style: str = "points",
-    grid_size: int = 100,
+    grid: xr.Dataset | xr.DataArray ,
     method='universal',
     **kwargs
 ):
@@ -189,10 +174,9 @@ def krige_in_space(
     ps_atmosphere: xr.DataArray
         The DataArray containing the atmosphere signal with coordinates 'x' and 'y'.
         It must have a time dimension.
-    interpolation_style: str
-        The style of interpolation, either 'points' or 'grid'. Default is 'points'.
-    grid_size: int
-        The size of the grid cells in meters. Default is 100. If the interpolation_style is 'grid'.
+    grid: xr.DataArray
+        The grid on which to interpolate the atmosphere signal. It should have
+        coordinates 'x' and 'y'.
     method: str
         The kriging method to use, e.g. 'universal'. Default is 'universal'.
     kwargs: dict
@@ -221,6 +205,10 @@ def krige_in_space(
     if 'time' in input_core_dims:
         input_core_dims.remove('time')
 
+    # Check if grid has 'x' and 'y' coordinates
+    if 'x' not in grid.coords or 'y' not in grid.coords:
+        raise ValueError("Grid must have coordinates 'x' and 'y'.")
+
     # Check if `input_core_dims` are not chunked
     if ps_atmosphere.chunks is not None:
         chunk_sizes = dict(zip(list(ps_atmosphere.sizes), ps_atmosphere.chunks))
@@ -229,17 +217,6 @@ def krige_in_space(
                 "ps_atmosphere must not be chunked in the core dimensions "
                 f"{input_core_dims}."
             )
-
-    if interpolation_style == "grid":
-        bbox = [
-            ps_atmosphere["x"].min(),
-            ps_atmosphere["y"].min(),
-            ps_atmosphere["x"].max(),
-            ps_atmosphere["y"].max()
-        ]
-        grid = _create_grid(bbox, grid_size)
-    elif interpolation_style == "points":
-        grid = xr.Dataset(coords = ps_atmosphere.coords)
 
     def apply_krige_per_single_time(data: np.ndarray):
         """Apply kriging for a single time step."""
