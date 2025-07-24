@@ -211,7 +211,7 @@ def krige_in_space(
 
     # Check if `input_core_dims` are not chunked
     if ps_atmosphere.chunks is not None:
-        chunk_sizes = dict(zip(list(ps_atmosphere.sizes), ps_atmosphere.chunks))
+        chunk_sizes = dict(zip(list(ps_atmosphere.sizes), ps_atmosphere.chunks, strict=False))
         if any(len(chunk_sizes[dim]) !=1 for dim in input_core_dims):
             raise ValueError(
                 "ps_atmosphere must not be chunked in the core dimensions "
@@ -233,7 +233,7 @@ def krige_in_space(
         apply_krige_per_single_time,
         ps_atmosphere,
         input_core_dims=[input_core_dims],
-        output_core_dims=[list(grid.sizes)[::-1], list(grid.sizes)[::-1]], # result has shape (M, N): M y coords and N x coords
+        output_core_dims=[list(grid.sizes)[::-1], list(grid.sizes)[::-1]], # result has shape (y, x)
         dask="parallelized",
         vectorize=True,
         output_dtypes=[ps_atmosphere.dtype, ps_atmosphere.dtype],
