@@ -134,6 +134,9 @@ def krige_per_single_time(
             da,
             variogram_model=variogram_model,
             variogram_parameters=kwargs.get('variogram_parameters', default_variogram_parameters),
+            nlags=kwargs.get('nlags', 50),
+            exact_values=False,  #  If True, results would be input values at input locations
+            drift_terms=['regional_linear']  # this activates drift of order 1
         )
     else:
         raise NotImplementedError(f"{method} is not implemented yet.")
