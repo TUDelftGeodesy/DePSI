@@ -7,13 +7,16 @@ signal.
 epoch.
 """
 
+import copy
 from logging import getLogger
 
 import numpy as np
 import pykrige
 import xarray as xr
+from dask import compute, delayed
 from scipy import signal
 from scipy.ndimage import convolve1d
+from scipy.spatial import KDTree
 
 logger = getLogger(__name__)
 
@@ -99,6 +102,7 @@ def krige_per_single_time(
         da: xr.DataArray,
         grid: xr.Dataset | xr.DataArray | None = None,
         method='universal',
+        n_nearest_neighbors: int | None = None,
         **kwargs
     ):
     """Kriging in space for a single time step.
@@ -120,7 +124,7 @@ def krige_per_single_time(
     if variogram_model == 'gaussian':
         default_variogram_parameters = {
             'sill': 0.8 * da.var(),
-            'range': 1000.0,
+            'range': 10000.0,
             'nugget': 0.2 * da.var()
         }
     else:
@@ -155,14 +159,58 @@ def krige_per_single_time(
     else:
         interpolation_style = 'grid'
 
-    # Calculates a kriged grid and the associated variance
-    # result has shape (M, N): M y coords and N x coords
-    return kriging_obj.execute(
-        interpolation_style,
-        grid.coords['x'],  # shape (N,)
-        grid.coords['y'],  # shape (M,)
-        backend=kwargs.get('backend', 'vectorized'),
-    )
+    if n_nearest_neighbors is None:
+        # Calculates a kriged grid and the associated variance
+        # result has shape (M, N): M y coords and N x coords
+        # all grid points are used for interpolation, more efficient
+        return kriging_obj.execute(
+            interpolation_style,
+            grid.coords['x'],  # shape (N,)
+            grid.coords['y'],  # shape (M,)
+            backend=kwargs.get('backend', 'vectorized'),
+        )
+    else:
+        if 'space' not in da.dims or 'space' not in grid.dims:
+            raise NotImplementedError(
+                "Kriging with nearest neighbors is not implemented for grid interpolation."
+            )
+
+        if n_nearest_neighbors > da.size:
+            raise ValueError(
+                f"n_nearest_neighbors ({n_nearest_neighbors}) cannot be larger than "
+                f"the number of points in da ({da.size})."
+            )
+
+        # Find the nearest neighbors
+        tree = KDTree(np.stack((da.coords['x'], da.coords['y']), axis=1))
+        _, indices = tree.query(
+            np.stack((grid.coords['x'], grid.coords['y']), axis=1),
+            k=n_nearest_neighbors
+        )
+
+        def _apply_kriging_one_point(kriging_obj, index):
+            local_kriging = copy.deepcopy(kriging_obj)  # this needed when parallel
+
+            neighbors = indices[index]
+            local_kriging.X_ADJUSTED = da.coords['x'].data[neighbors]
+            local_kriging.Y_ADJUSTED = da.coords['y'].data[neighbors]
+            local_kriging.Z = da.data[neighbors]
+
+            return local_kriging.execute(
+                'points',
+                grid.coords['x'].data[index],
+                grid.coords['y'].data[index]
+                )
+
+        # Loop over each point in grid and krige
+        tasks = [
+            delayed(_apply_kriging_one_point)(kriging_obj, idx)
+            for idx, _ in enumerate(indices)
+        ]
+        results = compute(*tasks, scheduler='processes')
+        zvalues, sigmasq = zip(*results, strict=False)
+        return np.array(zvalues).squeeze(), np.array(sigmasq).squeeze()
+
 
 def krige_in_space(
     ps_atmosphere: xr.DataArray,
