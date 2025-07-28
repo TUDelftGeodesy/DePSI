@@ -7,13 +7,11 @@ signal.
 epoch.
 """
 
-import copy
 from logging import getLogger
 
 import numpy as np
 import pykrige
 import xarray as xr
-from dask import compute, delayed
 from scipy import signal
 from scipy.ndimage import convolve1d
 from scipy.spatial import KDTree
@@ -188,28 +186,25 @@ def krige_per_single_time(
             k=n_nearest_neighbors
         )
 
-        def _apply_kriging_one_point(kriging_obj, index):
-            local_kriging = copy.deepcopy(kriging_obj)  # this needed when parallel
-
+        def _apply_kriging_one_point(index):
             neighbors = indices[index]
-            local_kriging.X_ADJUSTED = da.coords['x'].data[neighbors]
-            local_kriging.Y_ADJUSTED = da.coords['y'].data[neighbors]
-            local_kriging.Z = da.data[neighbors]
+            kriging_obj.X_ADJUSTED = da.coords['x'].data[neighbors]
+            kriging_obj.Y_ADJUSTED = da.coords['y'].data[neighbors]
+            kriging_obj.Z = da.data[neighbors]
 
-            return local_kriging.execute(
+            return kriging_obj.execute(
                 'points',
                 grid.coords['x'].data[index],
                 grid.coords['y'].data[index]
                 )
 
         # Loop over each point in grid and krige
-        tasks = [
-            delayed(_apply_kriging_one_point)(kriging_obj, idx)
-            for idx, _ in enumerate(indices)
-        ]
-        results = compute(*tasks, scheduler='processes')
-        zvalues, sigmasq = zip(*results, strict=False)
-        return np.array(zvalues).squeeze(), np.array(sigmasq).squeeze()
+        zvalues = np.empty(indices.shape[0])
+        sigmasq = np.empty(indices.shape[0])
+        for index, _ in enumerate(indices):
+            zvalues[index], sigmasq[index] = _apply_kriging_one_point(index)
+
+        return zvalues, sigmasq
 
 
 def krige_in_space(
