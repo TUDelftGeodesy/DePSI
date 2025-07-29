@@ -168,7 +168,7 @@ def krige_per_single_time(
             backend=kwargs.get('backend', 'vectorized'),
         )
     else:
-        if 'space' not in da.dims or 'space' not in grid.dims:
+        if 'space' not in da.dims and 'space' not in grid.dims:
             raise NotImplementedError(
                 "Kriging with nearest neighbors is not implemented for grid interpolation."
             )
@@ -188,6 +188,9 @@ def krige_per_single_time(
 
         def _apply_kriging_one_point(index):
             neighbors = indices[index]
+
+            # This is a workaround to count for nearest neighbors
+            # because pykrige does not support nearest neighbors
             kriging_obj.X_ADJUSTED = da.coords['x'].data[neighbors]
             kriging_obj.Y_ADJUSTED = da.coords['y'].data[neighbors]
             kriging_obj.Z = da.data[neighbors]
