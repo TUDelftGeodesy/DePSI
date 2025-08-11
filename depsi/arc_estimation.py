@@ -18,7 +18,7 @@ def periodogram(
     key_Btemp: str,
     wavelength: float = None,
     std_obs: float = 1.0,
-    std_height: float = 30.0,
+    std_height: float = 50.0,
     std_vel: float = 0.02,
     init_height: float = 0.0,
     init_vel: float = 0.0,
