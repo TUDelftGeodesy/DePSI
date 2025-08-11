@@ -2,14 +2,15 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.arc_estimation import _build_search_space, periodogram
+from depsi.arc_estimation import _build_periodogram_search_space, periodogram
 from depsi.utils import wrap_phase
+
+WAVELENGTH_S1 = 0.055465763  # m, sentinel-1 wavelength used for testing
 
 
 def get_test_consts(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     """function to get constants for testing"""
-    wavelength = 0.055465763  # Sentinel-1, in meters
-    m2ph = -4 * np.pi / wavelength
+    m2ph = -4 * np.pi / WAVELENGTH_S1
 
     rng = np.random.default_rng(42)  # reset every time for reproducibility
     h2ph = rng.random((n_obs, n_arcs)) * 1e-3  # fixed
@@ -39,7 +40,10 @@ def get_arcs_stm(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
             "velo": (("space",), velo),
             "height": (("space",), height),
             "years": (("time",), years),
-        }
+        },
+        attrs={
+            "wavelength": WAVELENGTH_S1,  # wavelength in meters
+        },
     )
 
     return stm_arcs
@@ -79,13 +83,34 @@ def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     assert results[3].shape == (n_arcs,)  # velocity
     assert results[4].shape == (n_arcs,)  # coherence
 
-    # Solved velocity should be close to the original velocity, tolerance of std_vel
-    # Here we only check the velocity estimation
-    # there unwrapping errors are allowed for the phase time series
+    # Solved height and velocity should be close to the true values, within the standard deviation
+    assert np.allclose(results[2].values, arcs["height"].values, atol=std_height)
     assert np.allclose(results[3].values, arcs["velo"].values, atol=std_vel)
 
 
-def test_build_search_space():
+@pytest.mark.parametrize(
+    "wavelength, error",
+    [
+        (None, ValueError),  # fail case: no wavelength provided
+        (1, TypeError),  # fail case: wavelength is not a float
+    ],
+)
+def test_periodogram_no_wavelength(wavelength, error):
+    arcs = get_arcs_stm(13, 4, -1e-3, 1e-4, -1, 1)
+    arcs.attrs.pop("wavelength", None)  # remove wavelength to test without it
+
+    # This should raise an error because wavelength is required
+    with pytest.raises(error):
+        _ = periodogram(
+            stm=arcs,
+            key_dphase="phs_obs_wrapped",
+            key_Btemp="years",
+            key_h2ph="h2ph_values",
+            wavelength=wavelength,
+        )
+
+
+def test_build_periodogram_search_space():
     """Test the build_search_space function."""
 
     # Test with a simple case
@@ -100,7 +125,7 @@ def test_build_search_space():
     expect_heights = np.array([3, 4, 5, 6, 7])
     expect_search_space = np.array(np.meshgrid(expect_heights, expect_vels)).T.reshape(-1, 2)
 
-    search_space = _build_search_space(
+    search_space = _build_periodogram_search_space(
         height_center, vel_center, step_height, step_vel, num_height_search, num_vel_search
     )
 

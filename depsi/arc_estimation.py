@@ -1,4 +1,4 @@
-"""modules for arc phase estimation."""
+"""Modules for arc estimation."""
 
 import numpy as np
 import xarray as xr
@@ -6,10 +6,9 @@ import xarray as xr
 from depsi.utils import wrap_phase
 
 # Constants
-STOP_HEIGHT = 1e-4  # Stop search step for height
-STOP_VEL = 1e-7  # Stop search step for velocity
+STOP_HEIGHT = 1e-4  # Stop search step for height [m]
+STOP_VEL = 1e-7  # Stop search step for velocity [m/y]
 MAX_COUNT = 10  # Maximum number of search iterations
-WAVELENGTH_S1 = 0.055465763  # m, sentinel-1 wavelength
 
 
 def periodogram(
@@ -17,6 +16,7 @@ def periodogram(
     key_dphase: str,
     key_h2ph: str,
     key_Btemp: str,
+    wavelength: float = None,
     std_obs: float = 1.0,
     std_height: float = 30.0,
     std_vel: float = 0.02,
@@ -24,12 +24,11 @@ def periodogram(
     init_vel: float = 0.0,
     init_step_height: float = 1.0,
     init_step_vel: float = 1e-3,
-    min_searches: int = 11,
-    wavelength: float = None,
+    min_steps: int = 10,
 ):
-    """Periodogram unwrapping algorithm.
+    """Periodogram algorithm.
 
-    This function performs periodogram unwrapping on arcs as Space-Time Matrices (STMs).
+    This function performs periodogram unwrapping on arcs.
 
     It uses a deformation model with two parameters: height and velocity to estimate the unwrapped phase.
 
@@ -45,37 +44,38 @@ def periodogram(
     key_h2ph : str
         Key for the height-to-phase conversion factor in the STM.
     key_Btemp : str
-        key for the temporal baseline in the STM.
+        Key for the temporal baseline in the STM.
         The value should be in decimal years.
+    wavelength : float, optional
+        Wavelength of the sensor in meters, by default None.
+        This value is used to calculate the height-to-phase conversion factor (m2ph).
+        If not provided, function will look into stm.attrs for the "wavelength" key.
+        If not found, a ValueError will be raised.
     std_obs : float, optional
         A-poriori standard deviation of the observations in rads, by default 1.0.
         This value is used to construct the stochastic model (Qyy) of the observations.
     std_height : float, optional
-        A-poriori standard deviation of the height in meters, by default 50.0.
-        This value is used to construct the boundaries initial search space for the height parameter.
+        A-priori standard deviation of the height in meters, by default 50.0.
+        This value is used to construct the boundaries of the initial search space for the height parameter.
     std_vel : float, optional
-        A-poriori standard deviation of the velocity in meters per year, by default 0.02.
-        This value is used to construct the boundaries initial search space for the velocity parameter.
+        A-priori standard deviation of the velocity in meters per year, by default 0.02.
+        This value is used to construct the boundaries of the initial search space for the velocity parameter.
     init_height : float, optional
-        Initial guess for the height parameter in meters, by default 0.0.
+        Initial value for the height parameter in meters, by default 0.0.
     init_vel : float, optional
-        Initial guess for the velocity parameter in meters per year, by default 0.0.
+        Initial value for the velocity parameter in meters per year, by default 0.0.
     init_step_height : float, optional
-        Initial step size for the height parameter in meters, by default 2.0.
-        This value is used to construct the resolution of the initial search space for the height parameter.
+        Initial step size for the height parameter in meters, by default 1.0.
+        This value sets the resolution of the initial search space for the height parameter.
         After every search, the step size will be reduced by a factor of 10.
     init_step_vel : float, optional
         Initial step size for the velocity parameter in meters per year, by default 1e-3.
-        This value is used to construct the resolution of the initial search space for the velocity parameter.
+        This value sets the resolution of the initial search space for the velocity parameter.
         After every search, the step size will be reduced by a factor of 10.
-    min_searches : int, optional
-        Minimum number of searches for the height and velocity parameters, by default 11.
-        If the number of the initial search space is smaller than this value, it will be increased to this value.
-        After the first search, the number of searches will be set to this value.
-    wavelength : float, optional
-        Wavelength of the sensor in meters, by default None.
-        If not provided, the default wavelength for Sentinel-1 will be used.
-        This value is used to calculate the height-to-phase conversion factor (m2ph).
+    min_steps : int, optional
+        Minimum number of steps in the search space for the height and velocity parameters, by default 10.
+        If the number of steps in the initial search space is smaller than this value, it will be set to this value.
+        After the first search, the number of steps will be set to this value.
 
     Returns
     -------
@@ -85,14 +85,18 @@ def periodogram(
         - Ambiguities: unitless, shape (n_arcs, n_obs), dtype np.float64.
         - Estimated height: in meters, shape (n_arcs,), dtype np.float64.
         - Estimated velocity: in meters per year, shape (n_arcs,), dtype np.float64.
-        - Temporal coherence: unitless complex number, shape (n_arcs,), dtype np.complex128.
+        - Temporal coherence: unitless float number, norm of the complex coherence, scalar, dtype np.float64.
     """
-    # If wavelength is not provided, use the default sentinel-1 wavelength
-    # TODO: get wavelength from metadata stm.attrs
+    # Compute m2ph (meters to phase) conversion factor from wavelength
     if wavelength is None:
-        m2ph = -4 * np.pi / WAVELENGTH_S1
-    else:
-        m2ph = -4 * np.pi / wavelength
+        if "wavelength" in stm.attrs:
+            wavelength = stm.attrs.get("wavelength", None)
+        else:
+            raise ValueError("Wavelength is not provided and not found in the STM attributes.")
+    elif not isinstance(wavelength, float):
+        raise TypeError(f"Wavelength should be a float value in meters. Got {wavelength} instead.")
+    m2ph = -4 * np.pi / wavelength
+
     # Make sure year time only contains the time dimension
     assert (len(stm[key_Btemp].dims) == 1) and (
         "time" in stm[key_Btemp].dims
@@ -112,17 +116,17 @@ def periodogram(
 
     # Stochastic model Qyy, size n_obs x n_obs
     # This is the covariance matrix of the observations
-    Qyy = np.diag(np.repeat(std_obs**2, stm[key_h2ph].sizes["time"]))
+    n_obs = stm[key_dphase].sizes["time"]  # number of observations
+    Qyy = np.diag(np.repeat(std_obs**2, n_obs))
 
-    # Convenience matrix R and rhs for the least squares solution
-    R = B.T @ np.linalg.solve(Qyy, B)  # B.T * Qyy^-1 * B , size n_params x n_params
-    # Solve (B.T * Qyy^-1 * B) * x = B.T * Qyy^-1
-    # Essentially the same as (B.T * Qyy^-1 * B)^-1 * B.T * Qyy^-1
-    rhs = np.linalg.solve(R, B.T) @ np.linalg.solve(Qyy, np.eye(stm[key_h2ph].sizes["time"]))
+    # Normal matrix N and rhs for the least squares solution
+    N = B.T @ np.linalg.inv(Qyy) @ B  # B.T * Qyy^-1 * B , size n_params x n_params
+    # Solve N * x = B.T * Qyy^-1, then rhs =  N^-1 * B.T * Qyy^-1
+    rhs = np.linalg.inv(N) @ B.T @ np.linalg.inv(Qyy)
 
     # Set up core dimensions, which are the dimensions _periodogram_arc will be applied to
     # We are broadcasting _periodogram_arc on stm[key_dphase] and stm[key_h2ph] along the space dimension
-    # Threfore, we are calling it on the "time" dimension of every space entry
+    # Therefore, we are calling it on the "time" dimension of every space entry.
     # So we have the input_core_dims as  [["time"], ["time"]]
     input_core_dims = [["time"], ["time"]]
     # There are 5 outputs from _periodogram_arc
@@ -131,11 +135,11 @@ def periodogram(
     output_core_dims = [["time"], ["time"], [], [], []]
 
     # Build initial search space for height and velocity
-    n_search_height = max(round(2 * std_height / init_step_height), min_searches)
-    n_search_vel = max(round(2 * std_vel / init_step_vel), min_searches)
+    n_steps_height = max(round(2 * std_height / init_step_height), min_steps)
+    n_steps_vel = max(round(2 * std_vel / init_step_vel), min_steps)
 
-    init_search_space = _build_search_space(
-        init_height, init_vel, init_step_height, init_step_vel, n_search_height, n_search_vel
+    init_search_space = _build_periodogram_search_space(
+        init_height, init_vel, init_step_height, init_step_vel, n_steps_height, n_steps_vel
     )
 
     # Apply the _periodogram_arc on stm[key_dphase] along "space" dimension
@@ -151,16 +155,16 @@ def periodogram(
             "h2ph_approx": h2ph_approx,
             "B": B,
             "Qyy": Qyy,
-            "R": R,
+            "N": N,
             "rhs": rhs,
             "init_search_space": init_search_space,
             "init_step_height": init_step_height,
             "init_step_vel": init_step_vel,
-            "min_searches": min_searches,
+            "min_steps": min_steps,
         },
         vectorize=True,
         dask="parallelized",
-        output_dtypes=[np.float64, np.float64, np.float64, np.float64, np.complex128],
+        output_dtypes=[np.float64, np.float64, np.float64, np.float64, np.float64],
     )
 
     return results
@@ -172,12 +176,12 @@ def _periodogram_arc(
     h2ph_approx: np.ndarray,
     B: np.ndarray,
     Qyy: np.ndarray,
-    R: np.ndarray,
+    N: np.ndarray,
     rhs: np.ndarray,
     init_search_space: float,
     init_step_height: float,
     init_step_vel: float,
-    min_searches: float,
+    min_steps: float,
 ):
     """Periodogram unwrapping for a single arc.
 
@@ -188,13 +192,13 @@ def _periodogram_arc(
     h2ph : np.ndarray:
         Height-to-phase factor of the arc, shape (n_obs,).
     h2ph_approx : np.ndarray
-        Approximate height-to-phase factor calculated by spatial average all h2ph, shape (n_obs,).
+        Approximate height-to-phase factor calculated by spatial average of all h2ph, shape (n_obs,).
     B : np.ndarray
         Design matrix, size n_obs x n_params, where n_params = 2 (height and velocity).
     Qyy : np.ndarray
         Stochastic model of the observations, size n_obs x n_obs.
-    R : np.ndarray
-        Covariance matrix of the parameters, size n_params x n_params.
+    N : np.ndarray
+        Normal matrix, size n_params x n_params.
     rhs : np.ndarray
         Right-hand side matrix for the least squares solution, size n_params x n_obs.
     init_search_space : np.ndarray
@@ -203,18 +207,18 @@ def _periodogram_arc(
         Initial step size for the height parameter in meters.
     init_step_vel : float
         Initial step size for the velocity parameter in meters per year.
-    min_searches : float
-        Minimum number of searches for the height and velocity parameters.
+    min_steps : float
+        Minimum number of steps in the search space for the height and velocity parameters.
 
     Returns
     -------
-    Tuple[np.ndarray, np.ndarray, float, float, complex]
+    Tuple[np.ndarray, np.ndarray, float, float, float]
         Returns the unwrapped phase, ambiguities, estimated height, estimated velocity, and temporal coherence.
         - Unwrapped phase: in rads, shape (n_obs,), dtype np.float64.
         - Ambiguities: unitless, shape (n_obs,), dtype np.float64.
         - Estimated height: in meters, scalar, dtype np.float64.
         - Estimated velocity: in meters per year, scalar, dtype np.float64.
-        - Temporal coherence: unitless complex number, scalar, dtype np.complex128.
+        - Temporal coherence: unitless float number, norm of the complex coherence, scalar, dtype np.float64.
     """
     # Search loop
     step_height = init_step_height  # Initial step size for height
@@ -244,12 +248,12 @@ def _periodogram_arc(
         param_vel = search_space[coh_idx, 1]
         step_height /= 10
         step_vel /= 10
-        n_search_height = min_searches
-        n_search_vel = min_searches
+        n_steps_height = min_steps
+        n_steps_vel = min_steps
 
         # Build search space
-        search_space = _build_search_space(
-            param_height, param_vel, step_height, step_vel, n_search_height, n_search_vel
+        search_space = _build_periodogram_search_space(
+            param_height, param_vel, step_height, step_vel, n_steps_height, n_steps_vel
         )
 
         count += 1
@@ -266,15 +270,15 @@ def _periodogram_arc(
     phs_obs_unwrapped = 2 * np.pi * ambigs + phs_obs_wrapped  # Unwrapped phase
     param = rhs @ phs_obs_unwrapped  # [height_est, velocity_est]
 
-    return phs_obs_unwrapped, ambigs, param[0], param[1], coh_best
+    return phs_obs_unwrapped, ambigs, param[0], param[1], np.abs(coh_best)
 
 
-def _build_search_space(param_height, param_vel, step_height, step_vel, n_search_height, n_search_vel):
-    """Construct the search space for height and velocity parameters.
+def _build_periodogram_search_space(init_height, init_vel, step_height, step_vel, n_steps_height, n_steps_vel):
+    """Construct the periodogram search space for height and velocity parameters.
 
     For both height and velocity, the candidates are generated around the initial values according to the step size
-    and the number of searches. On each side of the initial value, N candidates are generated with a step size, where
-    N is specified by `n_search_height` and `n_search_vel`, and the step size is specified by `step_height` and
+    and the number of steps. On each side of the initial value, N candidates are generated with a step size, where
+    N is specified by `n_steps_height` and `n_steps_vel`, and the step size is specified by `step_height` and
     `step_vel`.
 
     Then all possible combinations of height and velocity candidates are created to form
@@ -282,18 +286,18 @@ def _build_search_space(param_height, param_vel, step_height, step_vel, n_search
 
     Parameters
     ----------
-    param_height : float
+    init_height : float
         Initial height parameter in meters.
-    param_vel : float
+    init_vel : float
         Initial velocity parameter in meters per year.
     step_height : int
         Step size of search for height parameter, in meters.
     step_vel : int
         Step size of search for velocity parameter, in meters per year.
-    n_search_height : int
-        Number of searches for height parameter on each side of the initial value.
-    n_search_vel : int
-        Number of searches for velocity parameter on each side of the initial value.
+    n_steps_height : int
+        Number of steps for height parameter on each side of the initial value.
+    n_steps_vel : int
+        Number of steps for velocity parameter on each side of the initial value.
 
     Returns
     -------
@@ -301,13 +305,13 @@ def _build_search_space(param_height, param_vel, step_height, step_vel, n_search
         Search space for height and velocity parameters, shape (n_candidates_vel * n_candidates_height, 2)
     """
     height_candidates = np.arange(
-        param_height - n_search_height * step_height,
-        param_height + n_search_height * step_height + step_height,
+        init_height - n_steps_height * step_height,
+        init_height + n_steps_height * step_height + step_height,
         step_height,
     )
 
     vel_candidates = np.arange(
-        param_vel - n_search_vel * step_vel, param_vel + n_search_vel * step_vel + step_vel, step_vel
+        init_vel - n_steps_vel * step_vel, init_vel + n_steps_vel * step_vel + step_vel, step_vel
     )
 
     # All possible combinations of height and velocity
