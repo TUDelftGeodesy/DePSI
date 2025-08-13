@@ -329,7 +329,7 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
             # Loop over the unique partitions and collect the nearest neighbors of that partition.
             # repeat until we have at least min_links neighbors.
             count = 0
-            for _ in range(min_links):
+            while count < min_links:
                 for partition in list_unique_partitions:
                     cur_arcs.append((cur_index, neighbors_candidates[partition][0]))
                     # Remove the first element from the partition's neighbors.
@@ -339,9 +339,6 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
                         list_unique_partitions.remove(partition)
 
                     count += 1
-
-                    if count >= min_links:
-                        break
 
         arcs.extend(cur_arcs)
 
