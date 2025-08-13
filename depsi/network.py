@@ -8,7 +8,7 @@ import networkx as nx
 import numpy as np
 import sparse
 import xarray as xr
-from scipy.spatial import Delaunay
+from scipy.spatial import Delaunay, KDTree
 
 logger = logging.getLogger(__name__)
 
@@ -274,50 +274,74 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
     """
     arcs = []
     indices = range(len(coordinates))
+
+    # Create a KDTree for fast distance queries.
+    # Get all pairs of points within the specified radius.
+    tree = KDTree(coordinates)
+    if max_length is not None:
+        pairs = tree.query_pairs(r=max_length, output_type="ndarray")
+    else:
+        pairs = tree.query_pairs(r=np.inf, output_type="ndarray")
+
+    # Loop over all indices to collect neighbors.
+    # For each index, we will collect the nearest min_links neighbors per partition.
+    # The current node is separated into its own partition.
     for cur_index in indices:
-        # Calculate per node, the partition they are in and the distance from the current node.
-        partitions = [
-            int(math.floor(num_partitions * (0.5 + math.atan2(coordinate[1], coordinate[0]) / math.tau)))
-            for coordinate in coordinates - coordinates[cur_index]
-        ]
-        partitions[cur_index] = num_partitions + 1  # Separate the current node into its own partition.
-        distances = [_get_distance(coordinates[cur_index], coordinate) for coordinate in coordinates]
+        # List of arcs connected to the current node.
+        cur_arcs = []
 
-        # Create a list of tuples with the partition, distance, and index, sorted by partition and then distance.
-        values = np.array(sorted(list(zip(partitions, distances, indices, strict=False))))
+        # Get all neighbors of the current node.
+        neighbors = pairs[pairs[:, 0] == cur_index][:, 1]
+        neighbors = np.array(neighbors, dtype=int)
 
-        # Collect the nearest min_links neighbors per partition and discard the partition of the current node.
-        partitions_diff = values[1:, 0] - values[:-1, 0]
-        separators = np.where(partitions_diff > 0)[0]
-        partitions = np.split(values, separators + 1)
-        partitions = partitions[: len(partitions) - 1]
-        partitions = [partition[:min_links] for partition in partitions]
+        if len(neighbors) == 0:
+            continue
+        elif len(neighbors) <= min_links:
+            # If there are not enough neighbors, we can just connect them all.
+            for idx in neighbors:
+                cur_arcs.append((cur_index, idx))
+        else:
+            # Calculate the partition and distance for each neighbor.
+            partitions = [
+                int(
+                    math.floor(num_partitions * (0.5 + math.atan2(coordinates[idx][1], coordinates[idx][0]) / math.tau))
+                )
+                for idx in neighbors
+            ]
+            distances = [_get_distance(coordinates[cur_index], coordinates[idx]) for idx in neighbors]
 
-        # Collect the neighbor 'hierarchies'.
-        # Each hierarchy contains the nth nearest neighbor from all partitions.
-        neighbor_hierarchies = [[] for _ in range(min_links)]
-        count = 0
-        for n in range(min_links):
-            # Break early if we have gathered enough neighbors.
-            if min_links <= count:
-                break
-            for partition in partitions:
-                # Note that we do not break inside this loop,
-                # because we want the nth nearest neighbors from all partitions.
-                if n < len(partition) and (max_length is None or partition[n][1] <= max_length):
-                    neighbor_hierarchies[n].append(partition[n])
-                    count = count + 1
+            # Create a 3-column array with partition, distance, and index
+            # Sort it by partition and then distance
+            values = np.array(sorted(list(zip(partitions, distances, neighbors, strict=False))))
+            list_partitions = list(values[:, 0].astype(int))  # Convert partitions to int for easier processing
+            list_neighbors_idx = list(values[:, 2].astype(int))  # Convert neighbor indices to int
+            list_unique_partitions = list(np.unique(values[:, 0]).astype(int))  # Unique partitions as integers
 
-        # Sort hierarchies per partition by distance to the current node.
-        neighbor_hierarchies = [
-            sorted(hierarchy, key=lambda x: x[1]) for hierarchy in neighbor_hierarchies if len(hierarchy) != 0
-        ]
+            neighbors_candidates = {}
+            for (
+                partition,
+                idx,
+            ) in zip(list_partitions, list_neighbors_idx, strict=False):
+                if partition not in neighbors_candidates:
+                    neighbors_candidates[partition] = []
+                neighbors_candidates[partition].append(idx)
 
-        # Add sorted arcs to at least min_links neighbors.
-        cur_arcs = [
-            tuple(sorted([cur_index, int(neighbor[2])])) for hierarchy in neighbor_hierarchies for neighbor in hierarchy
-        ]
-        cur_arcs = cur_arcs[:min_links]
+            # Loop over the unique partitions and collect the nearest neighbors of that partition.
+            # repeat until we have at least min_links neighbors.
+            count = 0
+            for _ in range(min_links):
+                for partition in list_unique_partitions:
+                    cur_arcs.append((cur_index, neighbors_candidates[partition][0]))
+                    # Remove the first element from the partition's neighbors.
+                    neighbors_candidates[partition] = neighbors_candidates[partition][1:]
+                    # If the partition has no more neighbors, remove it from the list.
+                    if len(neighbors_candidates[partition]) == 0:
+                        list_unique_partitions.remove(partition)
+
+                    count += 1
+
+                    if count >= min_links:
+                        break
 
         arcs.extend(cur_arcs)
 
