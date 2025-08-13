@@ -1288,7 +1288,7 @@ def arc_estimation_control_network(
         except (RuntimeError, ValueError):
             print(f"Optimal parameters not found. Skipping arc {(pnt_i_idx, pnt_j_idx)}")
 
-            # Lengte tijdseries
+            # Length time-series
             ts_length = len(ampl_i)
 
             # Fill everything with nans
