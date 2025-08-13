@@ -13,7 +13,6 @@ import numpy as np
 import pykrige
 import xarray as xr
 from scipy import signal
-from scipy.ndimage import convolve1d
 from scipy.spatial import KDTree
 
 logger = getLogger(__name__)
@@ -23,9 +22,9 @@ def estimate_non_linear_deformation(
         psc_phase: xr.DataArray,
         baseline_years: xr.DataArray,
         filter_length: int,
-        method='block',
-        mode='mirror'
-    ):
+        temporal_scale: int = 1000,
+        method='gaussian',
+    ) -> xr.DataArray:
     """Apply a low-pass filter to the time series to remove the non-linear deformation.
 
     Parameters
@@ -36,13 +35,11 @@ def estimate_non_linear_deformation(
         The baseline years corresponding to the time series.
     filter_length: int
         Length of the filter (year) to apply a low-pass filter to the time series.
-        This is used to determine the size of the window i.e. 2 * filter_length + 1.
+    temporal_scale: int, optional.
+        The temporal scale in milliseconds per year.
     method: str, optional
         Method to use for building the window , e.g. 'block', 'triangle', or
-        'gaussian', default is 'block', see `scipy.signal.windows` for more
-    mode: str, optional
-        The mode to use for the convolution, default is 'mirror', see
-        `scipy.ndimage.convolve1d` for more.
+        'gaussian', default is 'gaussian', see `scipy.signal.windows` for more
 
     Returns
     -------
@@ -61,8 +58,9 @@ def estimate_non_linear_deformation(
         raise ValueError("baseline_years must be monotonic.")
 
     # Build the window for the low-pass filter
-    std_dev = filter_length / 3  # Standard deviation defined based on a Gaussian function
-    window_size = int(6 * std_dev) | 1  # Window size is ±3 standard deviations
+    baseline_scaled = baseline_years * temporal_scale
+    timespan = baseline_scaled.max() - baseline_scaled.min()
+    window_size = int(2 * timespan) + 1
 
     if method == 'block':
         window = signal.windows.boxcar(window_size)
@@ -71,8 +69,8 @@ def estimate_non_linear_deformation(
         window = signal.windows.triang(window_size)
 
     elif method == 'gaussian':
+        std_dev = filter_length * temporal_scale / 6  # ±3σ covers the window
         window = signal.windows.gaussian(window_size, std=std_dev)
-
     else:
         raise NotImplementedError(
             f"Method {method} is not implemented. "
@@ -82,9 +80,18 @@ def estimate_non_linear_deformation(
     # normalize the window
     window = window / window.sum()
 
-     # Apply the low-pass filter and return the non-linear deformation
+    # Extract weights for each time difference
+    time_diffs = np.subtract.outer(baseline_scaled.values, baseline_scaled.values)
+    center_index = window_size // 2
+    weight_indices = np.clip(center_index + np.round(time_diffs).astype(int), 0, window_size - 1)
+    weight_matrix = window[weight_indices]
+
+    # Normalize weights along axis=1 (per row)
+    weight_matrix /= np.sum(weight_matrix, axis=1, keepdims=True)
+
+    # Apply the low-pass filter and return the non-linear deformation
     def apply_filter(data):
-        return convolve1d(data, window, mode=mode)
+        return np.einsum('ij,j->i', weight_matrix, data)
 
     return xr.apply_ufunc(
         apply_filter,
@@ -303,7 +310,7 @@ def krige_in_space(
     })
 
 
-def estimate_atmosphere_phase(stm, grid=None):
+def estimate_atmosphere_phase(stm: xr.Dataset, grid=None) -> xr.Dataset:
     """Estimate the atmosphere phase.
 
     This function applies a temporal filter to extract the high-frequency
@@ -314,8 +321,7 @@ def estimate_atmosphere_phase(stm, grid=None):
     non_linear = estimate_non_linear_deformation(
         psc_phase=stm["d_phase"],
         baseline_years=stm["time"],
-        filter_length=30,
-        method='gaussian'
+        filter_length=1,
     )
     stm["atmosphere_estimated"] = stm["d_phase"] - non_linear + stm["atmosphere_base"]
 
