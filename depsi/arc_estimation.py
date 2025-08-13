@@ -1,3 +1,6 @@
+"""arc estimation algorithms."
+
+
 import numpy as np
 from scipy.optimize import curve_fit
 
