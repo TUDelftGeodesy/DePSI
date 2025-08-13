@@ -174,3 +174,5 @@ xar_matching_scatterer_slc_data_f.attrs['target_name'] = target_name_dict
 # Rename the 'target' dimension to 'space' in the xarray Dataset
 xar_matching_scatterer_slc_data_f = xar_matching_scatterer_slc_data_f.rename({'target': 'space'})
 
+print("")
+print(xar_matching_scatterer_slc_data_f)
