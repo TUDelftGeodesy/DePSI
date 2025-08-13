@@ -1,10 +1,47 @@
 import os
-from datetime import UTC, datetime
+
+import dask.array as da
+import pyproj
+
+try:
+    from datetime import UTC, datetime
+except ImportError:  # UTC can only be imported from Python 3.11 onwards
+    import warnings
+    from datetime import datetime, timezone
+
+    UTC = timezone.utc
+    warnings.warn(
+        """
+    DePSI uses datetime.UTC, which is only supported from Python 3.11 onwards.
+    For older Python versions, datetime.timezone.utc is used.
+    This might be deprecated in newer DePSI versions.
+    """,
+        DeprecationWarning,
+        stacklevel=1,  # necessary to start the call stack here.
+    )
 
 import geopandas
 import numpy as np
 import pytz
 import xarray as xr
+
+
+def wrap_phase(phs_abs):
+    """Wrap the absolute phase to the range [-pi, pi).
+
+    Parameters
+    ----------
+    phs_abs : array_like or float
+        The absolute phase.
+
+    Returns
+    -------
+    ndarray or float
+        The wrapped phase in the range [-pi, pi).
+    """
+    phs_wrapped = np.remainder(phs_abs + np.pi, 2 * np.pi) - np.pi
+
+    return phs_wrapped
 
 
 def _orbit_fit(orbit, verbose=0, der=True):
@@ -87,7 +124,7 @@ def _orbit_fit(orbit, verbose=0, der=True):
     return orbit_fit
 
 
-def _npdatetime64_to_datetime(date: np.datetime64) -> datetime:
+def npdatetime64_to_datetime(date: np.datetime64) -> datetime:
     """Convert a numpy datetime64 object to a python datetime object.
 
     Parses the np.datetime64 object into a datetime object.
@@ -120,7 +157,8 @@ def _get_aoi_shapefile_bounding_box(aoi_filename: str) -> tuple:
     Returns
     -------
     tuple
-      tuple of two np.ndarrays, the first containing the latitudes, the second the longitudes of the bounding box.
+      tuple of two lists, the first containing the longitude extent, the second the latitude extent of the
+      bounding box.
 
     Raises
     ------
@@ -140,9 +178,11 @@ def _get_aoi_shapefile_bounding_box(aoi_filename: str) -> tuple:
     # open the file, and iterate through the geometry
     shape = geopandas.read_file(aoi_filename)
     # calculate the coordinates of the bounding box of the provided AoI
-    bounding_box = shape.envelope.boundary[0].xy
+    bounding_box = shape.total_bounds
+    # format as longitude extent (in x), latitude extent (in y)
+    bounding_box_formatted = ([bounding_box[0], bounding_box[2]], [bounding_box[1], bounding_box[3]])
 
-    return bounding_box
+    return bounding_box_formatted
 
 
 def crop_slc_spacetime(
@@ -172,13 +212,13 @@ def crop_slc_spacetime(
       - lon -> the longitude of the pixels
     aoi_filename: str | None
       full path to the AoI shapefile, expects .shp format. Set to None if no crop in space is requested.
-    start_date : datetime | str
-      the start date of the crop, in one of four formats:
+    start_date : datetime | str | None
+      the start date of the crop, in one of three formats:
       - datetime object
       - str object, formatted as YYYYMMDD
       - None, no cropping in time requested
-    end_date : datetime | str | int
-      the end date of the crop, in one of three formats:
+    end_date : datetime | str | int | None
+      the end date of the crop, in one of four formats:
       - datetime object
       - str object, formatted as YYYYMMDD
       - int object, which is interpreted as the number of images intended in the crop (including the start date). If
@@ -237,7 +277,7 @@ def crop_slc_spacetime(
     elif isinstance(end_date, datetime):
         format_end_date = datetime(end_date.year, end_date.month, end_date.day, tzinfo=pytz.UTC)
     elif isinstance(end_date, int):
-        fmt_dates = [_npdatetime64_to_datetime(date) for date in slcs["time"].values]
+        fmt_dates = [npdatetime64_to_datetime(date) for date in slcs["time"].values]
         valid_dates = [date for date in fmt_dates if date >= format_start_date]
         end_idx = fmt_dates.index(valid_dates[0]) + end_date - 1
         end_idx = min(end_idx, len(fmt_dates) - 1)
@@ -251,9 +291,9 @@ def crop_slc_spacetime(
     # TIME CROP
     if format_start_date is not None and format_end_date is not None:
         # first the last assertion
-        assert "time" in slcs.keys(), f"Expected axis {axis} in SLCs but it is not present!"
+        assert "time" in slcs.keys(), "Expected axis 'time' in SLCs but it is not present!"
 
-        fmt_dates = np.array([_npdatetime64_to_datetime(date) for date in slcs["time"].values])
+        fmt_dates = np.array([npdatetime64_to_datetime(date) for date in slcs["time"].values])
         time_mask = (format_start_date <= fmt_dates) & (fmt_dates <= format_end_date)
         slcs = slcs.sel(time=slcs["time"].values[time_mask])
 
@@ -269,3 +309,172 @@ def crop_slc_spacetime(
         slcs = slcs.where(space_mask.compute(), drop=True)
 
     return slcs
+
+
+def project_stm_coordinates(stm: xr.Dataset, projection: str = "RD") -> xr.Dataset:
+    """Project the latitude and longitude of a space-time matrix to another reference frame.
+
+    The latitude and longitude layers are transformed into the desired projection, default Rijksdriehoek or RD.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+      Space-time matrix with the layers `lat` (latitude) and `lon` (longitude in WGS84 (EPSG:4326), and coordinate
+      `space`
+    projection: str, optional
+      Projection to which the latitude and longitude coordinates should be transformed. "RD" defaults to "EPSG:28992".
+      Default "RD"
+
+    Returns
+    -------
+    xr.Dataset
+      Space-time matrix with the added layers `projection_x` and `projection_y`, where projection is the requested
+      parameter `projection` in lower case.
+
+    Raises
+    ------
+    AssertionError
+      When layers "lon" or "lat" do not exist in `stm`.
+    """
+    assert "lon" in stm.keys(), "Expected a space-time matrix with longitude layer named lon but it is not there!"
+    assert "lat" in stm.keys(), "Expected a space-time matrix with latitude layer named lat but it is not there!"
+    if projection == "RD":
+        projection_formatted = "EPSG:28992"
+    elif projection[:5] == "EPSG:":
+        projection_formatted = projection
+    else:
+        raise ValueError(f"Invalid projection provided! Expected 'RD' or 'EPSG:###' but got {projection}!")
+
+    wgs84 = pyproj.Transformer.from_crs("EPSG:4326", projection_formatted, always_xy=True).transform
+    # Convert Lat and Lon to coordinates
+    proj_x, proj_y = wgs84(stm["lon"], stm["lat"])
+
+    # Add coordinates to the dataset
+    stm = stm.assign({f"{projection.lower()}_x": (["space"], proj_x)})
+    stm = stm.assign({f"{projection.lower()}_y": (["space"], proj_y)})
+
+    return stm
+
+
+def add_stm_time_deltas(stm: xr.Dataset) -> xr.Dataset:
+    """Add the time differences since the first image to a space-time matrix.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+      the space-time matrix with an axis "time"
+
+    Returns
+    -------
+    xr.Dataset
+      the space-time matrix with two new variables:
+      - `days_since_first_img`, the number of days since the first epoch in the STM
+      - `years_since_first_img`, the number of years since the first epoch in the STM, assuming 365.2425 days per year
+
+    """
+    assert "time" in stm.keys(), "Expected STM to have time axis but it's not there!"
+    # Add extra time coordinate variables for time intervals since first image
+    days = np.array(
+        [
+            (npdatetime64_to_datetime(date) - npdatetime64_to_datetime(stm["time"].values[0])).days
+            for date in stm["time"].values
+        ]
+    )
+    stm = stm.assign({"days_since_first_img": (["time"], days)})
+    stm = stm.assign({"years_since_first_img": (["time"], days / 365.2425)})
+
+    return stm
+
+
+def stm_compute_single_time_differences(
+    stm: xr.Dataset, single_difference_mother: str | datetime = "auto"
+) -> xr.Dataset:
+    """Compute the single differences of an STM in time with respect to a given mother image.
+
+    This computes the single difference complex value, phase, unnormalized amplitude, and h2ph values with respect
+    to the provided single difference mother. The mother image is the first image acquired on or after the provided
+    date (if a datetime object or str object is provided), or the mother image of the input dataset (if 'auto' mode
+    is selected).
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+      the space-time matrix with an axis "time" and "space", and variables `h2ph` and `complex`
+    single_difference_mother: datetime | str
+      the date to be used as the mother image for the single difference computations, in one of three formats:
+      - 'auto' : will detect the mother image in the input SLC dataset, and use that epoch.
+      - datetime object
+      - str object, formatted as YYYYMMDD
+
+    Returns
+    -------
+    xr.Dataset
+      the space-time matrix with four new variables:
+        - sd_h2ph (space, time): single difference height to phase conversion with respect to single_difference_mother
+        - sd_complex (space, time): single difference complex phasor with respect to single_difference_mother
+        - sd_amplitude_unnormalized (space, time): single difference complex phasor amplitude to
+            single_difference_mother, not normalized
+        - sd_phase (space, time): single difference phase with respect to single_difference_mother
+
+    Raises
+    ------
+    ValueError
+      Raised when:
+        - single_difference_mother is of an unsupported format
+        - the date provided to single_difference_mother is not in the input stack date range
+    """
+    # Identify the mother image
+    if isinstance(single_difference_mother, datetime):
+        format_mother_date = datetime(
+            single_difference_mother.year, single_difference_mother.month, single_difference_mother.day, tzinfo=pytz.UTC
+        )
+        mother_index = [
+            idx for idx, date in enumerate(stm["time"].values) if format_mother_date <= npdatetime64_to_datetime(date)
+        ]  # select all images beyond the mother date
+    elif isinstance(single_difference_mother, str):
+        if single_difference_mother == "auto":
+            mother_index = np.where(abs(stm["h2ph"]).sum(axis=0).values == 0)[0]
+        elif len(single_difference_mother) == 8:
+            format_mother_date = datetime(
+                eval(single_difference_mother[:4]),
+                eval(single_difference_mother[4:6].lstrip("0")),
+                eval(single_difference_mother[6:].lstrip("0")),
+                tzinfo=pytz.UTC,
+            )
+            mother_index = [
+                idx
+                for idx, date in enumerate(stm["time"].values)
+                if format_mother_date <= npdatetime64_to_datetime(date)
+            ]  # select all images beyond the mother date
+        else:
+            raise ValueError(f'Cannot parse {single_difference_mother}, not of type "auto" or "YYYYMMDD"!')
+    else:
+        raise ValueError(f"Unknown format {type(single_difference_mother)} for single_difference_mother!")
+    if len(mother_index) == 0:
+        raise ValueError(
+            f"Cannot find provided mother date {single_difference_mother}, "
+            "please provide a date that is within the range of the stack! Possible dates: "
+            f"{stm.time.values[0]}--{stm.time.values[-1]}"
+        )
+    sd_mother_index = mother_index[0]  # 0 in case more than 1 image is detected
+    # In that case we take the first image that was detected, as this is expected
+    sd_mother = npdatetime64_to_datetime(stm["time"].values[sd_mother_index])
+
+    # Format the single difference mother, and save it to the STM
+    stm.attrs["ps_sd_mother"] = sd_mother.strftime("%Y%m%d")
+
+    # calculate the h2ph single difference (= daughter - mother)
+    sd_h2ph = stm["h2ph"] - stm["h2ph"][:, sd_mother_index]
+    stm = stm.assign({"sd_h2ph": (["space", "time"], sd_h2ph.data)})
+
+    # calculate the complex single difference, the amplitude, and the phase
+    mother_comp = stm["complex"][:, sd_mother_index].conj()
+    sd_complex_transposed = stm["complex"].transpose() * mother_comp
+    sd_complex = sd_complex_transposed.transpose()
+    sd_phase = da.angle(sd_complex)
+    sd_amplitude_unnormalized = da.abs(sd_complex)
+    stm = stm.assign({"sd_complex": (["space", "time"], sd_complex.data)})
+    stm = stm.assign({"sd_amplitude_unnormalized": (["space", "time"], sd_amplitude_unnormalized.data)})
+    stm = stm.assign({"sd_phase": (["space", "time"], sd_phase.data)})
+
+    return stm

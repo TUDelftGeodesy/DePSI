@@ -1,0 +1,50 @@
+# General information
+name: Generate_STM
+
+description: This config file sets parameters to run `generate_stm` scripts.
+
+paths:
+  slc_file: path/to/nl_amsterdam_s1_dsc_t037.zarr
+  stm_file: path/to/nl_amsterdam_s1_dsc_t037_stm.zarr
+
+# Steps; functions to run
+# PS selection method
+ps_selection:
+  method: nmad
+  threshold: 0.35
+  output_chunks: 1000
+
+# Recalibrated NAD and NMAD settings
+stm_add_incremental:
+  mode: recalibration
+  method: nmad
+  recalibration_jump_size: 10
+
+# Projection settings
+project_stm_coordinates_projection: RD
+
+# Compute temporal differences
+stm_single_difference_mother: auto
+
+# Input variables for the partitioning
+do_stm_partitioning: True
+stm_partitioning:
+  search_method: pelt
+  cost_model: l2
+  min_partition_size: 27
+
+stm_partitioning_normal:
+  amplitude_variable_name: amplitude
+  output_variable_prefix: partition
+  output_variables: ["nmad", "nad", "quality_nmad_2sigma"]
+
+stm_partitioning_single_difference:
+  amplitude_variable_name: sd_amplitude_unnormalized
+  output_variable_prefix: partition_sd
+  output_variables: ["mad", "amplitude_sigma", "amplitude_mean", "amplitude_median"]
+
+# Input variables for the outlier detection
+do_detect_outliers_stm: True
+detect_outliers_stm:
+  window_size: 15
+  n_sigma: 3

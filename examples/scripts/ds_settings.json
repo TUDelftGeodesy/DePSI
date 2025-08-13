@@ -1,13 +1,11 @@
 {
-  "project_name": "nieuwolda",
   "settings_filename": "ds_settings.json",
-  "run_name": "testpy",
+  "run_name": "testpy_ds",
   "proj_dir": "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/insar/",
   "stack_root_dir": "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/cropped_stacks/",
   "aoi_shapefile": "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/contextual_data/aoi/nieuwolda_aoi_test.shp",
   "parcel_shapefile": "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/contextual_data/parcels/nieuwolda_attributes_wgs84_test.shp",
   "meteo_file": "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/contextual_data/knmi/",
-  "optical_rs": "",
   "stack_prefix": "nl_groningen",
   "start_date": 20200701,
   "end_date": 20201231,
@@ -15,7 +13,7 @@
   "reslc": "yes",
   "ds_ml_window": "polygon",
   "ds_min_cells": 40,
-  "ds_shp_test": "yes",
+  "ds_shp_test": "no",
   "pe_method": "emi",
   "ps_method": "nad",
   "ps_threshold": 0.3
