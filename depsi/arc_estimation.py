@@ -509,7 +509,7 @@ def _compute_residuals_per_partition_stm(y_arc, y_est, Q_dd, bkps):
 
 
 def _flatten_arrays_in_dict(dictionary):
-    """Flatten arrays in a fictionary.
+    """Flatten arrays in a dictionary.
 
     Function is required and used in arc_estimation_functions
 
