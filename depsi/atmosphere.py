@@ -326,10 +326,7 @@ def estimate_atmosphere_phase(stm: xr.Dataset, grid=None) -> xr.Dataset:
     stm["atmosphere_estimated"] = stm["d_phase"] - non_linear + stm["atmosphere_base"]
 
     # Step 2: Apply spatial kriging to estimate atmospheric phase per epoch
-    interpolated = krige_in_space(
-        ps_atmosphere=stm["atmosphere_estimated"],
-        grid=grid,
-        grid_size=100,
-    )
+    # TODO interpolated = krige_in_space(...)
+    interpolated = None
 
     return interpolated
