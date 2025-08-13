@@ -739,7 +739,7 @@ def ordered_arcs_connection_point_and_control_network(
     # Compute the arcs between the connection_point and the control points.
     # Make sure that the control_points comes first
     arcs = np.zeros((len(sorted_control_idx), 2), dtype=int)
-    arcs[:, 0] = sorted_control_idx  # grondslag points
+    arcs[:, 0] = sorted_control_idx  # control network points
     arcs[:, 1] = connection_point_idx.values  # connection_point
 
     return arcs, sorted_quality_values
