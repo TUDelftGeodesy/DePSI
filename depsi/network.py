@@ -340,14 +340,16 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
                         max(cur_index, neighbors_candidates[partition][0]),
                     )
                     cur_arcs.append(arc_to_add)
+                    count += 1
 
                     # Remove the first element from the partition's neighbors.
                     neighbors_candidates[partition] = neighbors_candidates[partition][1:]
+
                     # If the partition has no more neighbors, remove it from the list.
                     if len(neighbors_candidates[partition]) == 0:
                         list_unique_partitions.remove(partition)
 
-                    count += 1
+        # Add the current arcs to the list of all arcs.
         arcs.extend(cur_arcs)
 
     # Remove duplicates and make the list canonical.
