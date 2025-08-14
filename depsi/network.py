@@ -283,6 +283,10 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
     else:
         pairs = tree.query_pairs(r=np.inf, output_type="ndarray")
 
+    # Duplicate pairs with reversed indices to ensure that arcs are undirected.
+    # This is necessary because KDTree returns pairs in one direction only.
+    pairs = np.concatenate((pairs, np.flip(pairs, axis=1)), axis=0)
+
     # Loop over all indices to collect neighbors.
     # For each index, we will collect the nearest min_links neighbors per partition.
     # The current node is separated into its own partition.
@@ -292,30 +296,27 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
 
         # Get all neighbors of the current node.
         neighbors = pairs[pairs[:, 0] == cur_index][:, 1]
-        neighbors = np.array(neighbors, dtype=int)
+        neighbors = np.array(neighbors, dtype=int).tolist()
 
-        if len(neighbors) == 0:
+        if len(neighbors) == 0:  # skip if there are no neighbors
             continue
         elif len(neighbors) <= min_links:
             # If there are not enough neighbors, we can just connect them all.
             for idx in neighbors:
                 cur_arcs.append((cur_index, idx))
         else:
-            # Calculate the partition and distance for each neighbor.
             partitions = [
-                int(
-                    math.floor(num_partitions * (0.5 + math.atan2(coordinates[idx][1], coordinates[idx][0]) / math.tau))
-                )
-                for idx in neighbors
+                int(math.floor(num_partitions * (0.5 + math.atan2(coordinate[1], coordinate[0]) / math.tau)))
+                for coordinate in coordinates[neighbors] - coordinates[cur_index]
             ]
             distances = [_get_distance(coordinates[cur_index], coordinates[idx]) for idx in neighbors]
 
             # Create a 3-column array with partition, distance, and index
             # Sort it by partition and then distance
-            values = np.array(sorted(list(zip(partitions, distances, neighbors, strict=False))))
-            list_partitions = list(values[:, 0].astype(int))  # Convert partitions to int for easier processing
-            list_neighbors_idx = list(values[:, 2].astype(int))  # Convert neighbor indices to int
-            list_unique_partitions = list(np.unique(values[:, 0]).astype(int))  # Unique partitions as integers
+            sorted_arr = np.array(sorted(list(zip(partitions, distances, neighbors, strict=False))))
+            list_partitions = sorted_arr[:, 0].astype(int).tolist()  # Convert partitions to int for easier processing
+            list_neighbors_idx = sorted_arr[:, 2].astype(int).tolist()  # Convert neighbor indices to int
+            list_unique_partitions = np.unique(sorted_arr[:, 0]).astype(int).tolist()  # Unique partitions as integers
 
             neighbors_candidates = {}
             for (
@@ -331,7 +332,15 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
             count = 0
             while count < min_links:
                 for partition in list_unique_partitions:
-                    cur_arcs.append((cur_index, neighbors_candidates[partition][0]))
+                    # make sure the source and target are in ascending order
+                    # In each arc, make sure the source is less than the target.
+                    # This is done to make the arcs undirected and canonical.
+                    arc_to_add = (
+                        min(cur_index, neighbors_candidates[partition][0]),
+                        max(cur_index, neighbors_candidates[partition][0]),
+                    )
+                    cur_arcs.append(arc_to_add)
+
                     # Remove the first element from the partition's neighbors.
                     neighbors_candidates[partition] = neighbors_candidates[partition][1:]
                     # If the partition has no more neighbors, remove it from the list.
@@ -339,7 +348,6 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
                         list_unique_partitions.remove(partition)
 
                     count += 1
-
         arcs.extend(cur_arcs)
 
     # Remove duplicates and make the list canonical.
