@@ -215,33 +215,6 @@ def remove_isolated_stm(stm: xr.Dataset, arcs: xr.Dataset) -> xr.Dataset:
     return stm_updated, arcs_updated
 
 
-def _get_distance(s, t):
-    """Calculate the distance between two points.
-
-    Args:
-    ----
-        s: the source point.
-        t: the target point.
-
-    Returns:
-    -------
-        The distance between the two points.
-    """
-    # TODO(tvl) More complex distance functions can be implemented here.
-    #
-    # For example, network generation gives better results for square Euclidean distances.
-    # Non-square coordinate systems (like non-square image coordinates) may distort the circle properties of Delaunay
-    # networks into ellipses.
-    # Non-Euclidean coordinate systems (like angular lat-lon systems) may distort these same properties depending on
-    # the distance to a pole.
-    #
-    # Coordinate system transformations may be done on the STM before generating the network.
-    # However, there may be cases where it is impossible or undesirable to transform the point coordinates in the STM.
-    # In such a case, coordinates may be transformed inside this function.
-
-    return math.dist(s, t)
-
-
 def _generate_arcs_delaunay(coordinates, max_length=None):
     """Create a network using Delaunay triangulation."""
     # Create network and collect neighbors.
@@ -252,7 +225,7 @@ def _generate_arcs_delaunay(coordinates, max_length=None):
     arcs = []
     for s in range(len(neighbors_ptr) - 1):
         for t in range(neighbors_ptr[s], neighbors_ptr[s + 1]):
-            length = _get_distance(coordinates[int(s)], coordinates[neighbors_idx[t]])
+            length = math.dist(coordinates[int(s)], coordinates[neighbors_idx[t]])
             if max_length is None or length <= max_length:
                 arcs.append(tuple(sorted([int(s), int(neighbors_idx[t])])))
 
@@ -312,7 +285,7 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
                 int(math.floor(num_partitions * (0.5 + math.atan2(coordinate[1], coordinate[0]) / math.tau)))
                 for coordinate in coordinates[neighbors] - coordinates[cur_index]
             ]
-            distances = [_get_distance(coordinates[cur_index], coordinates[idx]) for idx in neighbors]
+            distances = [math.dist(coordinates[cur_index], coordinates[idx]) for idx in neighbors]
 
             # Create a 3-column array with partition, distance, and index
             # Sort it by partition and then distance
@@ -347,11 +320,11 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
                         cur_arcs.append(arc_to_add)
                         count += 1
 
-                        if count >= min_links:
-                            break
-
                         # Remove the first element from the partition's neighbors.
                         neighbors_candidates[partition].pop(0)
+
+                        if count >= min_links:
+                            break
                     else:
                         continue  # If there are no more neighbors in this partition, skip it
 
