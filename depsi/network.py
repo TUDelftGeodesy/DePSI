@@ -358,6 +358,9 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
         # Add the current arcs to the list of all arcs.
         arcs.extend(cur_arcs)
 
+    # Sort all arcs by source
+    arcs = sorted(arcs, key=lambda x: x[0])
+
     # Remove duplicates and make the list canonical.
     arcs = sorted(list(set(arcs)))
 
