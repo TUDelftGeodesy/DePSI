@@ -286,6 +286,7 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
     # Duplicate pairs with reversed indices to ensure that arcs are undirected.
     # This is necessary because KDTree returns pairs in one direction only.
     pairs = np.concatenate((pairs, np.flip(pairs, axis=1)), axis=0)
+    pairs = pairs[np.argsort(pairs[:, 0])]  # Sort pairs by first column (source index).
 
     # Loop over all indices to collect neighbors.
     # For each index, we will collect the nearest min_links neighbors per partition.
@@ -294,9 +295,7 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
         # List of arcs connected to the current node.
         cur_arcs = []
 
-        # Get all neighbors of the current node.
-        neighbors = pairs[pairs[:, 0] == cur_index][:, 1]
-        neighbors = np.array(neighbors, dtype=int).tolist()
+        neighbors = pairs[pairs[:, 0] == cur_index][:, 1].tolist()
 
         if len(neighbors) == 0:  # skip if there are no neighbors
             continue
@@ -335,19 +334,22 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
                     # make sure the source and target are in ascending order
                     # In each arc, make sure the source is less than the target.
                     # This is done to make the arcs undirected and canonical.
-                    arc_to_add = (
-                        min(cur_index, neighbors_candidates[partition][0]),
-                        max(cur_index, neighbors_candidates[partition][0]),
-                    )
-                    cur_arcs.append(arc_to_add)
-                    count += 1
 
-                    # Remove the first element from the partition's neighbors.
-                    neighbors_candidates[partition] = neighbors_candidates[partition][1:]
+                    if len(neighbors_candidates[partition]) > 0:
+                        arc_to_add = (
+                            min(cur_index, neighbors_candidates[partition][0]),
+                            max(cur_index, neighbors_candidates[partition][0]),
+                        )
+                        cur_arcs.append(arc_to_add)
+                        count += 1
 
-                    # If the partition has no more neighbors, remove it from the list.
-                    if len(neighbors_candidates[partition]) == 0:
-                        list_unique_partitions.remove(partition)
+                        if count >= min_links:
+                            break
+
+                        # Remove the first element from the partition's neighbors.
+                        neighbors_candidates[partition].pop(0)
+                    else:
+                        continue  # If there are no more neighbors in this partition, skip it
 
         # Add the current arcs to the list of all arcs.
         arcs.extend(cur_arcs)
