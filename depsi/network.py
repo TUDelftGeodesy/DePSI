@@ -261,13 +261,13 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
     pairs = np.concatenate((pairs, np.flip(pairs, axis=1)), axis=0)
     pairs = pairs[np.argsort(pairs[:, 0])]  # Sort pairs by first column (source index).
 
-    # Loop over all indices to collect neighbors.
-    # For each index, we will collect the nearest min_links neighbors per partition.
-    # The current node is separated into its own partition.
+    # Loop over all points
+    # Using each point as a source and its neighbors as targets
     for cur_index in indices:
         # List of arcs connected to the current node.
         cur_arcs = []
 
+        # Get the neighbors of the current node
         neighbors = pairs[pairs[:, 0] == cur_index][:, 1].tolist()
 
         if len(neighbors) == 0:  # skip if there are no neighbors
