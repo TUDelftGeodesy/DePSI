@@ -23,7 +23,7 @@ def form_network(
     key_ylabel: str = "lat",
     network_method: Literal["redundant", "delaunay"] = "redundant",
     max_length: float = None,
-    min_links: int = 12,
+    n_links: int = 12,
     num_partitions: int = 8,
     dphase_method: Literal["conjmult", "subtract"] = "subtract",
 ) -> xr.Dataset:
@@ -51,8 +51,8 @@ def form_network(
         network formation method, by default "redundant"
     max_length : float, optional
         maximum arc length, by default None
-    min_links : int, optional
-        minimum links per point, by default 12
+    n_links : int, optional
+        target number of links per point, by default 12
         only effective when network_method is "redundant"
     num_partitions : int, optional
         number of partitions of searching when forming redundant network, by default 8
@@ -73,8 +73,8 @@ def form_network(
     """
     # Generate the network arcs.
     if network_method == "redundant":
-        if min_links <= 0:
-            logger.error(f"min_links must be strictly positive (currently: {min_links})")
+        if n_links <= 0:
+            logger.error(f"n_links must be strictly positive (currently: {n_links})")
             return
         if num_partitions <= 0:
             logger.error(f"num_partitions must be strictly positive (currently: {num_partitions})")
@@ -92,7 +92,7 @@ def form_network(
     if network_method == "delaunay":
         arcs = _generate_arcs_delaunay(coordinates, max_length)
     elif network_method == "redundant":
-        arcs = _generate_arcs_redundant(coordinates, max_length, min_links, num_partitions)
+        arcs = _generate_arcs_redundant(coordinates, max_length, n_links, num_partitions)
 
     # Compute the phase difference.
     arcs_unzipped = list(zip(*arcs, strict=False))
@@ -235,12 +235,18 @@ def _generate_arcs_delaunay(coordinates, max_length=None):
     return arcs
 
 
-def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_partitions=8):
-    """Create a network with at least min_links arcs per node using KD tree with hierarchy logic.
+def _generate_arcs_redundant(coordinates, max_length=None, n_links=12, num_partitions=8):
+    """Create a redundant network.
 
-    Uses KD tree for efficient neighbor finding, but applies the hierarchy-based selection
-    tocollect the nth nearest neighbor from ALL partitions
-    before moving to the (n+1)th nearest neighbor.
+    The redundant network is formed with the following steps:
+
+    1. Create a KDTree and find all pairs of points within the maximum distance.
+    2. Loop through each point and find its neighbors within the maximum distance.
+    3. Divide neighbors into partitions based on their direction.
+    4. Select the nth nearest neighbors from all partitions, starting from n=1.
+    5. Sort the selected neighbors by distance, add them to the arcs list. If n_links is not
+       exceeded, continue to the n+1th nearest neighbors of all partitions.
+    6. Repeat until n_links is reached.
     """
     arcs = []
     indices = range(len(coordinates))
@@ -262,7 +268,7 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
 
         if len(neighbors) == 0:  # skip if there are no neighbors
             continue
-        elif len(neighbors) <= min_links:
+        elif len(neighbors) <= n_links:
             # If there are not enough neighbors, connect them all.
             for idx in neighbors:
                 arc_to_add = (min(cur_index, idx), max(cur_index, idx))
@@ -275,21 +281,21 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
             ]
             distances = [math.dist(coordinates[cur_index], coordinates[idx]) for idx in neighbors]
 
-            # Create sorted array by partition and then distance (same as old function)
-            soreted_arr = np.array(sorted(list(zip(partitions, distances, neighbors, strict=False))))
+            # Create sorted array by partition and then distance
+            sorted_arr = np.array(sorted(list(zip(partitions, distances, neighbors, strict=False))))
 
-            # Split into partitions (same logic as old function)
-            partitions_diff = soreted_arr[1:, 0] - soreted_arr[:-1, 0]
+            # Split into partitions
+            partitions_diff = sorted_arr[1:, 0] - sorted_arr[:-1, 0]
             separators = np.where(partitions_diff > 0)[0]
-            partitions_split = np.split(soreted_arr, separators + 1)
-            partitions_split = [partition[:min_links] for partition in partitions_split]
+            partitions_split = np.split(sorted_arr, separators + 1)
+            partitions_split = [partition[:n_links] for partition in partitions_split]
 
-            # Collect the neighbor 'hierarchies' (same as old function)
-            neighbor_hierarchies = [[] for _ in range(min_links)]
+            # Collect the neighbor 'hierarchies'
+            neighbor_hierarchies = [[] for _ in range(n_links)]
             count = 0
-            for n in range(min_links):
+            for n in range(n_links):
                 # Break early if we have gathered enough neighbors.
-                if min_links <= count:
+                if n_links <= count:
                     break
                 for partition in partitions_split:
                     # Note that we do not break inside this loop,
@@ -298,18 +304,18 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
                         neighbor_hierarchies[n].append(partition[n])
                         count = count + 1
 
-            # Sort hierarchies per partition by distance to the current node (same as old function)
+            # Sort hierarchies per partition by distance to the current node
             neighbor_hierarchies = [
                 sorted(hierarchy, key=lambda x: x[1]) for hierarchy in neighbor_hierarchies if len(hierarchy) != 0
             ]
 
-            # Add sorted arcs to at least min_links neighbors (same as old function)
+            # Add sorted arcs to at least n_links neighbors
             cur_arcs = [
                 (min(cur_index, int(neighbor[2])), max(cur_index, int(neighbor[2])))
                 for hierarchy in neighbor_hierarchies
                 for neighbor in hierarchy
             ]
-            cur_arcs = cur_arcs[:min_links]
+            cur_arcs = cur_arcs[:n_links]
 
             arcs.extend(cur_arcs)
 
