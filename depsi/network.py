@@ -302,7 +302,11 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
         elif len(neighbors) <= min_links:
             # If there are not enough neighbors, we can just connect them all.
             for idx in neighbors:
-                cur_arcs.append((cur_index, idx))
+                arc_to_add = (
+                    min(cur_index, idx),
+                    max(cur_index, idx),
+                )
+                cur_arcs.append(arc_to_add)
         else:
             partitions = [
                 int(math.floor(num_partitions * (0.5 + math.atan2(coordinate[1], coordinate[0]) / math.tau)))
