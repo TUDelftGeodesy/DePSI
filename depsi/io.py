@@ -6,6 +6,8 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
+import sarxarray
+import xarray as xr
 
 from depsi.utils import _orbit_fit
 
@@ -336,3 +338,32 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
                         raise NotImplementedError(f"Unknown requested column {data_column}!")
 
     return datewise_data
+
+
+def read_slc_stack(filename: str) -> xr.Dataset:
+    """Read a zarr stack of SLCs into a xarray.Dataset.
+
+    Reads a zarr archive, and converts it to an xarray dataset compatible with the point selection functions.
+
+    Parameters
+    ----------
+    filename : str
+        absolute filepath to the zarr archive. The zarr archive should contain:
+        - coordinates azimuth, range, lat, lon, time
+        - variables h2ph, imag, real
+
+    Returns
+    -------
+    xarray.Dataset
+        Lazily loaded dataset with:
+        - coordinates azimuth, range, lat, lon, time
+        - variables h2ph, complex, amplitude, phase
+    """
+    assert os.path.exists(filename), f"The requested file {filename} does not exist!"
+
+    # Load the zarr file as a xr.Dataset
+    dataset = xr.open_zarr(filename)
+    # Add complex, amplitude, and phase to the dataset
+    slcs = sarxarray.from_dataset(dataset)
+
+    return slcs

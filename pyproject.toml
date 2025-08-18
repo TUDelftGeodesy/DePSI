@@ -8,12 +8,13 @@ version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
     "matplotlib",
+    "pydantic",
     "sarxarray",
     "stmtools",
     "ruptures", 
     "networkx",
 ]
-description = "Python package for interferometric synthetic aperture radar (InSAR) data processing."
+description = "Python package for interferometric synthetic aperture radar (InSAR) time series processing."
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
