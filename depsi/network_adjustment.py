@@ -570,24 +570,38 @@ def _estimate_connection_point_stm(variable, stm_control, arc_variable, arc_sigm
 
 
 def moving_average(data, window):
-    """Bereken een moving average over 1D data."""
+    """Calculate a moving average over the data with a specified window size.
+
+    Parameters
+    ----------
+    data: np.ndarray
+        1D array with the data
+    window: int
+        Windowsize
+
+    Returns
+    -------
+    np.ndarray
+        Moving average of `data` (only the valid part)
+
+    """
     return np.convolve(data, np.ones(window) / window, mode="valid")
 
 
 def _detect_ambiguous_series2(time_series, window_length=30):
-    """Detecteert en corrigeert tijdseries die afwijken door een offset van pi.
+    """Detect and correct time series that differ by a multiple of pi.
 
     Parameters
     ----------
     time_series : np.ndarray
-        Array van vorm (N, T), met N tijdseries van lengte T.
+        Array of shape (N, T), with N time seris of length T.
     window_length : int
-        Lengte van het venster voor de moving average.
+        Moving average time window.
 
     Returns
     -------
     ts_aligned : np.ndarray
-        De uitgelijnde tijdseries na correctie.
+        Aligned time series after correction.
     """
     ts_all = time_series
     N, T = ts_all.shape
@@ -785,7 +799,7 @@ def _estimate_connection_point_displ_stm_input(
     eigvals, eigvecs = np.linalg.eigh(Qyy)
     if np.any(eigvals < 0):
         # print(f"There are non negative eigenvalues at epoch {t}: Eigenvalues: {eigvals}")
-        print("There are non negative eigenvalues at epoch {t}: Qyy will be corrected...")
+        print(f"There are non negative eigenvalues at epoch {t}: Qyy will be corrected...")
 
         eigvals[eigvals < epsilon] = epsilon
         Qyy_corrected = eigvecs @ np.diag(eigvals) @ eigvecs.T
@@ -1025,7 +1039,7 @@ def connect_point_to_control_network(
     nr_conn : numpy.ndarray
         Number of arcs that the new point needs to connect to within the control network.
     sigma_post_over_sigma_prior:
-        ?
+        Upper limit on the allowed change from apriori sigma to aposteriori sigma before an arc is rejected
     alpha : float
         Level of significance for overall model test
     bounds : tuple
@@ -1180,7 +1194,7 @@ def connect_point_to_control_network(
 
         print("arcs")
         print(arcs_connection_point)
-        print("Grondslag connection points")
+        print("Control network connection points")
         print(control_conn_points)
 
         # Apply OMT for cross_range and thermal component
@@ -1426,7 +1440,7 @@ def connect_point_to_control_network_full_phase(
     nr_conn : numpy.ndarray
         Number of arcs that the new point needs to connect to within the control network.
     sigma_post_over_sigma_prior:
-        ?
+        Upper limit on the allowed change from apriori sigma to aposteriori sigma before an arc is rejected
     alpha : float
         Level of significance for overall model test
     bounds : tuple
@@ -1714,7 +1728,7 @@ def connect_point_to_control_network_full_phase(
 
         for arc_estimate in range(nr_conn):
             # estimate the cross range and thermal component based on the correctly unwrapped phases
-            # Contruct the A matrices for functional model
+            # Construct the A matrices for functional model
             # Compute different columns for the A matrices and construct to one A matrix
             A_cr = dm.a_cross_range(cr2ph_arc)
             A_lin = dm.a_linear(years)

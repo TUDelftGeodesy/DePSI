@@ -2,6 +2,7 @@
 
 import logging
 import math
+from typing import Literal
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -431,11 +432,11 @@ def _from_arcs_to_graph(arcs, plot=False, save_path="./network.png"):
         arcs : (list of tuple)
             List of arcs (edges) in the graph. Each arc is represented as a tuple
             of two nodes, e.g., [(node1, node2), (node2, node3)].
-        plot : (bolean)
+        plot : (boolean)
             Default is False, If True, the function visualizes the graph structure, including highlighting
-            connected components. Default is 0 (no visualization).
+            connected components. Default is False (no visualization).
         save_path : (string)
-            Default = "./network"
+            Default = "./network.png"
 
     Returns:
     -------
@@ -481,12 +482,12 @@ def _from_arcs_to_graph(arcs, plot=False, save_path="./network.png"):
         # Highlight the reference point
         nx.draw_networkx_nodes(network, pos, nodelist=[ref_pnt], node_color="red", node_size=800)
         plt.title(f"Network Visualization - {len(connected_components)} Connected Components")
-        plt.show()
+        plt.savefig(save_path, bbox_inches="tight")
 
     return network, degree_centrality, ref_pnt
 
 
-def _remove_low_centrality_nodes(network, deg_threshold, plot=False):
+def _remove_low_centrality_nodes(network, deg_threshold, plot=False, save_path="./network.png"):
     """Remove nodes with a low degree of centrality.
 
     Args:
@@ -495,6 +496,8 @@ def _remove_low_centrality_nodes(network, deg_threshold, plot=False):
         deg_threshold (int): The degree threshold; nodes with a degree equal to or less than this value will be removed.
         plot (bolean, optional): If True, the function visualizes the updated graph, including its connected components.
                               Default is False (no visualization).
+        save_path : (string)
+            Default = "./network.png"
 
     Returns:
     -------
@@ -555,13 +558,13 @@ def _remove_low_centrality_nodes(network, deg_threshold, plot=False):
         nx.draw_networkx_nodes(network, pos, nodelist=[ref_pnt], node_color="red", node_size=800)
 
         plt.title(f"Network Visualization after Removing Nodes with Degree ≤ {deg_threshold}")
-        plt.show()
+        plt.savefig(save_path, bbox_inches="tight")
 
     return network, degree_centrality, ref_pnt
 
 
 def test_succeeded_arcs_control_network(
-    succeeded_arcs, quality_dict_arcs, deg_threshold, min_nodes, min_redundancy, visualize_network=0
+    succeeded_arcs, quality_dict_arcs, deg_threshold, min_nodes, min_redundancy, visualize_network=False
 ):
     """Evaluate a network constructed from a set of arcs to determine if it meets structural requirements.
 
@@ -581,8 +584,8 @@ def test_succeeded_arcs_control_network(
         The minimum number of nodes required for the network to be valid.
     min_redundancy : float
         The minimum average degree (redundancy) required for the network.
-    visualize_network : int, optional
-        A flag to control network visualization of the network during evaluation. Default is 0 (no visualization).
+    visualize_network : bool, optional
+        A flag to control network visualization of the network during evaluation. Default is False (no visualization).
 
     Returns
     -------
@@ -756,8 +759,9 @@ def construct_control_network_test_arcs(
     sigma_ampl_sd,
     mad_ampl_sd,
     median_ampl_sd,
-    rdx,
-    rdy,
+    x_coordinates,
+    y_coordinates,
+    coordinate_type: Literal["euclidean", "geographic"] = "euclidean",
 ):
     """Test the arcs in the constructed control network.
 
@@ -772,59 +776,61 @@ def construct_control_network_test_arcs(
     buffer_radius_ref:
         Size of search window for reference point
     dist_to_quality:
-        ?
+        relates arc length to additional sigma
     N_max_arcs:
         Maximum number of arcs
     N_top:
-        ?
+        Number of top-ranked arcs to start with.
     N_batch:
-        ?
+        Number of additional arcs to add in each iteration.
     deg_threshold:
-        ?
+        Degree threshold for removing low-centrality nodes from the network.
     min_nodes:
-        ?
+        Minimum number of nodes required in the final network.
     min_redundancy:
-        ?
+        Minimum average redundancy (degree) required in the final network.
     nad_max:
         Maximum NAD
     visualize_network:
         Boolean whether or not to visualize the network
     sigma_post_over_sigma_prior:
-        ?
+        Upper limit on how much the aposteriori sigma of an arc is allowed to differ from the apriori sigma
     nr_max_iter_control:
         Maximum number of iterations in the network testing
-    bounds:
-        ?
-    m2ph
-        ?
-    years:
-        ?
-    dates:
-        ?
-    temperature:
-        ?
-    sd_complex:
+    bounds: list of tuples
+        Bounds for parameter estimation in the format (lower_bounds, upper_bounds).
+    m2ph: float
+        Meters to phase conversion factor
+    years: np.ndarray
+        Array of decimal years corresponding to the time series epochs.
+    dates: np.ndarray
+        Array of date indices or timestamps corresponding to the time series.
+    temperature: np.ndarray
+        Array of temperature values for thermal expansion modeling.
+    sd_complex: np.ndarray
         Single-difference complex
-    slc_quality:
-        ?
-    cr2ph:
-        crossrange-to-phase
-    ampl_ts:
+    slc_quality: np.ndarray
+        Complex-valued standard deviations of the signal for all points.
+    cr2ph: np.ndarray
+        crossrange-to-phase for each point
+    ampl_ts: np.ndarray
         amplitude timeseries
-    bkps_stm:
+    bkps_stm: np.ndarray
         Breakpoints stm
-    mean_ampl_sd:
+    mean_ampl_sd: np.ndarray
         Single difference mean amplitude
-    sigma_ampl_sd:
+    sigma_ampl_sd: np.ndarray
         Single difference mean amplitude standard deviation
-    mad_ampl_sd:
+    mad_ampl_sd: np.ndarray
         Median absolute deviation of the single difference amplitude
-    median_ampl_sd:
+    median_ampl_sd: np.ndarray
         Median single difference amplitude
-    rdx:
-        RD x coordinates
-    rdy:
-        RD y coordinates
+    x_coordinates: np.ndarray
+        x coordinates (RD or longitude)
+    y_coordinates: np.ndarray
+        y coordinates (RD or latitude)
+    coordinate_type: Literal["euclidean", "geographic"] = "euclidean"
+        Whether the provided coordinates are Euclidean (such as RD) or geographic (such as lon/lat)
 
     Returns
     -------
@@ -844,7 +850,9 @@ def construct_control_network_test_arcs(
         stm, x_ref_search, y_ref_search, buffer_radius_ref, dist_to_quality, N_max_arcs, nad_max
     )
 
-    while True:
+    network_meets_requirements = False
+
+    while not network_meets_requirements:
         # Create a first network based on the ranked quality and leaving out the failed_arcs and noisy_arcs
         ref_pnt, arcs_updated_network, ref_pnt_initial, arcs_initial_network = construct_control_network(
             arcs_search_area,
@@ -855,7 +863,7 @@ def construct_control_network_test_arcs(
             deg_threshold,
             min_nodes,
             min_redundancy,
-            0,
+            False,
         )
 
         print("Computing the solutions for the arcs")
@@ -878,8 +886,9 @@ def construct_control_network_test_arcs(
             sigma_ampl_sd,
             mad_ampl_sd,
             median_ampl_sd,
-            rdx,
-            rdy,
+            x_coordinates,
+            y_coordinates,
+            coordinate_type,
         )
 
         # Save the failed arcs to an array (such that they are not taken into account any more)
@@ -917,9 +926,7 @@ def construct_control_network_test_arcs(
             ):
                 results_initial_control_network_v2[key] = value[valid_indices]
             else:
-                results_initial_control_network_v2[key] = (
-                    value  # Variabelen die niet per rij corresponderen blijven ongewijzigd
-                )
+                results_initial_control_network_v2[key] = value  # Keep values that are not row-based unchanged
 
         print("Check if the network with the solved arcs still meets our requirements")
 
@@ -946,7 +953,7 @@ def construct_control_network_test_arcs(
             results_control_network_temp = {}
             for key, value in results_initial_control_network_v2.items():
                 if isinstance(value, np.ndarray):
-                    if value.ndim in {1, 2}:  # Zowel 1D als 2D arrays verwerken
+                    if value.ndim in {1, 2}:  # Both 1D and 2D arrays here
                         results_control_network_temp[key] = np.delete(value, missing_indices, axis=0)
                     else:
                         results_control_network_temp[key] = value
@@ -991,7 +998,7 @@ def construct_control_network_test_arcs(
             # Check whether the network without the noisy arcs still meets requirements
             print("Check whether the network stil meets the requirements, even after the removal of bad arcs")
             network_check_good, arcs_updated_network, ref_pnt = test_succeeded_arcs_control_network(
-                good_arcs, quality_dict_arcs, deg_threshold, min_nodes, min_redundancy, visualize_network=0
+                good_arcs, quality_dict_arcs, deg_threshold, min_nodes, min_redundancy, visualize_network=False
             )
 
             if network_check_good == 0:
@@ -1001,27 +1008,28 @@ def construct_control_network_test_arcs(
                 print("We are happy! The network consisting of the good arcs fulfills the requirements.")
 
                 # If there are noisy arcs, they need to be removed from the final network
-                # Zet noisy_arcs om in een set voor snelle lookup
+                # Convert noisy_arcs to set for quicker lookup
                 noisy_arcs_set = {tuple(map(float, arc)) for arc in noisy_arcs}
 
-                # Haal de huidige succeeded_arcs op
+                # Get the current succeeded_arcs
                 succeeded_arcs = results_control_network_temp["succeeded_arcs"]
 
-                # Bepaal welke rijen moeten blijven (dus NIET in noisy_arcs_set zitten)
+                # Deterimine which arcs to keep (so NOT in noisy_arcs_set)
                 valid_indices = np.array([tuple(row) not in noisy_arcs_set for row in succeeded_arcs])
 
-                # Maak een nieuwe dictionary waarin alleen de geldige rijen worden behouden
+                # New dict with only valid rows
                 results_control_network = {}
 
                 for key, value in results_control_network_temp.items():
                     if isinstance(value, np.ndarray) and value.shape[0] == succeeded_arcs.shape[0]:
                         results_control_network[key] = value[valid_indices]
                     else:
-                        results_control_network[key] = value  # Laat ongerelateerde variabelen ongemoeid
+                        results_control_network[key] = value  # Leave unrelated variables unchanged
 
-                break  # Stop de loop
+                network_meets_requirements = True  # Stop the loop
 
-        # Als het netwerk niet meer aan de eisen voldoet, genereer een nieuw netwerk
-        print("Network does not meet the requirements. Recomputing the network with updated failed_arcs...")
+        if not network_meets_requirements:
+            # If the network doesn't meet the requirements, start over
+            print("Network does not meet the requirements. Recomputing the network with updated failed_arcs...")
 
     return results_control_network, ref_pnt, arcs_updated_network
