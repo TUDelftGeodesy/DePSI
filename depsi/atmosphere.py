@@ -5,6 +5,7 @@ This estimation is done in two steps in general:
 signal.
 2. A spatial kriging filtering per epoch to estimate the atmosphere signal per
 epoch.
+Using: https://geostat-framework.readthedocs.io/projects/pykrige/en/stable/generated/pykrige.uk.UniversalKriging.html#pykrige.uk.UniversalKriging
 """
 
 from logging import getLogger
@@ -114,6 +115,29 @@ def krige_per_single_time(
 
     Make sure that coordinates 'x' and 'y' are present in the DataArray and they
     are in metric units.
+
+    Parameters
+    ----------
+    da: xr.DataArray
+        The DataArray containing the data to be interpolated. It must have
+        coordinates 'x' and 'y'.
+    grid: xr.Dataset | xr.DataArray | None
+        The grid on which to interpolate the data. It should have coordinates
+        'x' and 'y'. If None, the function returns a kriging object.
+    method: str
+        The kriging method to use, e.g. 'universal'. Default is 'universal'.
+    n_nearest_neighbors: int | None
+        The number of nearest neighbors to use for interpolation. If None, all
+        points in the DataArray are used for interpolation.
+    kwargs: dict
+        Additional keyword arguments to pass to the kriging method, such as
+        'variogram_model', 'variogram_parameters', etc.
+    Returns
+    -------
+    zvalues: np.ndarray
+        The interpolated values at the grid points.
+    sigmasq: np.ndarray
+        The associated variance (sigmasq) for the interpolated values.
     """
     # Check that da.data shape is 2d
     if len(da.data.shape) > 2:
@@ -129,7 +153,7 @@ def krige_per_single_time(
     if variogram_model == 'gaussian':
         default_variogram_parameters = {
             'sill': 0.8 * da.var(),
-            'range': 10000.0,
+            'range': 1000.0,
             'nugget': 0.2 * da.var()
         }
     else:
@@ -168,12 +192,13 @@ def krige_per_single_time(
         # Calculates a kriged grid and the associated variance
         # result has shape (M, N): M y coords and N x coords
         # all grid points are used for interpolation, more efficient
-        return kriging_obj.execute(
+        zvalues, sigmasq = kriging_obj.execute(
             interpolation_style,
             grid.coords['x'],  # shape (N,)
             grid.coords['y'],  # shape (M,)
             backend=kwargs.get('backend', 'vectorized'),
         )
+        return zvalues.data, sigmasq.data  # numpy.ndarray
     else:
         if 'space' not in da.dims and 'space' not in grid.dims:
             raise NotImplementedError(
@@ -193,20 +218,24 @@ def krige_per_single_time(
             k=n_nearest_neighbors
         )
 
-        def _apply_kriging_one_point(index):
-            neighbors = indices[index]
+        neighbor_x = np.take(da.coords['x'].values, indices)
+        neighbor_y = np.take(da.coords['y'].values, indices)
+        neighbor_z = np.take(da.values, indices)
 
+        def _apply_kriging_one_point(index):
             # This is a workaround to count for nearest neighbors
             # because pykrige does not support nearest neighbors
-            kriging_obj.X_ADJUSTED = da.coords['x'].data[neighbors]
-            kriging_obj.Y_ADJUSTED = da.coords['y'].data[neighbors]
-            kriging_obj.Z = da.data[neighbors]
+            kriging_obj.X_ADJUSTED = neighbor_x[index]
+            kriging_obj.Y_ADJUSTED = neighbor_y[index]
+            kriging_obj.Z = neighbor_z[index]
 
-            return kriging_obj.execute(
+            zvalues, sigmasq = kriging_obj.execute(
                 'points',
                 grid.coords['x'].data[index],
-                grid.coords['y'].data[index]
+                grid.coords['y'].data[index],
+                backend='loop'
                 )
+            return np.concatenate([zvalues, sigmasq])
 
         # Loop over each point in grid and krige
         zvalues = np.empty(indices.shape[0])
@@ -283,7 +312,7 @@ def krige_in_space(
         )
 
         interpolated, sigmasq = krige_per_single_time(da, grid, method=method, **kwargs)
-        return interpolated.data, sigmasq.data
+        return interpolated, sigmasq
 
     interpolated, sigmasq = xr.apply_ufunc(
         apply_krige_per_single_time,
@@ -296,7 +325,7 @@ def krige_in_space(
         dask_gufunc_kwargs = {"output_sizes": dict(grid.sizes)},  # this is needed when grid has "x" and "y" coordinates
     )
 
-    # # Update time values
+    # Update time values
     interpolated = interpolated.assign_coords(
         time = ps_atmosphere["time"].data
     )
