@@ -302,8 +302,7 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
     argument the value
     """
     # check if the input is valid
-    assert os.path.exists(filename), f"The requested file {
-        filename} does not exist!"
+    assert os.path.exists(filename), f"The requested file {filename} does not exist!"
     assert np.all([isinstance(date, datetime) for date in dates]), "Not all dates are of type datetime.datetime!"
 
     assert np.all(
@@ -392,8 +391,7 @@ def read_slc_stack(
         # Collect file paths of the SLC stack
         stack_list = glob(os.path.join(filename, "*", "slc_srd.raw"))
         if not stack_list:
-            raise FileNotFoundError(f"No SLC files found in {
-                                    filename} matching pattern */slc_srd.raw")
+            raise FileNotFoundError(f"No SLC files found in {filename} matching pattern */slc_srd.raw")
 
         # Read the number of lines and pixels from the configuration files
         try:
@@ -412,8 +410,7 @@ def read_slc_stack(
             raise RuntimeError("Failed to load the SLC stack. ") from e
 
     else:
-        raise ValueError(f"Unsupported engine '{
-                         engine}'. Use 'zarr' or 'doris'.")
+        raise ValueError(f"Unsupported engine '{engine}'. Use 'zarr' or 'doris'.")
 
 
 def read_rcs_csv(file_path):
@@ -470,14 +467,13 @@ def read_rcs_csv(file_path):
         dates = header_row.index[7:].tolist()
 
         # Print success message
-        print(f"Radar Coding (RC) Toolbox output file '{
-              file_path}' successfully loaded.")
+        print(f"Radar Coding (RC) Toolbox output file '{file_path}' successfully loaded.")
 
         return df, dates
 
     except Exception as e:
         # If an error occurs, print the error message
-        raise RuntimeError(f"Error loading the Radar Coding (RC) Toolbox output file '{ file_path}") from e
+        raise RuntimeError(f"Error loading the Radar Coding (RC) Toolbox output file '{file_path}") from e
 
 
 def run_script_subprocess(script_path, args):
@@ -621,8 +617,7 @@ def extract_dttarget_data_from_slc(slc_stack, matching_coords, targets, verbose=
         else:
             # No matching target found
             if verbose:
-                print(f"[Target at az={az_val}, range={
-                      rg_val}] Not found in targets. Detection_flag set to zeros.")
+                print(f"[Target at az={az_val}, range={rg_val}] Not found in targets. Detection_flag set to zeros.")
             target_names.append(None)
 
         # Store detection_flag for this target
