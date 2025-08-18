@@ -3,7 +3,7 @@
 This estimation is done in two steps:
 1. A temporal filtering applied per point to extract the unmodeled deformation (low-frequency signal).
 signal.
-2. A spatial kriging filtering per epoch to estimate the atmosphere signal per
+2. A spatial least-squares prediction based on the residuals per epoch to estimate the atmosphere signal per
 epoch.
 """
 
