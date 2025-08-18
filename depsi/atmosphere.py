@@ -24,7 +24,7 @@ def estimate_non_linear_deformation(
     Parameters
     ----------
     psc_phase: xr.DataArray
-        The PSC time series to apply the filter to.
+        The PSC time series residuals to apply the filter to.
     baseline_years: xr.DataArray
         The baseline years corresponding to the time series.
     filter_length: int
