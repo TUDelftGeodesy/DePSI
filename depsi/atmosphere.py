@@ -38,7 +38,7 @@ def estimate_non_linear_deformation(
     Returns
     -------
     xr.DataArray
-        The non-linear deformation estimated from the time series.
+        The unmodeled deformation estimated from the time series.
     """
     # Check if baseline_years size is equal to psc_phase size
     if baseline_years.size != psc_phase["time"].size:
