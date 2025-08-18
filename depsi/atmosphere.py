@@ -12,26 +12,26 @@ import xarray as xr
 from scipy import signal
 
 
-def estimate_non_linear_deformation(
-        psc_phase: xr.DataArray,
+def estimate_unmodeled_displacement(
+        psc_phase_residuals: xr.DataArray,
         baseline_years: xr.DataArray,
         filter_length: int,
-        temporal_scale: int = 1000,
-        method='gaussian',
+        sampling_rate: int = 1000,
+        filter_type='gaussian',
     ) -> xr.DataArray:
     """Apply a low-pass filter to the time series to estimate the unmodeled deformation.
 
     Parameters
     ----------
-    psc_phase: xr.DataArray
+    psc_phase_residuals: xr.DataArray
         The PSC time series residuals to apply the filter to.
     baseline_years: xr.DataArray
         The baseline years corresponding to the time series.
     filter_length: int
         Length of the filter (year) to apply a low-pass filter to the time series.
-    temporal_scale: int, optional.
-        The temporal scale in milliseconds per year.
-    method: str, optional
+    sampling_rate: int, optional.
+        Sampling rate of the time series, default is 1000.
+    filter_type: str, optional
         Method to use for building the window , e.g. 'block', 'triangle', or
         'gaussian', default is 'gaussian', see `scipy.signal.windows` for more.
 
@@ -40,10 +40,10 @@ def estimate_non_linear_deformation(
     xr.DataArray
         The unmodeled deformation estimated from the time series.
     """
-    # Check if baseline_years size is equal to psc_phase size
-    if baseline_years.size != psc_phase["time"].size:
+    # Check if baseline_years size is equal to psc_phase_residuals size
+    if baseline_years.size != psc_phase_residuals["time"].size:
         raise ValueError(
-            "The size of baseline_years must match the time dimension of psc_phase."
+            "The size of baseline_years must match the time dimension of psc_phase_residuals."
         )
     # Check baseline_years is monotonic
     is_monotonic_increasing = np.all(np.diff(baseline_years.values) >= 0)
@@ -52,23 +52,23 @@ def estimate_non_linear_deformation(
         raise ValueError("baseline_years must be monotonic.")
 
     # Build the window for the low-pass filter
-    baseline_scaled = baseline_years * temporal_scale
+    baseline_scaled = baseline_years * sampling_rate
     timespan = baseline_scaled.max() - baseline_scaled.min()
     window_size = int(2 * timespan) + 1
 
-    if method == 'block':
+    if filter_type == 'block':
         window = signal.windows.boxcar(window_size)
 
-    elif method == 'triangle':
+    elif filter_type == 'triangle':
         window = signal.windows.triang(window_size)
 
-    elif method == 'gaussian':
-        std_dev = filter_length * temporal_scale / 6  # ±3σ covers the window
+    elif filter_type == 'gaussian':
+        std_dev = filter_length * sampling_rate / 6  # ±3σ covers the window
         window = signal.windows.gaussian(window_size, std=std_dev)
     else:
         raise NotImplementedError(
-            f"Method {method} is not implemented. "
-            "Available methods are: 'block', 'triangle', 'gaussian'."
+            f"Filter type {filter_type} is not implemented. "
+            "Available types are: 'block', 'triangle', 'gaussian'."
         )
 
     # normalize the window
@@ -89,12 +89,12 @@ def estimate_non_linear_deformation(
 
     return xr.apply_ufunc(
         apply_filter,
-        psc_phase,
+        psc_phase_residuals,
         input_core_dims=[['time']],
         output_core_dims=[['time']],
         vectorize=True,
         dask='parallelized',
-        output_dtypes=[psc_phase.dtype]
+        output_dtypes=[psc_phase_residuals.dtype]
     )
 
 
@@ -102,19 +102,31 @@ def krige_in_space():
     """Kriging in space to estimate the atmosphere signal."""
 
 
-def estimate_atmosphere_phase(stm: xr.Dataset) -> xr.Dataset:
+def estimate_atmosphere_phase(stm: xr.Dataset, **unmodeled_displacement_kwargs) -> xr.Dataset:
     """Estimate the atmosphere phase.
 
     This function applies a temporal filter to extract the high-frequency
     atmospheric signal and then uses spatial kriging to estimate the atmospheric
     phase per epoch.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+        The network STMs with unwrapped phases.
+    unmodeled_displacement_kwargs: dict
+        Additional keyword arguments for the `estimate_unmodeled_displacement` function.
+
+    Returns
+    -------
+    xr.Dataset
+        The STM with the estimated atmospheric phase.
     """
     # Step 1: Apply temporal filtering to extract high-frequency atmospheric signal
     unmodeled_disp = estimate_unmodeled_displacement(
-        psc_phase=stm["d_phase"],
+        psc_phase_residuals=stm["psc_phase_residuals"],
         baseline_years=stm["time"],
-        filter_length=1,
+        **unmodeled_displacement_kwargs,
     )
-    stm["atmosphere_estimates"] = stm["d_phase"] - unmodeled_disp + stm["atmosphere_mother"]
+    stm["atmosphere_estimates"] = stm["psc_phase_residuals"] - unmodeled_disp + stm["atmosphere_mother"]
 
     # Step 2: Apply spatial kriging to estimate atmospheric phase per epoch
