@@ -110,7 +110,7 @@ def estimate_atmosphere_phase(stm: xr.Dataset) -> xr.Dataset:
     phase per epoch.
     """
     # Step 1: Apply temporal filtering to extract high-frequency atmospheric signal
-    non_linear = estimate_non_linear_deformation(
+    unmodeled_disp = estimate_unmodeled_displacement(
         psc_phase=stm["d_phase"],
         baseline_years=stm["time"],
         filter_length=1,
