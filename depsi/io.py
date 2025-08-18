@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 import sarxarray
 import xarray as xr
-import yaml
 
 from depsi.utils import _orbit_fit
 
@@ -67,7 +66,8 @@ def read_metadata(resfile, mode="raw", **kwargs):
     # ++++ 4 - range0time
     pattern = r"Range_time_to_first_pixel \(2way\) \(ms\):" + SC_N_PATTERN
     match = re.search(pattern, content)
-    range0time = float(match.group(1)) * 1e-3 / 2  # devide by 2 to balance the two way travel
+    # devide by 2 to balance the two way travel
+    range0time = float(match.group(1)) * 1e-3 / 2
 
     # ++++ 5 - prf
     pattern = r"Pulse_Repetition_Frequency \(computed, Hz\):" + SC_N_PATTERN
@@ -302,7 +302,8 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
     argument the value
     """
     # check if the input is valid
-    assert os.path.exists(filename), f"The requested file {filename} does not exist!"
+    assert os.path.exists(filename), f"The requested file {
+        filename} does not exist!"
     assert np.all([isinstance(date, datetime) for date in dates]), "Not all dates are of type datetime.datetime!"
 
     assert np.all(
@@ -344,17 +345,27 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
     return datewise_data
 
 
-def read_slc_stack(filename: str) -> xr.Dataset:
-    """Read a zarr stack of SLCs into a xarray.Dataset.
+def read_slc_stack(
+    filename: str, engine: str = "zarr", nlines_file: str = None, npixels_file: str = None, chunks=(500, 500)
+) -> xr.Dataset:
+    """Read a stack of SLCs into an xarray.Dataset.
 
-    Reads a zarr archive, and converts it to an xarray dataset compatible with the point selection functions.
+    Supports different engines for reading:
+    - zarr: reads a zarr archive (default)
+    - doris: reads using the doris engine
 
     Parameters
     ----------
     filename : str
-        absolute filepath to the zarr archive. The zarr archive should contain:
-        - coordinates azimuth, range, lat, lon, time
-        - variables h2ph, imag, real
+        Absolute filepath to the data archive (zarr folder or doris stack folder).
+    engine : str, optional
+        Engine to use for reading the data. Defaults to 'zarr'.
+    nlines_file : str, optional
+        Required for doris engine. Path to the file containing number of lines in the stack.
+    npixels_file : str, optional
+        Required for doris engine. Path to the file containing number of pixels in the stack.
+    chunks : tuple, optional
+        Tuple specifying the chunk size for loading doris stacks (default is (500, 500)).
 
     Returns
     -------
@@ -363,56 +374,49 @@ def read_slc_stack(filename: str) -> xr.Dataset:
         - coordinates azimuth, range, lat, lon, time
         - variables h2ph, complex, amplitude, phase
     """
-    assert os.path.exists(filename), f"The requested file {filename} does not exist!"
+    assert os.path.exists(filename), f"The requested file/folder {filename} does not exist!"
 
-    # Load the zarr file as a xr.Dataset
-    dataset = xr.open_zarr(filename)
-    # Add complex, amplitude, and phase to the dataset
-    slcs = sarxarray.from_dataset(dataset)
+    if engine.lower() == "zarr":
+        # Load the zarr file as a xr.Dataset
+        dataset = xr.open_zarr(filename)
+        # Add complex, amplitude, and phase to the dataset
+        slcs = sarxarray.from_dataset(dataset)
+        return slcs
 
-    return slcs
+    elif engine.lower() == "doris":
+        if nlines_file is None or npixels_file is None:
+            raise ValueError(
+                "For doris engine, 'nlines_file' and 'npixels_file' must be provided. Recommended 500x500."
+            )
 
+        # Collect file paths of the SLC stack
+        stack_list = glob(os.path.join(filename, "*", "slc_srd.raw"))
+        if not stack_list:
+            raise FileNotFoundError(f"No SLC files found in {
+                                    filename} matching pattern */slc_srd.raw")
 
-def collect_srdraw_file_paths(folder_path):
-    """Collect all paths of `slc_srd.raw` files in subfolders of the doris stack specified by the folder_path.
+        # Read the number of lines and pixels from the configuration files
+        try:
+            with open(nlines_file) as f:
+                nlines = int(f.readline().strip())
+            with open(npixels_file) as f:
+                npixels = int(f.readline().strip())
+        except Exception as e:
+            raise RuntimeError("Failed to read number of lines or pixels. ") from e
 
-    Parameters
-    ----------
-    folder_path : str
-        The path to the main folder containing subfolders.
+        # Load the SLC stack using sarxarray
+        try:
+            slc_stack = sarxarray.from_binary(stack_list, shape=(nlines, npixels), dtype=np.complex64, chunks=chunks)
+            return slc_stack
+        except Exception as e:
+            raise RuntimeError("Failed to load the SLC stack. ") from e
 
-    Returns
-    -------
-    list of str
-        A list of full paths to the `slc_srd.raw` files.
-    """
-    # Use glob to search for slc_srd.raw files in all subfolders
-    file_paths = glob(os.path.join(folder_path, "*", "slc_srd.raw"))
-    return file_paths
-
-
-def read_first_line(file_path):
-    """Read the first line from the specified text file.
-
-    Reads the first line from the specified text file.
-    Meant to read number of pixels and lines from stack stiching crp.txt files
-
-    Parameters
-    ----------
-    file_path : str
-        Path to the text file.
-
-    Returns
-    -------
-    str
-        The first line of the file, stripped of leading and trailing whitespace.
-    """
-    with open(file_path) as file:
-        first_line = file.readline().strip()
-    return first_line
+    else:
+        raise ValueError(f"Unsupported engine '{
+                         engine}'. Use 'zarr' or 'doris'.")
 
 
-def load_stm_rcscsv(file_path):
+def read_rcs_csv(file_path):
     r"""Load an STM-like CSV resulting from the RadarCoding Toolbox.
 
     Load an STM-like CSV resulting from the RadarCoding Toolbox, filter out metadata or header marked by
@@ -466,14 +470,14 @@ def load_stm_rcscsv(file_path):
         dates = header_row.index[7:].tolist()
 
         # Print success message
-        print(f"Radar Coding (RC) Toolbox output file '{file_path}' successfully loaded.")
+        print(f"Radar Coding (RC) Toolbox output file '{
+              file_path}' successfully loaded.")
 
         return df, dates
 
     except Exception as e:
         # If an error occurs, print the error message
-        print(f"Error loading the Radar Coding (RC) Toolbox output file '{file_path}': {e}")
-        return None, None
+        raise RuntimeError(f"Error loading the Radar Coding (RC) Toolbox output file '{ file_path}") from e
 
 
 def run_script_subprocess(script_path, args):
@@ -499,187 +503,141 @@ def run_script_subprocess(script_path, args):
         print(f"Error while running the RCS Toolbox: {e}")
 
 
-def doris_sar_stack_to_xarray(stack_folder, nlines_file, npixels_file, chunks=(500, 500)):
-    """Load a stack of SLCs in XArray format from a given folder and configuration files.
+def extract_dttarget_data_from_slc(slc_stack, matching_coords, targets, verbose=False):
+    """Extract target-matched data from a SLC stack.
 
-    Parameters
-    ----------
-    stack_folder : str
-        Path to the folder containing the stack of SLCs.
-    nlines_file : str
-        Path to the file containing the number of lines in the stack (nlines_crp.txt).
-    npixels_file : str
-        Path to the file containing the number of pixels in the stack (npixels_crp.txt).
-    chunks : tuple, optional
-        Tuple specifying the chunk size to use when loading the stack (default is (500, 500)).
+    This uses azimuth and range coordinates,
+    and build a full space-time detection_flag array aligned to slc_stack.
 
-    Returns
-    -------
-    xarray.DataArray or None
-        Returns the loaded SLC stack as an xarray DataArray if successful, otherwise None.
-    """
-    # Collect file paths of the SLC stack
-    stack_list = collect_srdraw_file_paths(stack_folder)
-
-    # Read the number of lines and pixels from the configuration files
-    try:
-        nlines = int(read_first_line(nlines_file))
-        npixels = int(read_first_line(npixels_file))
-    except Exception as e:
-        print(f"Warning: Failed to read the number of lines or pixels. Error: {e}")
-        return None
-
-    # Attempt to load the SLC stack using sarxarray
-    try:
-        slc_stack = sarxarray.from_binary(stack_list, shape=(nlines, npixels), dtype=np.complex64, chunks=chunks)
-        print("Successfully loaded the SLC stack.")
-        return slc_stack
-    except Exception as e:
-        print(f"Warning: Failed to load the SLC stack. Error: {e}")
-        return None
-
-
-def ensure_rc_csv_exists(rcsoutput_folder, rcsanalysis, arguments):
-    """Ensure that an output of the RadarCoding Toolbox (*_RC.csv file) exists in the specified folder.
-
-    Ensure that an output of the RadarCoding Toolbox (*_RC.csv file) exists
-    in the specified folder, if not, run the RadarCoding tool.
-
-    Parameters
-    ----------
-    rcsoutput_folder : str
-        Path to the folder where *_RC.csv file is expected to be found.
-    rcsanalysis : str
-        Path to the RadarCoding tool script to execute.
-    arguments : list of str
-        Arguments to pass to the RCS tool script.
-
-    Returns
-    -------
-    str or None
-        The path of the *_RC.csv file if found or generated, otherwise None.
-
-    Notes
-    -----
-    This function checks if a file matching the pattern `*_RC.csv` exists in the
-    specified output folder. If no such file is found, it runs the RCS tool
-    (`detectDesignatedTargets.py`) with the provided arguments and checks if
-    the output file is generated. It will print appropriate messages based
-    on the file’s existence or failure to generate.
-    """
-    # Check for any file that matches the pattern *_RC.csv
-    output_file = None
-    for file_name in os.listdir(rcsoutput_folder):
-        if file_name.endswith("_RC.csv"):
-            output_file = os.path.join(rcsoutput_folder, file_name)
-            break
-
-    # Check if the file exists
-    if not output_file:
-        print("No *_RC.csv file found. Running the RCS tool...")
-        run_script_subprocess(rcsanalysis, arguments)
-
-        # Check again if any *_RC.csv file was generated
-        output_file = None
-        for file_name in os.listdir(rcsoutput_folder):
-            if file_name.endswith("_RC.csv"):
-                output_file = os.path.join(rcsoutput_folder, file_name)
-                break
-
-        if output_file:
-            print(f"Found the output file: {output_file}")
-        else:
-            print("Failed to generate *_RC.csv file. Please check the RCS tool output and parameters.")
-    else:
-        print(f"Found the output file: {output_file}. Proceed with the identifying the targets in the stack.")
-
-    return output_file
-
-
-def extract_dttarget_data_from_slc(slc_stack, matching_indices, targets):
-    """Extract matching data from the slc_stack of a designated target.
-
-    Description
-    -----------
-    Extract matching data from the slc_stack for the given matching azimuth and range indices
-    and target information of a designated target.
+    This function matches given azimuth/range coordinates to the closest points
+    in the SLC stack, extracts all data variables, and aligns detection_flag
+    time series from the targets dataset with the SLC time dimension.
+    Additionally, it builds a 3D detection_flag array spanning azimuth, range, and time.
 
     Parameters
     ----------
     slc_stack : xarray.Dataset
-        The dataset containing the slc data with azimuth, range, and other variables.
-
-    matching_indices : list of tuples
-        A list of tuples, where each tuple contains the indices (azimuth_idx, range_idx) of the matching targets
-        in the `slc_stack`.
-
+        Dataset containing SLC data with dimensions (azimuth, range, time),
+        as well as variables like lat, lon, azimuth, range, etc.
+    matching_coords : list of tuples
+        Each tuple is (azimuth_value, range_value) of the target location to extract.
     targets : xarray.Dataset
-        A dataset containing target information, including azimuth and range coordinates.
+        Dataset containing target information with coordinates (target, time)
+        and variables such as azimuth, range, target, and detection_flag.
+    verbose : bool, optional
+        If True, prints messages about alignment, padding, or missing targets.
+        Default is False.
 
     Returns
     -------
-    dict
-        A dictionary containing the extracted data for the matching targets, with variable names as keys
-        and the corresponding values as lists of data arrays.
+    matched_slc_targets_dict : dict
+        Dictionary containing extracted data arrays for each target, including:
+        - All variables from slc_stack
+        - lat, lon, azimuth, range
+        - detection_flag aligned to slc_stack time
+    lat_vals : list
+        Latitudes of matching targets (Dask arrays).
+    lon_vals : list
+        Longitudes of matching targets (Dask arrays).
+    target_names : list
+        Names of matching targets (None if not found in targets dataset).
+    detection_flag_space_time : xarray.DataArray
+        3D array of shape (azimuth, range, time), filled with aligned detection_flags.
+    target_space_indices : list
+        List of (az_idx, rg_idx) tuples giving the true space indices in slc_stack
+        for each matchings target (None if not found).
 
-    list
-        A list of the target names corresponding to the matching indices.
-
-    list
-        A list of latitudes for the matching targets.
-
-    list
-        A list of longitudes for the matching targets.
+    Notes
+    -----
+    - detection_flag values are aligned to the SLC timestamps.
+    - If a target is not present in `targets`, detection_flag is set to zeros.
+    - The 3D detection_flag_space_time array enables mapping targets in both
+      space and time for the entire SLC stack.
     """
-    # Initialize dictionary to store the extracted data
-    matched_slc_targets_dict = {}
+    matched_slc_targets_dict = {"lat": [], "lon": [], "azimuth": [], "range": [], "detection_flag": []}
 
-    # Lists to store latitudes, longitudes, and target names
     lat_vals = []
     lon_vals = []
     target_names = []
+    target_space_indices = []
 
-    # Iterate over each matching coordinate
-    for az_idx, rg_idx in matching_indices:
-        # Slice slc_stack for each matching (azimuth, range) pair
-        matching_point_slc_data = slc_stack.isel(azimuth=az_idx, range=rg_idx)
+    # Extract time arrays from SLC stack and targets
+    slc_times = np.array(slc_stack["time"].data)
+    target_times = np.array(targets["time"].data)
 
-        # Add the sliced data to the dictionary with 'target' as the dimension
+    # Initialize a blank detection_flag array with same shape as slc_stack
+    detection_flag_space_time = xr.DataArray(
+        np.zeros((slc_stack.dims["azimuth"], slc_stack.dims["range"], slc_stack.dims["time"])),
+        coords={"azimuth": slc_stack["azimuth"].data, "range": slc_stack["range"].data, "time": slc_stack["time"].data},
+        dims=("azimuth", "range", "time"),
+    )
+
+    # Iterate over all requested (azimuth, range) coordinates
+    for az_val, rg_val in matching_coords:
+        # Select nearest SLC pixel to requested target coordinates
+        matching_point_slc_data = slc_stack.sel(azimuth=az_val, range=rg_val, method="nearest")
+
+        # Store all variables from this SLC location
         for var in matching_point_slc_data.data_vars:
-            if var not in matched_slc_targets_dict:
-                matched_slc_targets_dict[var] = []
-            matched_slc_targets_dict[var].append(matching_point_slc_data[var].values)
+            matched_slc_targets_dict.setdefault(var, []).append(matching_point_slc_data[var].data)
 
-        # Append the lat and lon values for each matching target
-        lat_vals.append(matching_point_slc_data["lat"].values)  # lat is scalar for each target
-        lon_vals.append(matching_point_slc_data["lon"].values)  # lon is scalar for each target
+        # Extract coordinate values (lat, lon, azimuth, range)
+        lat_dask = matching_point_slc_data["lat"].data
+        lon_dask = matching_point_slc_data["lon"].data
+        az_dask = matching_point_slc_data["azimuth"].data
+        rg_dask = matching_point_slc_data["range"].data
 
-        # Append the corresponding target name (from the `targets` dataset)
-        target_idx = np.where(targets["azimuth"].data == slc_stack["azimuth"].data[az_idx])[0][0]
-        target_name = targets["target"].data[target_idx]
-        target_names.append(target_name)
+        matched_slc_targets_dict["lat"].append(lat_dask)
+        matched_slc_targets_dict["lon"].append(lon_dask)
+        matched_slc_targets_dict["azimuth"].append(az_dask)
+        matched_slc_targets_dict["range"].append(rg_dask)
 
-    return matched_slc_targets_dict, lat_vals, lon_vals, target_names
+        lat_vals.append(lat_dask)
+        lon_vals.append(lon_dask)
 
+        # Find corresponding target in the targets dataset
+        target_idx = np.where((targets["azimuth"].data == az_val) & (targets["range"].data == rg_val))[0]
 
-def load_ymlparams(yml_file):
-    """Load input parameters from a YAML file.
+        # Initialize detection_flag with zeros (default fill)
+        aligned_flag = np.zeros(len(slc_times))
 
-    Parameters
-    ----------
-    yml_file : str
-        Path to the YAML file to load.
+        if len(target_idx) > 0:
+            # Matching target found
+            idx = target_idx[0]
+            target_name = targets["target"].data[idx]
 
-    Returns
-    -------
-    dict
-        Dictionary containing the loaded parameters.
-    """
-    try:
-        with open(yml_file) as file:
-            params = yaml.safe_load(file)
-        print(f"Parameters successfully loaded from '{yml_file}'.")
-        return params
-    except Exception as e:
-        print(f"Error loading YAML file '{yml_file}': {e}")
-        return None
+            # Align detection_flag time series with slc_stack timestamps
+            target_flag_ts = targets["detection_flag"].isel(target=idx).data
+            common_times = np.intersect1d(slc_times, target_times)
+            if len(common_times) > 0:
+                slc_mask = np.isin(slc_times, common_times)
+                target_mask = np.isin(target_times, common_times)
+                aligned_flag[slc_mask] = target_flag_ts[target_mask]
+
+            if verbose:
+                print(f"[Target {target_name}] aligned to SLC stack time.")
+
+            target_names.append(target_name)
+        else:
+            # No matching target found
+            if verbose:
+                print(f"[Target at az={az_val}, range={
+                      rg_val}] Not found in targets. Detection_flag set to zeros.")
+            target_names.append(None)
+
+        # Store detection_flag for this target
+        matched_slc_targets_dict["detection_flag"].append(aligned_flag)
+
+        # Compute the true index positions in the SLC stack
+        az_idx = slc_stack.indexes["azimuth"].get_indexer([matching_point_slc_data["azimuth"].item()])[0]
+        rg_idx = slc_stack.indexes["range"].get_indexer([matching_point_slc_data["range"].item()])[0]
+
+        if az_idx != -1 and rg_idx != -1:
+            # Assign aligned detection_flag into the global 3D array
+            detection_flag_space_time[az_idx, rg_idx, :] = aligned_flag
+            target_space_indices.append((az_idx, rg_idx))
+        else:
+            # Coordinates not found in index
+            target_space_indices.append((None, None))
+
+    return (matched_slc_targets_dict, lat_vals, lon_vals, target_names, detection_flag_space_time, target_space_indices)
