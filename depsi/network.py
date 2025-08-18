@@ -263,7 +263,14 @@ def get_ordered_arcs(stm, x_ref_search, y_ref_search, buffer_radius_ref, dist_to
     return arcs, arcs_and_quality, quality_dict
 
 
-def find_points_within_buffer(x_coords, y_coords, x_pnts, y_pnts, buffer_radius):
+def find_points_within_buffer(
+    x_coords,
+    y_coords,
+    x_pnts,
+    y_pnts,
+    buffer_radius,
+    coordinate_type: Literal["euclidean", "geographic"] = "euclidean",
+):
     """Find all points located within a specified buffer radius around a given location.
 
     This function determines which points in a set of coordinates are located within a defined buffer
@@ -271,7 +278,7 @@ def find_points_within_buffer(x_coords, y_coords, x_pnts, y_pnts, buffer_radius)
 
     The function:
     1. Converts the input x and y coordinates of the search point(s) to arrays if they are not already.
-    2. Computes the Euclidean distance between each point in `x_coords` and `y_coords` and the reference points.
+    2. Computes the distance between each point in `x_coords` and `y_coords` and the reference points.
     3. Returns the indices of these points for further processing or analysis.
 
     Args:
@@ -281,13 +288,15 @@ def find_points_within_buffer(x_coords, y_coords, x_pnts, y_pnts, buffer_radius)
         x_pnts (float or array-like): The x-coordinate or array of x-coordinates of the reference point(s).
         y_pnts (float or array-like): The y-coordinate or array of y-coordinates of the reference point(s).
         buffer_radius (float): The radius of the buffer zone around the reference points, specified in meters.
+        coordinate_type (Literal["euclidean", "geographic"]): whether the coordinates provided are Euclidean (such as
+            RD) or geographic (such as lon / lat)
 
     Returns:
     -------
         indices (numpy.ndarray): Array of indices of the points located within the buffer zone.
 
     Example:
-        indices = _find_points_within_buffer(x_coords, y_coords, x_pnts=10.5, y_pnts=20.3, buffer_radius=5.0)
+        indices = find_points_within_buffer(x_coords, y_coords, x_pnts=10.5, y_pnts=20.3, buffer_radius=5.0)
     """
     # Make sure x_pnts and y_pnts are arrays
     x_pnts = np.atleast_1d(x_pnts)
@@ -297,7 +306,10 @@ def find_points_within_buffer(x_coords, y_coords, x_pnts, y_pnts, buffer_radius)
 
     # Check for every point, which other points fall within the buffer around it
     for tx, ty in zip(x_pnts, y_pnts, strict=True):
-        distances = np.sqrt((x_coords - tx) ** 2 + (y_coords - ty) ** 2)
+        distances = np.array(
+            [get_distance([tx, ty], [px, py], coordinate_type) for px, py in zip(x_coords, y_coords, strict=True)]
+        )
+
         within_buffer |= distances <= buffer_radius  # 'OR' operation
 
     # Find the indices of the points that are within the buffer
@@ -1109,7 +1121,7 @@ def construct_control_network_test_arcs(
 
     return results_control_network, ref_pnt, arcs_updated_network
 
-  
+
 def _compute_direct_phase_difference(stm_points, source_idx, target_idx):
     # Calculate the unwrapped direct phase difference between two points,
     # as the phase of the target minus the phase of the source.

@@ -1387,6 +1387,9 @@ def arc_estimation_control_network(
     # tranform from list to np array
     results = {key: np.array(value) for key, value in results.items()}
 
+    if test_stochastics:
+        return results, stochastic_results
+
     return results
 
 
