@@ -1,7 +1,7 @@
 """A module to estimate atmosphere signal from network STMs with unwrapped phases.
 
 This estimation is done in two steps:
-1. A temporal filtering applied per point to extract the temporal high frequency
+1. A temporal filtering applied per point to extract the unmodeled deformation (low-frequency signal).
 signal.
 2. A spatial kriging filtering per epoch to estimate the atmosphere signal per
 epoch.
