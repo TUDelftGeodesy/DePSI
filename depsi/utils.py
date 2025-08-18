@@ -1,4 +1,9 @@
+import math
+from typing import Literal
+
 import numpy as np
+
+EARTH_RADIUS = 6378136  # m
 
 
 def _orbit_fit(orbit, verbose=0, der=True):
@@ -79,3 +84,53 @@ def _orbit_fit(orbit, verbose=0, der=True):
     orbit_fit["caz"] = caz
 
     return orbit_fit
+
+
+def get_distance(
+    s: list | tuple | np.ndarray, t: list | tuple | np.ndarray, mode: Literal["euclidean", "geographic"] = "euclidean"
+):
+    """Calculate the distance between two points.
+
+    Parameters
+    ----------
+    s: list | tuple | np.ndarray
+        The source point, formatted as (x, y) / (lon, lat)
+    t: list | tuple | np.ndarray
+        The target point, formatted as (x, y) / (lon, lat)
+    mode: Literal["euclidean", "geographic"], default "euclidean"
+        Whether the source and target points are given in (x, y) (units meters) or (lon, lat) (units degrees)
+
+    Returns
+    -------
+        The distance between the two points in meters.
+    """
+    # TODO(tvl) More complex distance functions can be implemented here.
+    #
+    # For example, network generation gives better results for square Euclidean distances.
+    # Non-square coordinate systems (like non-square image coordinates) may distort the circle properties of Delaunay
+    # networks into ellipses.
+    # Non-Euclidean coordinate systems (like angular lat-lon systems) may distort these same properties depending on
+    # the distance to a pole.
+    #
+    # Coordinate system transformations may be done on the STM before generating the network.
+    # However, there may be cases where it is impossible or undesirable to transform the point coordinates in the STM.
+    # In such a case, coordinates may be transformed inside this function.
+    if mode == "euclidean":
+        return math.dist(s, t)
+    elif mode == "geographic":
+        # this is the Haversine formula
+        lat1 = s[1]
+        lat2 = t[1]
+        dphi = np.radians(lat1 - lat2)
+        dlambda = np.radians(s[0] - t[0])
+        dist = (
+            2
+            * EARTH_RADIUS
+            * np.arcsin(
+                np.sqrt(
+                    (1 - np.cos(dphi) + np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * (1 - np.cos(dlambda))) / 2
+                )
+            )
+        )
+        return dist
+    raise ValueError(f"Unknown mode {mode}, only know euclidean and geographic!")

@@ -1,11 +1,13 @@
-"""arc estimation algorithms."
+"""arc estimation algorithms."""
 
+from typing import Literal
 
 import numpy as np
 from scipy.optimize import curve_fit
 
 import depsi.deformation_models as dm
 import depsi.estimation as est
+from depsi.utils import get_distance
 
 
 def _compute_dd(sd_complex_i, sd_complex_j, sd_quality_i, sd_quality_j):
@@ -537,11 +539,14 @@ def arc_estimation_xarray_input(
     bounds,
     m2ph,
     n_max_iter,
+    x_crd_label: str = "rd_x",
+    y_crd_label: str = "rd_y",
+    coordinate_type: Literal["euclidean", "geographic"] = "euclidean",
     filter_length_complex=30,
     jump_percentage_2pi=0.85,
     vcm_complex_method="mad_median",
-    test_stochastics=0,
-    print_output=0,
+    test_stochastics=False,
+    print_output=False,
 ):
     """Estimate parameters for the arc defined between the connection point j and control point i.
 
@@ -561,6 +566,12 @@ def arc_estimation_xarray_input(
         Conversion factor from meters to phase.
     n_max_iter : np.ndarray
         The maximum nr of iterations for non-linear lsq per arc
+    x_crd_label: str, default "rd_x"
+        Label of the x-coordinate in the STMs (for geographic, this is 'lon')
+    y_crd_label: str, default "rd_y"
+        Label of the y-coordinate in the STMs (for geographic, this is 'lat')
+    coordinate_type: Literal["euclidean", "geographic"], default "euclidean"
+        Whether to compute distances in Euclidean space (for RD) or geographic distance (for lat/lon)
     filter_length_complex : int, optional
         Length of the filter for phase unwrapping (default: 30).
     jump_percentage_2pi : float, optional
@@ -568,10 +579,10 @@ def arc_estimation_xarray_input(
     vcm_complex_method : str, optional
         Method for variance-covariance matrix estimation in the complex domain.
         Options are "sigma_mean" or "mad_median" (default: "mad_median").
-    test_stochastics : int, optional
-        Flag for performing stochastic testing (default: 0).
-    print_output : int, optional
-        Flag for enabling or disabling print statements (default: 0).
+    test_stochastics : bool, optional
+        Flag for performing stochastic testing (default: False).
+    print_output : bool, optional
+        Flag for enabling or disabling print statements (default: False).
 
     Returns
     -------
@@ -591,7 +602,7 @@ def arc_estimation_xarray_input(
             - 'succeeded_arcs': List of arcs where parameter estimation succeeded.
 
     stochastic_results : dict, optional
-        Dictionary containing stochastic testing results (if `test_stochastics=1`), including:
+        Dictionary containing stochastic testing results (if `test_stochastics=True`), including:
             - 'q_per_partition': Quality metrics for each partition.
             - 'std_residuals_partition': Standard deviations of residuals for each partition.
             - 'rmse_residuals_partition': RMSE of residuals for each partition.
@@ -615,7 +626,7 @@ def arc_estimation_xarray_input(
         If parameter estimation fails for an arc during optimization.
     """
     # If we want to do some tests on the stochastics
-    if test_stochastics == 1:
+    if test_stochastics:
         stochastic_results = {
             "q_per_partition": [],
             "std_residuals_partition": [],
@@ -659,8 +670,6 @@ def arc_estimation_xarray_input(
     mean_ampl_sd_i = stm_pnt_i["mean_ampl_sd_stm"].values
     mad_ampl_sd_i = stm_pnt_i["mad_ampl_sd_stm"].values
     median_ampl_sd_i = stm_pnt_i["median_ampl_sd_stm"].values
-    rdx_i = stm_pnt_i["rd_x"].values
-    rdy_i = stm_pnt_i["rd_y"].values
 
     pnt_j_idx = int(stm_pnt_j["pnt_idx"].values)
     sd_complex_j = stm_pnt_j["sd_complex"].values
@@ -671,12 +680,14 @@ def arc_estimation_xarray_input(
     mean_ampl_sd_j = stm_pnt_j["mean_ampl_sd_stm"].values
     mad_ampl_sd_j = stm_pnt_j["mad_ampl_sd_stm"].values
     median_ampl_sd_j = stm_pnt_j["median_ampl_sd_stm"].values
-    rdx_j = stm_pnt_j["rd_x"].values
-    rdy_j = stm_pnt_j["rd_y"].values
 
     # Step 1: extract information on the arc
     # Compute the arc length
-    arc_length = np.sqrt((rdx_i - rdx_j) ** 2 + (rdy_i - rdy_j) ** 2)
+    arc_length = get_distance(
+        [stm_pnt_i[x_crd_label], stm_pnt_i[y_crd_label]],
+        [stm_pnt_j[x_crd_label], stm_pnt_j[y_crd_label]],
+        mode=coordinate_type,
+    )
 
     # Combine breakpoints to have breakpoints per arc
     bkps_arc_stm = bkps_stm_i + bkps_stm_j
@@ -748,8 +759,8 @@ def arc_estimation_xarray_input(
     arc_obs = np.append(re_arc, im_arc)
 
     # Combine all the independent variables in one independent variable
-    x_data = bkps, years, temp, cr2ph_arc
-    X_data = years, temp, cr2ph_arc
+    x_data = (bkps, years, temp, cr2ph_arc)  # used in phase estimation
+    X_data = (years, temp, cr2ph_arc)  # used in curve fit
 
     # Create arrays with initial values
     x0_2_p = np.zeros(3 * len(bkps) + 3)  # Create empty array for the bounds
@@ -816,77 +827,37 @@ def arc_estimation_xarray_input(
         print(f"Optimal parameters not found. Skipping arc {(pnt_i_idx, pnt_j_idx)}")
         print(f"Encountered error: {e}")
 
-        ts_length = len(years)
-
         # Fill everything with nans
         ts_length = len(years)
-        results["unwrap_phases_arc"].append(
-            np.full(
-                [
-                    ts_length,
-                ],
-                np.nan,
-            )
-        )
-        results["sigma_phases_arc"].append(
-            np.full(
-                [
-                    ts_length,
-                ],
-                np.nan,
-            )
-        )
-        results["estimated_phase"].append(
-            np.full(
-                [
-                    ts_length,
-                ],
-                np.nan,
-            )
-        )
-        results["estimated_displ_phase"].append(
-            np.full(
-                [
-                    ts_length,
-                ],
-                np.nan,
-            )
-        )
-        results["estimated_thermal"].append(np.nan)
-        results["estimated_cross_range"].append(np.nan)
-        results["estimated_cross_range_sigma"].append(np.nan)
-        results["estimated_thermal_sigma"].append(np.nan)
-        results["estimated_thermal_phase"].append(
-            np.full(
-                [
-                    ts_length,
-                ],
-                np.nan,
-            )
-        )
-        results["estimated_cross_range_phase"].append(
-            np.full(
-                [
-                    ts_length,
-                ],
-                np.nan,
-            )
-        )
-        results["cr2ph_arcs"].append(
-            np.full(
-                [
-                    ts_length,
-                ],
-                np.nan,
-            )
-        )
+
+        for key in [
+            "unwrap_phases_arc",
+            "sigma_phases_arc",
+            "estimated_phase",
+            "estimated_displ_phase",
+            "estimated_thermal_phase",
+            "estimated_cross_range_phase",
+            "cr2ph_arcs",
+        ]:
+            results[key].append(np.full([ts_length], np.nan))
+        for key in [
+            "estimated_thermal",
+            "estimated_cross_range",
+            "estimated_cross_range_sigma",
+            "estimate_thermal_sigma",
+        ]:
+            results[key].append(np.nan)
+
         results["succeeded_arcs"].append((np.nan, np.nan))
 
-        if test_stochastics == 1:
-            stochastic_results["q_per_partition"].append(np.nan)
-            stochastic_results["std_residuals_partition"].append(np.nan)
-            stochastic_results["rmse_residuals_partition"].append(np.nan)
-            stochastic_results["mean_sigma_post_arc"].append(np.nan)
+        if test_stochastics:
+            for key in [
+                "q_per_partition",
+                "std_residuals_partition",
+                "rmse_residuals_partition",
+                "mean_sigma_post_arc",
+            ]:
+                stochastic_results[key].append(np.nan)
             stochastic_results["mean_a_priori_sigma_arc"].append(np.mean(Qyy_diagonal))
             stochastic_results["arc_length"].append(arc_length)
             stochastic_results["mean_sigma_p_i"].append(np.mean(slc_quality_i))
@@ -918,7 +889,7 @@ def arc_estimation_xarray_input(
         # Get the dictionaries in the right shape and format
         results = _flatten_arrays_in_dict(results)
 
-        if test_stochastics == 1:
+        if test_stochastics:
             rmse_res_partition, std_res_partition, q_per_part = _compute_residuals_per_partition_stm(
                 phase_unwrap_2_p_b, phase_est_2_p_b, Qyy, bkps
             )
@@ -936,7 +907,7 @@ def arc_estimation_xarray_input(
 
         # Step 6. Printing
 
-        if print_output == 1:
+        if print_output:
             print(
                 "Estimated cross_range (phase domain NMAD):",
                 np.around(x_hat_arc_ph[0, 0], 2),
@@ -963,7 +934,7 @@ def arc_estimation_xarray_input(
             print("")
             print("")
 
-    if test_stochastics == 1:
+    if test_stochastics:
         return results, stochastic_results
 
     else:
@@ -987,13 +958,14 @@ def arc_estimation_control_network(
     sigma_ampl_sd,
     mad_ampl_sd,
     median_ampl_sd,
-    rdx,
-    rdy,
+    x_coordinates,
+    y_coordinates,
+    coordinate_type: Literal["euclidean", "geographic"] = "euclidean",
     filter_length_complex=30,
     jump_percentage_2pi=0.85,
     vcm_complex_method="mad_median",
-    test_stochastics=0,
-    print_output=0,
+    test_stochastics=False,
+    print_output=False,
 ):
     """Estimate parameters for arcs in a control network based on input time series and geodetic measurements.
 
@@ -1035,10 +1007,12 @@ def arc_estimation_control_network(
         Median absolute deviations (MAD) of amplitudes.
     median_ampl_sd : numpy.ndarray
         Median amplitudes for each point.
-    rdx : numpy.ndarray
+    x_coordinates : numpy.ndarray
         X-coordinates of the points in the control network.
-    rdy : numpy.ndarray
+    y_coordinates : numpy.ndarray
         Y-coordinates of the points in the control network.
+    coordinate_type: Literal["euclidean", "geographic"], default "euclidean"
+        Whether the given coordinates are in Euclidean space (such as RD) or in geographic space (such as lon/lat)
     filter_length_complex : int, optional
         Length of the filter for phase unwrapping (default: 30).
     jump_percentage_2pi : float, optional
@@ -1046,10 +1020,10 @@ def arc_estimation_control_network(
     vcm_complex_method : str, optional
         Method for variance-covariance matrix estimation in the complex domain.
         Options are "sigma_mean" or "mad_median" (default: "mad_median").
-    test_stochastics : int, optional
-        Flag for performing stochastic testing (default: 0).
-    print_output : int, optional
-        Flag for enabling or disabling print statements (default: 0).
+    test_stochastics : bool, optional
+        Flag for performing stochastic testing (default: False).
+    print_output : bool, optional
+        Flag for enabling or disabling print statements (default: False).
 
     Returns
     -------
@@ -1069,7 +1043,7 @@ def arc_estimation_control_network(
             - 'succeeded_arcs': List of arcs where parameter estimation succeeded.
 
     stochastic_results : dict, optional
-        Dictionary containing stochastic testing results (if `test_stochastics=1`), including:
+        Dictionary containing stochastic testing results (if `test_stochastics=True`), including:
             - 'q_per_partition': Quality metrics for each partition.
             - 'std_residuals_partition': Standard deviations of residuals for each partition.
             - 'rmse_residuals_partition': RMSE of residuals for each partition.
@@ -1093,7 +1067,7 @@ def arc_estimation_control_network(
         If parameter estimation fails for an arc during optimization.
     """
     # If we want to do some tests on the stochastics
-    if test_stochastics == 1:
+    if test_stochastics:
         stochastic_results = {
             "q_per_partition": [],
             "std_residuals_partition": [],
@@ -1139,8 +1113,6 @@ def arc_estimation_control_network(
         mean_ampl_sd_i = mean_ampl_sd[pnt_i_idx, :]
         mad_ampl_sd_i = mad_ampl_sd[pnt_i_idx, :]
         median_ampl_sd_i = median_ampl_sd[pnt_i_idx, :]
-        rdx_i = rdx[pnt_i_idx]
-        rdy_i = rdy[pnt_i_idx]
 
         sd_complex_j = sd_complex[pnt_j_idx, :]
         slc_quality_j = slc_quality[pnt_j_idx, :]
@@ -1150,12 +1122,15 @@ def arc_estimation_control_network(
         mean_ampl_sd_j = mean_ampl_sd[pnt_j_idx, :]
         mad_ampl_sd_j = mad_ampl_sd[pnt_j_idx, :]
         median_ampl_sd_j = median_ampl_sd[pnt_j_idx, :]
-        rdx_j = rdx[pnt_j_idx]
-        rdy_j = rdy[pnt_j_idx]
 
         # Step  1. Extract information for the ARC
         # Compute the arc length
-        arc_length = np.sqrt((rdx_i - rdx_j) ** 2 + (rdy_i - rdy_j) ** 2)
+
+        arc_length = get_distance(
+            [x_coordinates[pnt_i_idx], y_coordinates[pnt_i_idx]],
+            [x_coordinates[pnt_j_idx], y_coordinates[pnt_j_idx]],
+            mode=coordinate_type,
+        )
 
         # Extract the breakpoints for the arc
         bkps_arc_stm = bkps_stm_i + bkps_stm_j
@@ -1291,78 +1266,37 @@ def arc_estimation_control_network(
         except (RuntimeError, ValueError):
             print(f"Optimal parameters not found. Skipping arc {(pnt_i_idx, pnt_j_idx)}")
 
-            # Length time-series
-            ts_length = len(ampl_i)
-
             # Fill everything with nans
             ts_length = len(ampl_i)
-            results["unwrap_phases_arc"].append(
-                np.full(
-                    [
-                        ts_length,
-                    ],
-                    np.nan,
-                )
-            )
-            results["sigma_phases_arc"].append(
-                np.full(
-                    [
-                        ts_length,
-                    ],
-                    np.nan,
-                )
-            )
-            results["estimated_phase"].append(
-                np.full(
-                    [
-                        ts_length,
-                    ],
-                    np.nan,
-                )
-            )
-            results["estimated_displ_phase"].append(
-                np.full(
-                    [
-                        ts_length,
-                    ],
-                    np.nan,
-                )
-            )
-            results["estimated_thermal"].append(np.nan)
-            results["estimated_cross_range"].append(np.nan)
-            results["estimated_cross_range_sigma"].append(np.nan)
-            results["estimated_thermal_sigma"].append(np.nan)
-            results["estimated_thermal_phase"].append(
-                np.full(
-                    [
-                        ts_length,
-                    ],
-                    np.nan,
-                )
-            )
-            results["estimated_cross_range_phase"].append(
-                np.full(
-                    [
-                        ts_length,
-                    ],
-                    np.nan,
-                )
-            )
-            results["cr2ph_arcs"].append(
-                np.full(
-                    [
-                        ts_length,
-                    ],
-                    np.nan,
-                )
-            )
+
+            for key in [
+                "unwrap_phases_arc",
+                "sigma_phases_arc",
+                "estimated_phase",
+                "estimated_displ_phase",
+                "estimated_thermal_phase",
+                "estimated_cross_range_phase",
+                "cr2ph_arcs",
+            ]:
+                results[key].append(np.full([ts_length], np.nan))
+            for key in [
+                "estimated_thermal",
+                "estimated_cross_range",
+                "estimated_cross_range_sigma",
+                "estimate_thermal_sigma",
+            ]:
+                results[key].append(np.nan)
+
             results["succeeded_arcs"].append((np.nan, np.nan))
 
-            if test_stochastics == 1:
-                stochastic_results["q_per_partition"].append(np.nan)
-                stochastic_results["std_residuals_partition"].append(np.nan)
-                stochastic_results["rmse_residuals_partition"].append(np.nan)
-                stochastic_results["mean_sigma_post_arc"].append(np.nan)
+            if test_stochastics:
+                for key in [
+                    "q_per_partition",
+                    "std_residuals_partition",
+                    "rmse_residuals_partition",
+                    "mean_sigma_post_arc",
+                ]:
+                    stochastic_results[key].append(np.nan)
                 stochastic_results["mean_a_priori_sigma_arc"].append(np.mean(Q_yy_diagonal))
                 stochastic_results["arc_length"].append(arc_length)
                 stochastic_results["mean_sigma_p_i"].append(np.mean(slc_quality_i))
@@ -1399,7 +1333,7 @@ def arc_estimation_control_network(
             # Get the dictionaries in the right shape and format
             # results = flatten_arrays_in_dict(results)
 
-            if test_stochastics == 1:
+            if test_stochastics:
                 rmse_res_partition, std_res_partition, q_per_part = _compute_residuals_per_partition_stm(
                     phase_unwrap_2_p_b, phase_est_2_p_b, Q_yy, bkps
                 )
@@ -1415,7 +1349,7 @@ def arc_estimation_control_network(
                 # Get the dictionaries in the right shape and format
                 # stochastic_results = flatten_arrays_in_dict(stochastic_results)
 
-            if print_output == 1:
+            if print_output:
                 print(
                     "Estimated cross_range (phase domain NMAD):",
                     np.around(x_hat_arc_ph[0, 0], 2),

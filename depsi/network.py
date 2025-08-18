@@ -9,6 +9,7 @@ import numpy as np
 from scipy.spatial import Delaunay, distance_matrix
 
 from depsi.arc_estimation import arc_estimation_control_network
+from depsi.utils import get_distance
 
 logger = logging.getLogger(__name__)
 
@@ -57,33 +58,6 @@ def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=No
     return coordinates, arcs
 
 
-def _get_distance(s, t):
-    """Calculate the distance between two points.
-
-    Args:
-    ----
-        s: the source point.
-        t: the target point.
-
-    Returns:
-    -------
-        The distance between the two points.
-    """
-    # TODO(tvl) More complex distance functions can be implemented here.
-    #
-    # For example, network generation gives better results for square Euclidean distances.
-    # Non-square coordinate systems (like non-square image coordinates) may distort the circle properties of Delaunay
-    # networks into ellipses.
-    # Non-Euclidean coordinate systems (like angular lat-lon systems) may distort these same properties depending on
-    # the distance to a pole.
-    #
-    # Coordinate system transformations may be done on the STM before generating the network.
-    # However, there may be cases where it is impossible or undesirable to transform the point coordinates in the STM.
-    # In such a case, coordinates may be transformed inside this function.
-
-    return math.dist(s, t)
-
-
 def _generate_arcs_delaunay(coordinates, max_length=None):
     # Create network and collect neighbors.
     network = Delaunay(coordinates)
@@ -93,7 +67,7 @@ def _generate_arcs_delaunay(coordinates, max_length=None):
     arcs = []
     for s in range(len(neighbors_ptr) - 1):
         for t in range(neighbors_ptr[s], neighbors_ptr[s + 1]):
-            length = _get_distance(coordinates[int(s)], coordinates[neighbors_idx[t]])
+            length = get_distance(coordinates[int(s)], coordinates[neighbors_idx[t]], mode="euclidean")
             if max_length is None or length <= max_length:
                 arcs.append(tuple(sorted([int(s), int(neighbors_idx[t])])))
 
@@ -121,7 +95,7 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
             for coordinate in coordinates - coordinates[cur_index]
         ]
         partitions[cur_index] = num_partitions + 1  # Separate the current node into its own partition.
-        distances = [_get_distance(coordinates[cur_index], coordinate) for coordinate in coordinates]
+        distances = [get_distance(coordinates[cur_index], coordinate, mode="euclidean") for coordinate in coordinates]
 
         # Create a list of tuples with the partition, distance, and index, sorted by partition and then distance.
         values = np.array(sorted(list(zip(partitions, distances, indices, strict=False))))
@@ -400,7 +374,12 @@ def construct_control_network(
     avg_degree = 0
     iteration = 0
 
-    while True:
+    more_arcs_to_test = True
+    network_reqs_not_met = True
+
+    # the following while loop will stop when either the network requirements (# nodes and redundancy level) are met,
+    # OR when we run out of arcs to text
+    while more_arcs_to_test and network_reqs_not_met:
         # Select the arcs for the current iteration
         iteration += 1
         end_idx = n_top + iteration * n_batch
@@ -408,7 +387,8 @@ def construct_control_network(
 
         if not arcs_to_test:  # Break if no more arcs to add
             print("No more arcs to test.")
-            break
+            more_arcs_to_test = False
+            continue
 
         # Create a new network using the selected arcs
         current_network = nx.Graph()
@@ -428,7 +408,8 @@ def construct_control_network(
         print(f"The average degree is {avg_degree:.2f}")
 
         if len(current_network.nodes) >= min_nodes and avg_degree >= min_redundancy:
-            break  # Stop if requirements are met
+            network_reqs_not_met = False
+            # Stop if requirements are met
 
     # Final check if the network meets requirements
     if len(current_network.nodes) < min_nodes or avg_degree < min_redundancy:

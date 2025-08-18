@@ -1063,7 +1063,6 @@ def connect_point_to_control_network(
     """
     # Make an empty dictionary where the estimation results for the point will be stored
     point_add = int(stm_1_point["pnt_idx"].values)
-    solved_the_point = 0
     estimated_values_pnt_add = {}
     arc_results_pnt_add = {}
 
