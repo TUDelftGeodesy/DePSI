@@ -115,6 +115,6 @@ def estimate_atmosphere_phase(stm: xr.Dataset) -> xr.Dataset:
         baseline_years=stm["time"],
         filter_length=1,
     )
-    stm["atmosphere_estimated"] = stm["d_phase"] - non_linear + stm["atmosphere_base"]
+    stm["atmosphere_estimates"] = stm["d_phase"] - unmodeled_disp + stm["atmosphere_mother"]
 
     # Step 2: Apply spatial kriging to estimate atmospheric phase per epoch
