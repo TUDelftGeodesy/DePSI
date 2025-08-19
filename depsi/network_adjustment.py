@@ -447,7 +447,7 @@ def network_adjustment_control_network_displ(
     # fillt the off diagonal with correlations between the arcs
     q_yy = fill_covariances_from_shared_points(q_yy_1, adjustment_arcs, sigma_points, ref_pnt)
 
-    # Compute eigenvectors and eigenvalues to check wheter matrix is positive-definite, if the matrix is
+    # Compute eigenvectors and eigenvalues to check whether matrix is positive-definite, if the matrix is
     # positive-definite we need to correct it
     eigvals, eigvecs = np.linalg.eigh(q_yy)
     if np.any(eigvals < 0):
