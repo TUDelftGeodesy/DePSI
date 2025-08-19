@@ -32,7 +32,7 @@ def estimate_plane_viewing_geometry(x, y, coeffs):
 
     Returns:
     -------
-        aray-like: predicted value for the angle given x and y coordinates
+        array-like: predicted value for the angle given x and y coordinates
     """
     a, b, c = coeffs
     return a * x + b * y + c
