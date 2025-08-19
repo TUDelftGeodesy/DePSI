@@ -450,7 +450,7 @@ def construct_control_network(
             arcs, quality_dict_arcs, excluded_arcs,
             n_top=50, n_batch=10,
             deg_threshold=1.5, min_nodes=20, min_redundancy=2.0,
-            visualize_network=1
+            visualize_network=False
         )
     """
     # Sort arcs by quality, removing excluded arcs from the ranked arcs variable

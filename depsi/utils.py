@@ -45,6 +45,7 @@ def wrap_phase(phs_abs):
 
     return phs_wrapped
 
+
 EARTH_RADIUS = 6378136  # m
 
 
@@ -178,7 +179,7 @@ def get_distance(
     raise ValueError(f"Unknown mode {mode}, only know euclidean and geographic!")
 
 
-def npdatetime64_to_datetime(date: np.datetime64) -> datetime:
+def npdatetime64_to_datetime(date: np.datetime64, tz_aware: bool = True) -> datetime:
     """Convert a numpy datetime64 object to a python datetime object.
 
     Parses the np.datetime64 object into a datetime object.
@@ -187,6 +188,8 @@ def npdatetime64_to_datetime(date: np.datetime64) -> datetime:
     ----------
     date : np.datetime64
       the date to be converted
+    tz_aware: bool, default True
+      whether the returned datetime object should be timezone-aware or not
 
     Returns
     -------
@@ -194,7 +197,10 @@ def npdatetime64_to_datetime(date: np.datetime64) -> datetime:
       The same date converted to a datetime object
     """
     timestamp = (date - np.datetime64("1970-01-01T00:00:00")) / np.timedelta64(1, "s")
-    return datetime.fromtimestamp(timestamp, UTC)
+    dt_obj = datetime.fromtimestamp(timestamp, UTC)
+    if not tz_aware:
+        dt_obj = datetime.strptime(dt_obj.strftime("%Y%m%d:%H%M%S"), "%Y%m%d:%H%M%S")
+    return dt_obj
 
 
 def _get_aoi_shapefile_bounding_box(aoi_filename: str) -> tuple:

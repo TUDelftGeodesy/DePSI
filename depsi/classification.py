@@ -388,7 +388,7 @@ def _idx_within_distance(coords_ref, coords_others, min_dist):
 
 def detect_side_lobes(
     stm: xr.Dataset, max_pixel_dist: float, min_correlation: float, stm_version: float
-) -> tuple[np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Detect and mask side-lobe points based on the phase correlation between points.
 
     It first finds points on the same range and azimuth and only considers points close by. Then it
@@ -423,11 +423,11 @@ def detect_side_lobes(
 
     if stm_version == 1:
         amplitude_vals = stm["sd_amplitude"].data
-    if stm_version == 2:
+    elif stm_version == 2:
         amplitude_vals = stm["sd_amplitude_unnormalized"].data
 
     else:
-        print(f"Specified version number {stm_version} is not valid. Choose 1 or 2")
+        raise ValueError(f"Specified version number {stm_version} is not valid. Choose 1 or 2")
 
     # Define an empty set where the sidelobes will be stored
     side_lobes = set()

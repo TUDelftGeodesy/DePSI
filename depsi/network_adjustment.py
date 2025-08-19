@@ -488,7 +488,7 @@ def _estimate_connection_point_stm(variable, stm_control, arc_variable, arc_sigm
     Parameters
     ----------
     variable : str
-        The name of the variable to estimate (e.g., 'cross_range', 'displacement').
+        The name of the variable in the STM to estimate (e.g., 'cross_range', 'displacement').
     stm_control : xarray.DataArray
         State Transition Matrix (STM) of the control points, including the reference point.
     arc_variable : numpy.ndarray
