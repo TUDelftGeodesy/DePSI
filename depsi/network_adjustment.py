@@ -923,7 +923,7 @@ def _estimate_connection_point_full_phase_stm_input(
     # Get the arc variances on the diagonal
     np.fill_diagonal(Qyy, arc_sigma_displ**2)
 
-    # Compute eigenvectors and eigenvalues to check wheter matrix is positive-definite, if the matrix is
+    # Compute eigenvectors and eigenvalues to check whether matrix is positive-definite, if the matrix is
     # positive-definite we need to correct it
     eigvals, eigvecs = np.linalg.eigh(Qyy)
     if np.any(eigvals < 0):
