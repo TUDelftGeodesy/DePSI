@@ -88,7 +88,7 @@ class TestEstimateUnmodeledDisplacement:
         """Test the gaussian filter_type for estimating non-linear deformation."""
         psc_phase_residuals = xr.DataArray(np.random.rand(5, 10), dims=('space', 'time'))
         baseline_years = xr.DataArray(np.sort(np.random.rand(10)), dims='time')
-        filter_length = 2
+        filter_length = 1
         sampling_rate = 2
 
         # Actual
@@ -117,6 +117,7 @@ class TestEstimateUnmodeledDisplacement:
                 psc_phase_residuals=psc_phase_residuals,
                 baseline_years=baseline_years,
                 filter_length=1,
+                sampling_rate=2,
                 filter_type='invalid_method'
             )
 
@@ -130,6 +131,7 @@ class TestEstimateUnmodeledDisplacement:
                 psc_phase_residuals=psc_phase_residuals,
                 baseline_years=baseline_years,
                 filter_length=1,
+                sampling_rate=2,
                 filter_type='block'
             )
 
@@ -143,6 +145,7 @@ class TestEstimateUnmodeledDisplacement:
                 psc_phase_residuals=psc_phase_residuals,
                 baseline_years=baseline_years,
                 filter_length=1,
+                sampling_rate=2,
                 filter_type='block'
             )
 
@@ -155,7 +158,7 @@ class TestEstimateUnmodeledDisplacement:
             estimate_unmodeled_displacement(
                 psc_phase_residuals=psc_phase_residuals,
                 baseline_years=baseline_years,
-                filter_length=1,
+                filter_length=2,
                 sampling_rate = 10,
                 filter_type='block'
             )

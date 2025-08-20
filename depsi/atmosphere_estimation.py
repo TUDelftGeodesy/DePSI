@@ -25,12 +25,6 @@ def _get_signal_window_with_zero_padding(
     # Determine the core window size based on the filter length and sampling rate
     core_window_size = int(filter_length * sampling_rate) + 1
 
-    if core_window_size > window_size:
-        raise ValueError(
-            "Filter length * sampling_rate is too large compared to the temporal span. "
-            "Adjust the filter_length or sampling_rate."
-        )
-
     window = np.zeros(window_size)
     start = (window_size - core_window_size) // 2
     end = start + core_window_size
@@ -82,6 +76,12 @@ def estimate_unmodeled_displacement(
     # Build the window for the low-pass filter
     baseline_scaled = baseline_years * sampling_rate
     timespan = baseline_scaled.max() - baseline_scaled.min() + 1
+
+    if (filter_length * sampling_rate) > timespan:
+        raise ValueError(
+            "Filter length * sampling_rate is too large compared to the temporal span. "
+            "Adjust the filter_length or sampling_rate."
+        )
 
     window_size = int(timespan) + 1 # Ensure window size is an odd integer
 
