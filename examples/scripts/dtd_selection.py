@@ -199,109 +199,16 @@ if __name__ == "__main__":
                                 "detection_flag": (["space", "time"], dt_df.iloc[:, 7:].values),
                             },
                         )
-    print("")
-    
-    ## STEP 4 - EXTRACT THE TARGETS FROM THE STACK 
-    
-    print("STEP 4 - EXTRACT DESIGNATED TARGETS FROM STACK")
-    # Create target coordinates set
-    target_coords    = set(zip(
-                        targets['azimuth'].data.flatten(),
-                        targets['range'].data.flatten()
-                        ))
-    
-    # Create meshgrid for azimuth and range in slc_stack
-    slc_azimuth, slc_range = np.meshgrid(
-                                slc_stack['azimuth'].data,
-                                slc_stack['range'].data,
-                                indexing='ij'
-                                )
-    
-    # # Find matching coordinates in slc_stack
-    # matching_indices = [
-    #                     (az_idx, rg_idx) 
-    #                     for az_idx, az in enumerate(slc_stack['azimuth'].data) 
-    #                     for rg_idx, rg in enumerate(slc_stack['range'].data)
-    #                     if (az, rg) in target_coords
-    #                     ]
-    
-    # if not matching_indices:
-    #     print("No matches found.")
-    # else:
-    #     print(f"Found {len(matching_indices)} matching targets.")
-    
-    # Find matching coordinates in slc_stack (value-based instead of index-based)
-    matching_coords = [
-        (az, rg)
-        for az in slc_stack['azimuth'].data
-        for rg in slc_stack['range'].data
-        if (az, rg) in target_coords
-    ]
-    
-    if not matching_coords:
-        print("No matches found.")
-    else:
-        print(f"Found {len(matching_coords)} matching targets.")
-    
-    
-    ## In case one is interested in querring for 1 target only, use this commented out part.
-    
-    # # Step 1: Identify the index of the matching azimuth and range in the slc_stack
-    # azimuth_idx = matching_indices[0][0]
-    # range_idx = matching_indices[0][1]
-    
-    # # Step 2: Slice the slc_stack to extract all time-related data for the matching point
-    # matching_point_slc_data = slc_stack.isel(azimuth=azimuth_idx, range=range_idx)
-    
-    ## For querring more targets
-    # Call the function to extract the data for the matching targets
-    matched_slc_targets_dict, lat_vals, lon_vals, target_names, detection_flag_space_time, target_space_indices = io.extract_dttarget_data_from_slc(
-        slc_stack, matching_coords, targets, verbose=True
-    )
-    
-    # Convert lists to numpy arrays
-    lat_vals     = np.array(lat_vals)
-    lon_vals     = np.array(lon_vals)
-    target_names = np.array(target_names)
-    
-    # Add 1D coordinate variables (target coordinates) to the dictionary
-    matched_slc_targets_dict['lat']     = lat_vals
-    matched_slc_targets_dict['lon']     = lon_vals
-    matched_slc_targets_dict['azimuth'] = np.array(matched_slc_targets_dict['azimuth'])
-    matched_slc_targets_dict['range']   = np.array(matched_slc_targets_dict['range'])
-    
-    # Build dataset from 2D variables (time series)
-    matching_scatterer_slc_data_f = {
-        var: (('target', 'time'), np.array(matched_slc_targets_dict[var]))
-        for var in matched_slc_targets_dict
-        if np.array(matched_slc_targets_dict[var]).size > 0 
-           and np.array(matched_slc_targets_dict[var]).ndim == 2
-    }
-    
-    # Add 1D variables (target coordinates)
-    for var in ['lat', 'lon', 'azimuth', 'range']:
-        matching_scatterer_slc_data_f[var] = (['target'], np.array(matched_slc_targets_dict[var]))
-    
-    # Create target_name dictionary for attributes
-    target_name_dict = {
-        name: (lon, lat) for name, lon, lat in zip(target_names, lon_vals, lat_vals)
-    }
-    
-    # Create Dataset
-    xar_matching_scatterer_slc_data_f = xr.Dataset(matching_scatterer_slc_data_f)
-    
-    # Add target_name dictionary as an attribute (not a variable)
-    xar_matching_scatterer_slc_data_f.attrs['target_name'] = target_name_dict
-    
-    # Rename 'target' dimension to 'space'
-    xar_matching_scatterer_slc_data_f = xar_matching_scatterer_slc_data_f.rename({'target': 'space'})
-    
-    # Add the 'time' coordinate
-    xar_matching_scatterer_slc_data_f = xar_matching_scatterer_slc_data_f.assign_coords(
-        time=slc_stack['time'].data
-    )
+    ## STEP 4 - EXTRACT THE TARGETS FROM THE STACK
+    matching_scatterers = io.get_targets_from_slc(slc_stack, targets)
 
-    print(xar_matching_scatterer_slc_data_f)
+    # Re-organize the target names to the attributes, since they are currently string coords
+    target_names = dict()
+    for name in matching_scatterers.coords['target'].values:
+        tgt = matching_scatterers.where(matching_scatterers['target']==name, drop=True)
+        target_names[name] = (float(tgt['lon'].values), float( tgt['lat'].values))
+    matching_scatterers.attrs = target_names
+    matching_scatterers = matching_scatterers.drop(['target'])
 
 
 ## Note: Key variables
