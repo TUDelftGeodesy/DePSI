@@ -148,9 +148,6 @@ if __name__ == "__main__":
     rcsAnalizer        = params['paths']['rcsAnalizer']
     rcs_AnalizerArgs   = [params['paths']['rcs_AnalizerArgs']]
     
-    rcsoutput_folder   = "/home/parallels/CarolineRadarCodingToolbox1/Caroline-Radar-Coding-Toolbox/example/nl_groningen_s1_dsc_t037_test/RadarCoordinates/"
-    rcsAnalizer        = "/home/parallels/CarolineRadarCodingToolbox1/Caroline-Radar-Coding-Toolbox/detectDesignatedTargets.py"
-    rcs_AnalizerArgs   = ["/home/parallels/CarolineRadarCodingToolbox1/Caroline-Radar-Coding-Toolbox/example/aoi_groningen/nl_groningen_s1_dsct037.parms"]
     
     print("")
     
