@@ -5,7 +5,7 @@ by loading the stack, loading the RadarCoding Toolbox output, querrying for targ
 An example of the input parameter file (dtd_params.yml), 
 an SLC stack in zarr frmat (nl_groningen_s1_dsc_t037_haren), 
 the output of the RadarCoding Toolbox (s1_dsc037_RC.csv) can be found at:  
-https://figshare.com/account/items/28218506/edit
+https://figshare.com/ndownloader/files/51712790
 
 Please place these files in ./examples/scripts/data
 
