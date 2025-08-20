@@ -2,7 +2,6 @@
 
 import os
 import re
-import subprocess
 from datetime import datetime
 from glob import glob
 from io import StringIO
