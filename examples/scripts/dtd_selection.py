@@ -205,12 +205,24 @@ if __name__ == "__main__":
     # Re-organize the target names to the attributes, since they are currently string coords
     target_names = dict()
     for name in matching_scatterers.coords['target'].values:
-        tgt = matching_scatterers.where(matching_scatterers['target']==name, drop=True)
-        target_names[name] = (float(tgt['lon'].values), float( tgt['lat'].values))
+        tgt = matching_scatterers.where(matching_scatterers['target'] == name, drop=True)
+        target_names[name] = {
+            "lon": float(tgt['lon'].values),
+            "lat": float(tgt['lat'].values),
+            "azimuth": float(tgt['azimuth'].values),
+            "range": float(tgt['range'].values),
+        }
+    
     matching_scatterers.attrs = target_names
+    
+    # Print the number of identified targets and their names
+    print(f"Identified {len(matching_scatterers.attrs)} targets in the SLC stack:")
+    for name, info in matching_scatterers.attrs.items():
+        print(f" - {name}: (lon={info['lon']}, lat={info['lat']}, az={info['azimuth']}, rg={info['range']})")
+    
     matching_scatterers = matching_scatterers.drop(['target'])
 
 
 ## Note: Key variables
-# xar_matching_scatterer_slc_data_f  -> xarray Dataset containing SLC values for the matching targets
+# matching_scatterers  -> xarray Dataset containing SLC values for the matching targets
 #                                       along with 0/1 detection flags per target.
