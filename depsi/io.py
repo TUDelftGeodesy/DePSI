@@ -478,74 +478,58 @@ def read_rcs_csv(file_path):
 
 
 
-def extract_dttarget_data_from_slc(slc_stack, matching_coords, targets, verbose=False):
+def get_targets_from_slc(slc_stack, targets):
     """Extract target-matched data from a SLC stack.
-
-    This uses azimuth and range coordinates,
-    and build a full space-time detection_flag array aligned to slc_stack.
 
     This function matches given azimuth/range coordinates to the closest points
     in the SLC stack, extracts all data variables, and aligns detection_flag
-    time series from the targets dataset with the SLC time dimension.
-    Additionally, it builds a 3D detection_flag array spanning azimuth, range, and time.
+    time series from the targets dataset with the SLC time dimension. Then return
+    a Space-Time Matrix (STM) containing the aligned data.
 
     Parameters
     ----------
     slc_stack : xarray.Dataset
         Dataset containing SLC data with dimensions (azimuth, range, time),
         as well as variables like lat, lon, azimuth, range, etc.
-    matching_coords : list of tuples
-        Each tuple is (azimuth_value, range_value) of the target location to extract.
     targets : xarray.Dataset
-        Dataset containing target information with coordinates (target, time)
+        A Space-Time Matrix containing target information with coordinates (space, time)
         and variables such as azimuth, range, target, and detection_flag.
-    verbose : bool, optional
-        If True, prints messages about alignment, padding, or missing targets.
-        Default is False.
 
     Returns
     -------
-    matched_slc_targets_dict : dict
-        Dictionary containing extracted data arrays for each target, including:
-        - All variables from slc_stack
-        - lat, lon, azimuth, range
-        - detection_flag aligned to slc_stack time
-    lat_vals : list
-        Latitudes of matching targets (Dask arrays).
-    lon_vals : list
-        Longitudes of matching targets (Dask arrays).
-    target_names : list
-        Names of matching targets (None if not found in targets dataset).
-    detection_flag_space_time : xarray.DataArray
-        3D array of shape (azimuth, range, time), filled with aligned detection_flags.
-    target_space_indices : list
-        List of (az_idx, rg_idx) tuples giving the true space indices in slc_stack
-        for each matchings target (None if not found).
+    matching_scatterers : xarray.Dataset
+        Dataset containing the extracted SLC data for matching targets.
 
     Notes
     -----
-    - detection_flag values are aligned to the SLC timestamps.
-    - If a target is not present in `targets`, detection_flag is set to zeros.
-    - The 3D detection_flag_space_time array enables mapping targets in both
-      space and time for the entire SLC stack.
+        - detection_flag values are aligned to the SLC timestamps.
     """
-    matched_slc_targets_dict = {"lat": [], "lon": [], "azimuth": [], "range": [], "detection_flag": []}
-
-    lat_vals = []
-    lon_vals = []
-    target_names = []
-    target_space_indices = []
-
-    # Extract time arrays from SLC stack and targets
-    slc_times = np.array(slc_stack["time"].data)
-    target_times = np.array(targets["time"].data)
-
-    # Initialize a blank detection_flag array with same shape as slc_stack
-    detection_flag_space_time = xr.DataArray(
-        np.zeros((slc_stack.dims["azimuth"], slc_stack.dims["range"], slc_stack.dims["time"])),
-        coords={"azimuth": slc_stack["azimuth"].data, "range": slc_stack["range"].data, "time": slc_stack["time"].data},
-        dims=("azimuth", "range", "time"),
+    # Get bounds for SLC stack
+    # Select targets within the bound
+    targets_in_bound = targets.where(
+        (targets["azimuth"] >= slc_stack["azimuth"].min())
+        & (targets["azimuth"] <= slc_stack["azimuth"].max())
+        & (targets["range"] >= slc_stack["range"].min())
+        & (targets["range"] <= slc_stack["range"].max()),
+        drop=True,
     )
+
+    # Using nearest neighbor to select slc pixels matching targets
+    matching_scatterers = slc_stack.sel(
+        azimuth=targets_in_bound["azimuth"], range=targets_in_bound["range"], method="nearest"
+    )
+
+    # Compute detection flag masks
+    # First linear interpolate in time dimension
+    # This only take into account the two neighbors in time
+    detection_flag = targets_in_bound["detection_flag"].interp(time=matching_scatterers["time"], method="linear")
+    # Epochs outside the original 1 periods will have values <1, Set them to 0
+    detection_flag = detection_flag.where(detection_flag >= 1.0, 0)
+
+    # Insert detection_flag to matching_scatterers
+    matching_scatterers["detection_flag"] = xr.DataArray(detection_flag.data, dims=("space", "time"))
+
+    return matching_scatterers
 
     # Iterate over all requested (azimuth, range) coordinates
     for az_val, rg_val in matching_coords:
