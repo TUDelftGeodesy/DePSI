@@ -476,27 +476,6 @@ def read_rcs_csv(file_path):
         raise RuntimeError(f"Error loading the Radar Coding (RC) Toolbox output file '{file_path}") from e
 
 
-def run_script_subprocess(script_path, args):
-    """Run a Python script with arguments using `subprocess`.
-
-    Meant to run the RadarCoding Toolbox within Python scripts.
-
-    Parameters
-    ----------
-    script_path : str
-        Path to the script to execute.
-    args : list of str
-        Arguments to pass to the script.
-
-    Raises
-    ------
-    subprocess.CalledProcessError
-        If the script execution fails.
-    """
-    try:
-        subprocess.run(["python", script_path] + args, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Error while running the RCS Toolbox: {e}")
 
 
 def extract_dttarget_data_from_slc(slc_stack, matching_coords, targets, verbose=False):
