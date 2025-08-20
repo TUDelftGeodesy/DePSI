@@ -214,6 +214,3 @@ if __name__ == "__main__":
 ## Note: Key variables
 # xar_matching_scatterer_slc_data_f  -> xarray Dataset containing SLC values for the matching targets
 #                                       along with 0/1 detection flags per target.
-# detection_flag_space_time          -> xarray DataArray of shape (azimuth, range, time) containing
-#                                       0/1 detection flags for all pixels in the original SLC stack,
-#                                       indicating whether a target was detected at each time step.
