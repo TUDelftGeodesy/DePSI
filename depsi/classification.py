@@ -387,7 +387,7 @@ def _idx_within_distance(coords_ref, coords_others, min_dist):
 
 
 def detect_side_lobes(
-    stm: xr.Dataset, max_pixel_dist: float, min_correlation: float, stm_version: float
+    stm: xr.Dataset, max_pixel_dist: float, min_correlation: float, stm_version: float = 2
 ) -> tuple[np.ndarray, np.ndarray]:
     """Detect and mask side-lobe points based on the phase correlation between points.
 
@@ -405,7 +405,7 @@ def detect_side_lobes(
       correlation
     stm_version : float
       Specify the version of the stm. v1 is the version that was created before jan 2025.
-      v2 belongs to stms that were created after jan 2025 by Simon
+      v2 belongs to stms that were created after jan 2025 by Simon and Caroline
 
     Returns
     -------
