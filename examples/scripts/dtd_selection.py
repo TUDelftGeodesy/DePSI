@@ -186,17 +186,17 @@ if __name__ == "__main__":
     # Convert to xarray.Dataset
     targets          = xr.Dataset(
                             {
-                                "existing_flag": (["target", "time"], dt_df.iloc[:, 7:].values),
+                                "existing_flag": (["space", "time"], dt_df.iloc[:, 7:].values),
                             },
                             coords={
-                                "target": dt_df["ID"].values,
-                                "range": ("range", dt_df["Range"].values),
-                                "azimuth": ("azimuth", dt_df["Azimuth"].values),
-                                "lat": ("latitude", dt_df["Lat"].values),
-                                "lon": ("longitude", dt_df["Lon"].values),
-                                "height": ("height", dt_df["Height"].values),
+                                "target": ("space", dt_df["ID"].values),
+                                "range": ("space", dt_df["Range"].values),
+                                "azimuth": ("space", dt_df["Azimuth"].values),
+                                "lat": ("space", dt_df["Lat"].values),
+                                "lon": ("space", dt_df["Lon"].values),
+                                "height": ("space", dt_df["Height"].values),
                                 "time": pd.to_datetime(dt_dates, format="%Y%m%d"),
-                                "detection_flag": (["target", "time"], dt_df.iloc[:, 7:].values),
+                                "detection_flag": (["space", "time"], dt_df.iloc[:, 7:].values),
                             },
                         )
     print("")
