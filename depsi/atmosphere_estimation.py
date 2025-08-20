@@ -12,6 +12,34 @@ import xarray as xr
 from scipy import signal
 
 
+def _get_signal_window_with_zero_padding(
+    type,
+    timespan,
+    filter_length,
+    sampling_rate
+) -> np.ndarray:
+
+    # Determine window of size to cover the full range of time differences
+    window_size = int(timespan) + 1  # Ensure window size is an odd integer
+
+    # Determine the core window size based on the filter length and sampling rate
+    core_window_size = int(filter_length * sampling_rate) + 1
+
+    if core_window_size > window_size:
+        raise ValueError(
+            "Filter length * sampling_rate is too large compared to the temporal span. "
+            "Adjust the filter_length or sampling_rate."
+        )
+
+    window = np.zeros(window_size)
+    start = (window_size - core_window_size) // 2
+    end = start + core_window_size
+
+    window[start:end] = signal.windows.get_window(type, core_window_size, fftbins=False)
+
+    return window
+
+
 def estimate_unmodeled_displacement(
         psc_phase_residuals: xr.DataArray,
         baseline_years: xr.DataArray,
@@ -53,15 +81,25 @@ def estimate_unmodeled_displacement(
 
     # Build the window for the low-pass filter
     baseline_scaled = baseline_years * sampling_rate
-    timespan = baseline_scaled.max() - baseline_scaled.min()
-    window_size = int(2 * timespan) + 1
+    timespan = baseline_scaled.max() - baseline_scaled.min() + 1
+
+    window_size = int(timespan) + 1 # Ensure window size is an odd integer
 
     if filter_type == 'block':
-        window = signal.windows.boxcar(window_size)
+        window = _get_signal_window_with_zero_padding(
+            type='boxcar',
+            timespan=timespan,
+            filter_length=filter_length,
+            sampling_rate=sampling_rate
+        )
 
     elif filter_type == 'triangle':
-        window = signal.windows.triang(window_size)
-
+        window = _get_signal_window_with_zero_padding(
+            type='triang',
+            timespan=timespan,
+            filter_length=filter_length,
+            sampling_rate=sampling_rate
+        )
     elif filter_type == 'gaussian':
         std_dev = filter_length * sampling_rate / 6  # ±3σ covers the window
         window = signal.windows.gaussian(window_size, std=std_dev)
