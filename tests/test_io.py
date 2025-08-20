@@ -18,7 +18,7 @@ def test_get_targets_from_slc():
     # Grid dimensions like the real dataset
     az = np.arange(65)
     rg = np.arange(222)
-    times = np.array([np.datetime64(f"2025-01-{i+1:02d}") for i in range(5)])
+    times = np.array([np.datetime64(f"2025-01-{i + 1:02d}") for i in range(5)])
 
     # Use dask arrays and correct types
     slc_stack = xr.Dataset(
@@ -80,17 +80,13 @@ def test_read_rcs_csv():
     # 2️⃣ Check required columns exist
     required_cols = ["Range", "Azimuth", "Lat", "Lon", "Height"]
     for col in required_cols:
-        assert col in df.columns, f"Required column '{
-            col}' missing from DataFrame"
+        assert col in df.columns, f"Required column '{col}' missing from DataFrame"
 
     # 3️⃣ Check required columns are numeric (float)
     for col in required_cols:
-        assert pd.api.types.is_numeric_dtype(df[col]), f"Column '{
-            col}' is not numeric"
+        assert pd.api.types.is_numeric_dtype(df[col]), f"Column '{col}' is not numeric"
 
     # 4️⃣ Check date columns are present and numeric
     for date_col in dates:
-        assert date_col in df.columns, f"Date column '{
-            date_col}' missing from DataFrame"
-        assert pd.api.types.is_numeric_dtype(df[date_col]), f"Date column '{
-            date_col}' is not numeric"
+        assert date_col in df.columns, f"Date column '{date_col}' missing from DataFrame"
+        assert pd.api.types.is_numeric_dtype(df[date_col]), f"Date column '{date_col}' is not numeric"
