@@ -146,6 +146,21 @@ def estimate_unmodeled_displacement(
 
 
 def calculate_variogram_cloud(da: xr.DataArray, cutoff: float = 10000.0):
+    """ Calculate the variogram cloud for a DataArray.
+
+    Parameters
+    ----------
+    da: xr.DataArray
+        The DataArray containing the data to calculate the variogram cloud.
+    cutoff: float
+        The maximum distance to consider for the variogram cloud. Default is 10000.0.
+    Returns
+    -------
+    pairwise_distances: np.ndarray
+        The pairwise distances between the points in the DataArray.
+    variances: np.ndarray
+        The variances corresponding to the pairwise distances.
+    """
     pairwise_distances = pdist(
         np.column_stack((da.coords['x'].values, da.coords['y'].values)),
         metric='euclidean'
@@ -158,6 +173,68 @@ def calculate_variogram_cloud(da: xr.DataArray, cutoff: float = 10000.0):
     mask = pairwise_distances < cutoff
     return pairwise_distances[mask], variances[mask]
 
+
+def _calculate_binned_variances(variances, method: str = "standard"):
+    """ Calculate the binned variances based on the method specified.
+
+    standard: Returns Experimental variogram.
+    unbiased: Returns unbiased variogram mentioned in (Cressie-Hawkins, 1980).
+    unbiased_robust: Returns unbiased robust variogram mentioned in (Cressie, 1993).
+    """
+    if method == "standard":
+        return np.mean(variances)
+    elif method == "unbiased":
+        ch = 0.457 + 0.494 / len(variances) + 0.045 / len(variances) ** 2
+        return 1 / ch * np.mean(variances ** 0.25) ** 4
+    elif method == "unbiased_robust":
+        return 1 / 0.457 * np.median(variances ** 0.25) ** 4
+
+
+def calculate_empirical_variogram(da, method: str = "standard", nlags: int= 50, cutoff=10000.0):
+    """ Calculate the empirical variogram of a DataArray.
+
+    Parameters
+    ----------
+    da: xr.DataArray
+        The DataArray containing the data to calculate the empirical variogram.
+    method: str
+        The method to use for calculating the empirical variogram. Options are:
+        'standard', 'unbiased', 'unbiased_robust'. Default is 'standard'.
+    nlags: int
+        The number of lags to use for the empirical variogram. Default is 50.
+    cutoff: float
+        The maximum distance to consider for the empirical variogram. Default is 10000.0.
+    Returns
+    -------
+    lags: np.ndarray
+        The lags for the empirical variogram.
+    semivariance: np.ndarray
+        The semivariance for the empirical variogram.
+    """
+
+    distances, variances = calculate_variogram_cloud(da, cutoff=cutoff)
+    dmax = np.amax(distances)
+    dmin = np.amin(distances)
+    dd = (dmax - dmin) / nlags
+    bins = [dmin + n * dd for n in range(nlags)]
+    dmax += 0.001  # Add a small value to ensure the last bin includes the maximum distance
+    bins.append(dmax)
+
+    lags = np.zeros(nlags)
+    semivariance = np.zeros(nlags)
+
+    for n in range(nlags):
+        indices = (distances >= bins[n]) & (distances < bins[n + 1])
+        if distances[indices].size > 0:
+            lags[n] = np.mean(distances[indices])
+            semivariance[n] = _calculate_binned_variances(variances[indices], method=method)
+        else:
+            lags[n] = np.nan
+            semivariance[n] = np.nan
+
+    lags = lags[~np.isnan(semivariance)]
+    semivariance = semivariance[~np.isnan(semivariance)]
+    return lags, semivariance
 
 
 def krige_per_single_time(
