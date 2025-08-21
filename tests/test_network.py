@@ -46,6 +46,31 @@ def stm_random():
 
 
 @pytest.fixture
+def stm_random_grid():
+    """STM points forming a 10x10 grid"""
+    N_time = 50
+    grid_shape = 10
+    x_grid, y_grid = np.meshgrid(np.arange(0, 100, grid_shape), np.arange(0, 100, grid_shape))
+    N_points = x_grid.flatten().shape[0]
+
+    stm = xr.Dataset(
+        coords={
+            "space": (["space"], np.arange(N_points)),
+            "time": (["time"], np.arange(N_time)),
+            "x": (["space"], x_grid.flatten()),
+            "y": (["space"], y_grid.flatten()),
+        },
+        data_vars={
+            "phase": (["space", "time"], np.random.uniform(0, 1, (N_points, N_time))),
+            "h2ph": (["space", "time"], np.random.uniform(0, 1, (N_points, N_time))),
+            "ambiguity": (["space", "time"], np.random.choice([-1, 0, 1], (N_points, N_time), p=[0.02, 0.96, 0.02])),
+        },
+    )
+
+    return stm
+
+
+@pytest.fixture
 def arcs_random(stm_random):
     """Fixture of fully connected arcs from stm_random."""
     # Fully connected arcs
@@ -65,6 +90,29 @@ def arcs_random(stm_random):
 
 
 class TestNetworkFormation:
+    def test_form_network_simulated_grid(self, stm_random_grid):
+        arcs = form_network(
+            stm_random_grid,
+            key_phase="phase",
+            key_h2ph="h2ph",
+            key_Btemp="time",
+            key_xlabel="x",
+            key_ylabel="y",
+            max_length=25,
+            n_links=8,
+            num_partitions=8,
+        )
+
+        source = arcs["source"].values
+        target = arcs["target"].values
+
+        assert arcs.sizes["space"] == 428  # nr arcs should be 428 with a 10x10 grid setting
+        assert np.all(np.diff(source) >= 0)  # check if source is mono-increasing
+        assert np.all(source < target)  # check if all sources < targets
+        assert (
+            np.unique(np.column_stack((source, target)), axis=0).shape[0] == source.shape[0]
+        )  # check if all (source, target) pairs are unique
+
     @pytest.mark.parametrize("method", ["subtract", "conjmult"])
     def test_compute_phase_difference(self, stm_random, method):
         arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
