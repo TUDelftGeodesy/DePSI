@@ -3,6 +3,8 @@
 import os
 import re
 from datetime import datetime
+from glob import glob
+from io import StringIO
 
 import numpy as np
 import pandas as pd
@@ -63,7 +65,8 @@ def read_metadata(resfile, mode="raw", **kwargs):
     # ++++ 4 - range0time
     pattern = r"Range_time_to_first_pixel \(2way\) \(ms\):" + SC_N_PATTERN
     match = re.search(pattern, content)
-    range0time = float(match.group(1)) * 1e-3 / 2  # devide by 2 to balance the two way travel
+    # devide by 2 to balance the two way travel
+    range0time = float(match.group(1)) * 1e-3 / 2
 
     # ++++ 5 - prf
     pattern = r"Pulse_Repetition_Frequency \(computed, Hz\):" + SC_N_PATTERN
@@ -340,17 +343,27 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
     return datewise_data
 
 
-def read_slc_stack(filename: str) -> xr.Dataset:
-    """Read a zarr stack of SLCs into a xarray.Dataset.
+def read_slc_stack(
+    filename: str, engine: str = "zarr", nlines_file: str = None, npixels_file: str = None, chunks=(500, 500)
+) -> xr.Dataset:
+    """Read a stack of SLCs into an xarray.Dataset.
 
-    Reads a zarr archive, and converts it to an xarray dataset compatible with the point selection functions.
+    Supports different engines for reading:
+    - zarr: reads a zarr archive (default)
+    - doris: reads using the doris engine
 
     Parameters
     ----------
     filename : str
-        absolute filepath to the zarr archive. The zarr archive should contain:
-        - coordinates azimuth, range, lat, lon, time
-        - variables h2ph, imag, real
+        Absolute filepath to the data archive (zarr folder or doris stack folder).
+    engine : str, optional
+        Engine to use for reading the data. Defaults to 'zarr'.
+    nlines_file : str, optional
+        Required for doris engine. Path to the file containing number of lines in the stack.
+    npixels_file : str, optional
+        Required for doris engine. Path to the file containing number of pixels in the stack.
+    chunks : tuple, optional
+        Tuple specifying the chunk size for loading doris stacks (default is (500, 500)).
 
     Returns
     -------
@@ -359,11 +372,161 @@ def read_slc_stack(filename: str) -> xr.Dataset:
         - coordinates azimuth, range, lat, lon, time
         - variables h2ph, complex, amplitude, phase
     """
-    assert os.path.exists(filename), f"The requested file {filename} does not exist!"
+    assert os.path.exists(filename), f"The requested file/folder {filename} does not exist!"
 
-    # Load the zarr file as a xr.Dataset
-    dataset = xr.open_zarr(filename)
-    # Add complex, amplitude, and phase to the dataset
-    slcs = sarxarray.from_dataset(dataset)
+    if engine.lower() == "zarr":
+        # Load the zarr file as a xr.Dataset
+        dataset = xr.open_zarr(filename)
+        # Add complex, amplitude, and phase to the dataset
+        slcs = sarxarray.from_dataset(dataset)
+        return slcs
 
-    return slcs
+    elif engine.lower() == "doris":
+        if nlines_file is None or npixels_file is None:
+            raise ValueError(
+                "For doris engine, 'nlines_file' and 'npixels_file' must be provided. Recommended 500x500."
+            )
+
+        # Collect file paths of the SLC stack
+        stack_list = glob(os.path.join(filename, "*", "slc_srd.raw"))
+        if not stack_list:
+            raise FileNotFoundError(f"No SLC files found in {filename} matching pattern */slc_srd.raw")
+
+        # Read the number of lines and pixels from the configuration files
+        try:
+            with open(nlines_file) as f:
+                nlines = int(f.readline().strip())
+            with open(npixels_file) as f:
+                npixels = int(f.readline().strip())
+        except Exception as e:
+            raise RuntimeError("Failed to read number of lines or pixels. ") from e
+
+        # Load the SLC stack using sarxarray
+        try:
+            slc_stack = sarxarray.from_binary(stack_list, shape=(nlines, npixels), dtype=np.complex64, chunks=chunks)
+            return slc_stack
+        except Exception as e:
+            raise RuntimeError("Failed to load the SLC stack. ") from e
+
+    else:
+        raise ValueError(f"Unsupported engine '{engine}'. Use 'zarr' or 'doris'.")
+
+
+def read_rcs_csv(file_path):
+    r"""Load an STM-like CSV resulting from the RadarCoding Toolbox.
+
+    Load an STM-like CSV resulting from the RadarCoding Toolbox, filter out metadata or header marked by
+    '*****' markers, and extract dates from the header.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to the CSV file to load.
+    skip_rows : int, optional
+        Number of rows to skip before reading the actual data. Default is 5.
+    delimiter : str, optional
+        The delimiter used in the CSV file. Default is tab (`\t`).
+
+    Returns
+    -------
+    pd.DataFrame
+        The cleaned DataFrame containing the STM with 0/1 flags indicating the existence of the targets' data.
+    list of str
+        A list of date strings extracted from the header.
+    """
+    try:
+        # Read the file to find metadata and filter lines
+        with open(file_path) as file:
+            lines = file.readlines()
+
+        # Find the indices of lines containing '*****'
+        start_idx = None
+        end_idx = None
+        for i, line in enumerate(lines):
+            if "*****" in line:
+                if start_idx is None:
+                    start_idx = i  # First occurrence of '*****'
+                else:
+                    end_idx = i  # Second occurrence of '*****'
+                    break
+
+        # Filter out the content between the '*****' markers
+        filtered_lines = lines[:start_idx] + lines[end_idx + 1 :]
+
+        # Join the filtered lines into a single string for pandas to read
+        filtered_data = "".join(filtered_lines)
+
+        # Load the cleaned data into a DataFrame
+        df = pd.read_csv(StringIO(filtered_data))
+
+        # Extract the header row (first row of the DataFrame)
+        header_row = df.iloc[0]
+
+        # Get the columns starting from the 8th index onward (i.e., index 7 corresponds to 20150430)
+        dates = header_row.index[7:].tolist()
+
+        # Print success message
+        print(f"Radar Coding (RC) Toolbox output file '{file_path}' successfully loaded.")
+
+        return df, dates
+
+    except Exception as e:
+        # If an error occurs, print the error message
+        raise RuntimeError(f"Error loading the Radar Coding (RC) Toolbox output file '{file_path}") from e
+
+
+
+
+def get_targets_from_slc(slc_stack, targets):
+    """Extract target-matched data from a SLC stack.
+
+    This function matches given azimuth/range coordinates to the closest points
+    in the SLC stack, extracts all data variables, and aligns detection_flag
+    time series from the targets dataset with the SLC time dimension. Then return
+    a Space-Time Matrix (STM) containing the aligned data.
+
+    Parameters
+    ----------
+    slc_stack : xarray.Dataset
+        Dataset containing SLC data with dimensions (azimuth, range, time),
+        as well as variables like lat, lon, azimuth, range, etc.
+    targets : xarray.Dataset
+        A Space-Time Matrix containing target information with coordinates (space, time)
+        and variables such as azimuth, range, target, and detection_flag.
+
+    Returns
+    -------
+    matching_scatterers : xarray.Dataset
+        Dataset containing the extracted SLC data for matching targets.
+
+    Notes
+    -----
+        - detection_flag values are aligned to the SLC timestamps.
+    """
+    # Get bounds for SLC stack
+    # Select targets within the bound
+    targets_in_bound = targets.where(
+        (targets["azimuth"] >= slc_stack["azimuth"].min())
+        & (targets["azimuth"] <= slc_stack["azimuth"].max())
+        & (targets["range"] >= slc_stack["range"].min())
+        & (targets["range"] <= slc_stack["range"].max()),
+        drop=True,
+    )
+
+    # Using nearest neighbor to select slc pixels matching targets
+    matching_scatterers = slc_stack.sel(
+        azimuth=targets_in_bound["azimuth"], range=targets_in_bound["range"], method="nearest"
+    )
+
+    # Compute detection flag masks
+    # First linear interpolate in time dimension
+    # This only take into account the two neighbors in time
+    detection_flag = targets_in_bound["detection_flag"].interp(time=matching_scatterers["time"], method="linear")
+    # Epochs outside the original 1 periods will have values <1, Set them to 0
+    detection_flag = detection_flag.where(detection_flag >= 1.0, 0)
+
+    # Insert detection_flag to matching_scatterers
+    matching_scatterers["detection_flag"] = xr.DataArray(detection_flag.data, dims=("space", "time"))
+
+    return matching_scatterers
+
