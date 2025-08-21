@@ -15,6 +15,7 @@ import pykrige
 import xarray as xr
 from scipy import signal
 from scipy.spatial import KDTree
+from scipy.spatial.distance import pdist
 
 logger = getLogger(__name__)
 
@@ -142,6 +143,21 @@ def estimate_unmodeled_displacement(
         dask='parallelized',
         output_dtypes=[psc_phase_residuals.dtype]
     )
+
+
+def calculate_variogram_cloud(da: xr.DataArray, cutoff: float = 10000.0):
+    pairwise_distances = pdist(
+        np.column_stack((da.coords['x'].values, da.coords['y'].values)),
+        metric='euclidean'
+    )
+
+    z_values = da.values.flatten()[:, None]
+    variances = pdist(z_values, metric='sqeuclidean')
+
+    # apply cutoff
+    mask = pairwise_distances < cutoff
+    return pairwise_distances[mask], variances[mask]
+
 
 
 def krige_per_single_time(
