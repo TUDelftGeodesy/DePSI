@@ -233,6 +233,60 @@ def calculate_empirical_variogram(
     return np.array(lags), np.array(semivariances)
 
 
+def fit_variogram(
+        da: xr.DataArray,
+        lags: np.ndarray = None,
+        semivariances: np.ndarray = None,
+        variogram_model: str = 'gaussian',
+        **kwrgs_empirical_variogram):
+
+    if lags is None or semivariances is None:
+        lags, semivariances = calculate_empirical_variogram(
+        da,
+        **kwrgs_empirical_variogram
+        )
+
+    # see equations and reference in
+    # https://geostat-framework.readthedocs.io/projects/pykrige/en/stable/variogram_models.html
+    variogram_dict = {
+        "linear": pykrige.variogram_models.linear_variogram_model,
+        "power": pykrige.variogram_models.power_variogram_model,
+        "gaussian": pykrige.variogram_models.gaussian_variogram_model,
+        "spherical": pykrige.variogram_models.spherical_variogram_model,
+        "exponential": pykrige.variogram_models.exponential_variogram_model,
+        "hole-effect": pykrige.variogram_models.hole_effect_variogram_model,
+    }
+
+    variogram_function = variogram_dict.get(variogram_model)
+
+    # see reference in
+    # https://github.com/GeoStat-Framework/PyKrige/blob/e02baad442ac99b22f038b09b6290e7abacc17ae/src/pykrige/core.py#L582
+    etimated_model_parameters = pykrige.core._calculate_variogram_model(
+        lags,
+        semivariances,
+        variogram_model,
+        variogram_function,
+        weight = False
+    )
+
+    # Prepare the parameters
+    variogram_parameters = {}
+    if variogram_model == "linear":
+        variogram_parameters['slope'] = etimated_model_parameters[0]
+        variogram_parameters['nuggest'] = etimated_model_parameters[1]
+    elif variogram_model == "power":
+        variogram_parameters['slope'] = etimated_model_parameters[0]
+        variogram_parameters['exponent'] = etimated_model_parameters[1]
+        variogram_parameters['nugget'] = etimated_model_parameters[2]
+    else:
+        variogram_parameters['sill'] = etimated_model_parameters[0] + etimated_model_parameters[2]
+        variogram_parameters['range'] = etimated_model_parameters[1]
+        variogram_parameters['nugget'] = etimated_model_parameters[2]
+
+    estimated_variances = variogram_function(etimated_model_parameters, lags)
+    return variogram_parameters, (lags, estimated_variances)
+
+
 def krige_per_single_time(
         da: xr.DataArray,
         grid: xr.Dataset | xr.DataArray | None = None,
