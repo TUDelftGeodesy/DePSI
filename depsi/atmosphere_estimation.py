@@ -190,7 +190,12 @@ def _calculate_binned_variances(variances, method: str = "standard"):
         return 1 / 0.457 * np.median(variances ** 0.25) ** 4
 
 
-def calculate_empirical_variogram(da, method: str = "standard", nlags: int= 50, cutoff=10000.0):
+def calculate_empirical_variogram(
+        da: xr.DataArray,
+        method: str = "standard",
+        nlags: int= 50,
+        cutoff=10000.0
+    ):
     """ Calculate the empirical variogram of a DataArray.
 
     Parameters
@@ -213,28 +218,19 @@ def calculate_empirical_variogram(da, method: str = "standard", nlags: int= 50, 
     """
 
     distances, variances = calculate_variogram_cloud(da, cutoff=cutoff)
-    dmax = np.amax(distances)
-    dmin = np.amin(distances)
-    dd = (dmax - dmin) / nlags
-    bins = [dmin + n * dd for n in range(nlags)]
-    dmax += 0.001  # Add a small value to ensure the last bin includes the maximum distance
-    bins.append(dmax)
 
-    lags = np.zeros(nlags)
-    semivariance = np.zeros(nlags)
+    # Bin edges (ensure last bin includes max distance)
+    bins = np.linspace(distances.min(), distances.max() + 1e-3, nlags + 1)
 
-    for n in range(nlags):
-        indices = (distances >= bins[n]) & (distances < bins[n + 1])
-        if distances[indices].size > 0:
-            lags[n] = np.mean(distances[indices])
-            semivariance[n] = _calculate_binned_variances(variances[indices], method=method)
-        else:
-            lags[n] = np.nan
-            semivariance[n] = np.nan
+    lags, semivariances = [], []
 
-    lags = lags[~np.isnan(semivariance)]
-    semivariance = semivariance[~np.isnan(semivariance)]
-    return lags, semivariance
+    for left, right in zip(bins[:-1], bins[1:]):
+        mask = (distances >= left) & (distances < right)
+        if mask.any():
+            lags.append(distances[mask].mean())
+            semivariances.append(_calculate_binned_variances(variances[mask], method=method))
+
+    return np.array(lags), np.array(semivariances)
 
 
 def krige_per_single_time(
