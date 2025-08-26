@@ -20,7 +20,6 @@ from scipy.spatial.distance import pdist
 logger = getLogger(__name__)
 
 
-
 def _get_signal_window_with_zero_padding(
     type,
     timespan,
@@ -161,6 +160,10 @@ def calculate_variogram_cloud(da: xr.DataArray, cutoff: float = 10000.0):
     variances: np.ndarray
         The variances corresponding to the pairwise distances.
     """
+    # Check if there x, y coords
+    if 'x' not in da.coords or 'y' not in da.coords:
+        raise ValueError("DataArray must have coordinates 'x' and 'y'.")
+
     pairwise_distances = pdist(
         np.column_stack((da.coords['x'].values, da.coords['y'].values)),
         metric='euclidean'
@@ -240,14 +243,49 @@ def fit_variogram(
         variogram_model: str = 'gaussian',
         **kwrgs_empirical_variogram):
 
+    """ Fit a variogram model to the empirical variogram.
+
+    Parameters
+    ----------
+    da: xr.DataArray
+        The DataArray containing the data to fit the variogram model.
+    lags: np.ndarray, optional
+        The lags for the empirical variogram. If None, the empirical variogram
+        will be calculated.
+    semivariances: np.ndarray, optional
+        The semivariances for the empirical variogram. If None, the empirical
+        variogram will be calculated.
+    variogram_model: str
+        The variogram model to fit. Options are: 'linear', 'power', 'gaussian',
+        'spherical', 'exponential', 'hole-effect'. Default is 'gaussian'.
+    kwrgs_empirical_variogram: dict
+        Additional keyword arguments to pass to the empirical variogram
+        calculation function.
+
+    Returns
+    -------
+    variogram_parameters: dict
+        The fitted variogram parameters.
+    (lags, estimated_semivariances, semivariances): tuple
+        A tuple containing the lags, the estimated semivariances from the fitted
+        model, and the empirical semivariances.
+    """
+
     if lags is None or semivariances is None:
-        lags, semivariances = calculate_empirical_variogram(
-        da,
-        **kwrgs_empirical_variogram
-        )
+        if not kwrgs_empirical_variogram:
+            logger.info("Estimating variogram with default parameters.")
+            lags, semivariances = calculate_empirical_variogram(da)
+        else:
+            lags, semivariances = calculate_empirical_variogram(
+            da,
+            **kwrgs_empirical_variogram
+            )
 
     # see equations and reference in
     # https://geostat-framework.readthedocs.io/projects/pykrige/en/stable/variogram_models.html
+    # Gaussian model uses "effective range" introduced in  Pebesma, E.J. &
+    # Wesseling, C.G. (1998). "Gstat: a program for geostatistical modelling,
+    # prediction and simulation." Computers & Geosciences, 24(1), 17–31
     variogram_dict = {
         "linear": pykrige.variogram_models.linear_variogram_model,
         "power": pykrige.variogram_models.power_variogram_model,
@@ -283,8 +321,8 @@ def fit_variogram(
         variogram_parameters['range'] = etimated_model_parameters[1]
         variogram_parameters['nugget'] = etimated_model_parameters[2]
 
-    estimated_variances = variogram_function(etimated_model_parameters, lags)
-    return variogram_parameters, (lags, estimated_variances, semivariances)
+    estimated_semivariances = variogram_function(etimated_model_parameters, lags)
+    return variogram_parameters, (lags, estimated_semivariances, semivariances)
 
 def setup_kriging_system(
         da: xr.DataArray,
@@ -329,7 +367,8 @@ def setup_kriging_system(
     # Check if variogram parameters are provided
     # if not, estimate them
     variogram_model = kwargs.get('variogram_model', 'gaussian')
-    if not kwargs.get('variogram_parameters'):
+    variogram_parameters = kwargs.get('variogram_parameters', None)
+    if variogram_parameters is None:
         variogram_parameters, _ = fit_variogram(
             da, lags, semivariances, variogram_model
         )
