@@ -1,10 +1,30 @@
 import numpy as np
+import pykrige
 import pytest
 import xarray as xr
-from numpy.testing import assert_almost_equal
+from numpy.testing import assert_almost_equal, assert_allclose
 from scipy import signal
+from scipy.optimize import curve_fit
 
-from depsi.atmosphere_estimation import estimate_unmodeled_displacement
+from depsi.atmosphere_estimation import calculate_empirical_variogram, calculate_variogram_cloud, estimate_unmodeled_displacement, fit_variogram, setup_kriging_system
+
+
+@pytest.fixture
+def get_test_data():
+    return xr.DataArray(
+        np.array(
+            [
+                0.51615017,  0.49838693,  1.14898968,  0.73637701,  0.98923508,
+                0.29524828, -0.03234519,  0.36147726,  1.42115834,  0.82486138
+            ]
+        ),
+        dims=('space',),
+        coords={
+            'x': ('space', np.array([ 13.9,  69.5, 166.8, 180.7, 194.6, 194.6, 194.6, 208.5, 208.5, 222.4])),
+            'y': ('space', np.array([ 8524, 13224, 13084, 13448,  6356,  6804,  8924,  2288, 11804, 5792])),
+        }
+    )
+
 
 
 def _calculate_weigths(baseline_years, filter_length, sampling_rate, filter_type):
@@ -162,3 +182,186 @@ class TestEstimateUnmodeledDisplacement:
                 sampling_rate = 10,
                 filter_type='block'
             )
+
+
+class TestCalculateVariogramCloud:
+    def test_calculate_variogram_cloud(self):
+        da = xr.DataArray(
+            np.random.rand(5),
+            dims=('space',),
+            coords={
+                'x': ('space', np.arange(5)),
+                'y': ('space', np.arange(5)),
+            }
+        )
+        actual_distances, actual_variances = calculate_variogram_cloud(da)
+
+        x, y, z = da.x.values, da.y.values, da.values
+
+        # full matrix
+        distances = np.hypot(x - x[:, np.newaxis], y - y[:, np.newaxis])
+        variances = (z - z[:, np.newaxis])**2
+
+        # select upper triangle
+        mask = np.triu(np.ones(distances.shape), k=1).astype(bool)
+        pairwise_distances = distances[mask]
+        pairwise_variances = variances[mask]
+
+        # apply cutoff
+        mask = pairwise_distances < 10000
+        expected_distances = pairwise_distances[mask]
+        expected_variances = pairwise_variances[mask]
+
+        assert_almost_equal(actual_variances, expected_variances)
+        assert_almost_equal(actual_distances, expected_distances)
+
+
+class TestCalculateEmpiricalVariogram:
+    def test_calculate_empirical_variogram_standard(self):
+        da = xr.DataArray(
+            np.random.rand(5),
+            dims=('space',),
+            coords={
+                'x': ('space', np.arange(5)),
+                'y': ('space', np.arange(5)),
+            }
+        )
+
+        actual_lags, actual_variances = calculate_empirical_variogram(da, method='standard')
+
+        distances, variances = calculate_variogram_cloud(da)
+        nlags = 50
+        bins = np.linspace(distances.min(), distances.max() + 1e-3, nlags + 1)
+        lags, semivariances = [], []
+        for left, right in zip(bins[:-1], bins[1:]):
+            mask = (distances >= left) & (distances < right)
+            if mask.any():
+                lags.append(distances[mask].mean())
+                semivariances.append(np.mean(variances[mask]))
+
+        expected_lags, expected_variances = np.array(lags), np.array(semivariances)
+        assert_almost_equal(actual_lags, expected_lags)
+        assert_almost_equal(actual_variances, expected_variances)
+
+    def test_calculate_empirical_variogram_unbiased(self):
+        da = xr.DataArray(
+            np.random.rand(5),
+            dims=('space',),
+            coords={
+                'x': ('space', np.arange(5)),
+                'y': ('space', np.arange(5)),
+            }
+        )
+
+        actual_lags, actual_variances = calculate_empirical_variogram(da, method='unbiased')
+
+        distances, variances = calculate_variogram_cloud(da)
+        nlags = 50
+        bins = np.linspace(distances.min(), distances.max() + 1e-3, nlags + 1)
+        lags, semivariances = [], []
+        for left, right in zip(bins[:-1], bins[1:]):
+            mask = (distances >= left) & (distances < right)
+            if mask.any():
+                lags.append(distances[mask].mean())
+                ch = 0.457 + 0.494 / len(variances[mask]) + 0.045 / len(variances[mask]) ** 2
+                semivariances.append(1 / ch * np.mean(variances[mask] ** 0.25) ** 4)
+
+        expected_lags, expected_variances = np.array(lags), np.array(semivariances)
+        assert_almost_equal(actual_lags, expected_lags)
+        assert_almost_equal(actual_variances, expected_variances)
+
+
+    def test_calculate_empirical_variogram_unbiased_robust(self):
+        da = xr.DataArray(
+            np.random.rand(5),
+            dims=('space',),
+            coords={
+                'x': ('space', np.arange(5)),
+                'y': ('space', np.arange(5)),
+            }
+        )
+
+        actual_lags, actual_variances = calculate_empirical_variogram(da, method='unbiased_robust')
+
+        distances, variances = calculate_variogram_cloud(da)
+        nlags = 50
+        bins = np.linspace(distances.min(), distances.max() + 1e-3, nlags + 1)
+        lags, semivariances = [], []
+        for left, right in zip(bins[:-1], bins[1:]):
+            mask = (distances >= left) & (distances < right)
+            if mask.any():
+                lags.append(distances[mask].mean())
+                semivariances.append(1 / 0.457 * np.median(variances[mask] ** 0.25) ** 4)
+
+        expected_lags, expected_variances = np.array(lags), np.array(semivariances)
+        assert_almost_equal(actual_lags, expected_lags)
+        assert_almost_equal(actual_variances, expected_variances)
+
+class TestFitVariogram:
+    def test_fit_variogram_gaussian(self, get_test_data):
+        da = get_test_data
+
+        _, lags_variances = fit_variogram(da, variogram_model='gaussian')
+        lags, estimated_semivariances, semivariances = lags_variances
+        actual_residual = semivariances - estimated_semivariances
+
+        def gaussian_model(h, psill, range_, nugget):
+            return psill * (1.0 - np.exp(-(h**2.0) / (range_ * 4.0 / 7.0) ** 2.0)) + nugget
+
+        lags, semivariances = calculate_empirical_variogram(da)
+        initial_guess = [0.4, 2000, 0.15] # psill, range, nugget
+        popt, _ = curve_fit(gaussian_model, lags, semivariances, p0=initial_guess, bounds=(0, np.inf))
+        estimated_semivariances = gaussian_model(lags, *popt)
+        expected_residual = semivariances - estimated_semivariances
+
+        assert_allclose(actual_residual, expected_residual, atol=1e-1)
+
+    def test_fit_variogram_gaussian_params(self, get_test_data):
+        da = get_test_data
+
+        params, _ = fit_variogram(da, variogram_model='gaussian')
+        assert len(params) == 3
+        assert "sill" in params
+        assert "range" in params
+        assert "nugget" in params
+
+    def test_fit_variogram_without_kwrags(self, get_test_data):
+        da = get_test_data
+
+        _, (lags, _, _) = fit_variogram(da, variogram_model='gaussian')
+
+        # test default values
+        assert lags.shape[0] < 50
+        assert lags.max() < 10000
+
+    def test_fit_variogram_with_kwrags(self, get_test_data):
+        da = get_test_data
+
+        kwrgs_empirical_variogram = {
+            'method': 'unbiased_robust',
+            'nlags': 30,
+            'cutoff': 5000,
+        }
+        _, (lags, _, empirical_var) = fit_variogram(da, variogram_model='gaussian', **kwrgs_empirical_variogram)
+
+        # test default values
+        assert lags.shape[0] < 30
+        assert lags.max() < 5000
+        assert_allclose(empirical_var[0], 0.3839, atol=1e-3)
+
+
+class TestSetupKrigingSystem:
+    def test_setup_kriging_system(self, get_test_data):
+        da = get_test_data
+        krige_obj = setup_kriging_system(da)
+
+        assert isinstance(krige_obj, pykrige.uk.UniversalKriging)
+        assert krige_obj.variogram_model == 'gaussian'
+        assert len(krige_obj.variogram_model_parameters) == 3
+        assert krige_obj.variogram_model_parameters[2] > 0  # nugget
+        assert krige_obj.regional_linear_drift == True
+
+    def test_setup_kriging_system_other_method(self, get_test_data):
+        da = get_test_data
+        with pytest.raises(NotImplementedError):
+            setup_kriging_system(da, method="ordinary")
