@@ -284,10 +284,80 @@ def fit_variogram(
         variogram_parameters['nugget'] = etimated_model_parameters[2]
 
     estimated_variances = variogram_function(etimated_model_parameters, lags)
-    return variogram_parameters, (lags, estimated_variances)
+    return variogram_parameters, (lags, estimated_variances, semivariances)
+
+def setup_kriging_system(
+        da: xr.DataArray,
+        method='universal',
+        **kwargs
+    ):
+    """Kriging in space for a single time step.
+
+    Make sure that coordinates 'x' and 'y' are present in the DataArray and they
+    are in metric units.
+
+    Parameters
+    ----------
+    da: xr.DataArray
+        The DataArray containing the data to be interpolated. It must have
+        coordinates 'x' and 'y'.
+    method: str
+        The kriging method to use, e.g. 'universal'. Default is 'universal'.
+    kwargs: dict
+        Additional keyword arguments to pass to the kriging method, such as
+        'variogram_model', 'variogram_parameters', etc.
+    Returns
+    -------
+    kriging_obj: Any
+        A kriging object that can be used to perform kriging interpolation.
+    """
+    # Check that da.data shape is 2d
+    if len(da.data.shape) > 2:
+        raise ValueError("DataArray must be 2D with coordinates 'x' and 'y'.")
+
+    # Check if there x, y coords
+    if 'x' not in da.coords or 'y' not in da.coords:
+        raise ValueError("DataArray must have coordinates 'x' and 'y'.")
+
+    # Calculate empirical variogram
+    if kwrgs_empirical_variogram:= kwargs.get('kwrgs_empirical_variogram'):
+        lags, semivariances = calculate_empirical_variogram(da,**kwrgs_empirical_variogram)
+    else:
+        logger.info("Estimating variogram with default parameters.")
+        lags, semivariances = calculate_empirical_variogram(da)
+
+    # Check if variogram parameters are provided
+    # if not, estimate them
+    variogram_model = kwargs.get('variogram_model', 'gaussian')
+    if not kwargs.get('variogram_parameters'):
+        variogram_parameters, _ = fit_variogram(
+            da, lags, semivariances, variogram_model
+        )
+
+    # Create a kriging instance
+    if method == 'universal':
+        # see input arguments in
+        # https://github.com/GeoStat-Framework/PyKrige/blob/e02baad442ac99b22f038b09b6290e7abacc17ae/src/pykrige/uk.py#L220
+        kriging_obj = pykrige.uk.UniversalKriging(
+            da.coords['x'],
+            da.coords['y'],
+            da,
+            variogram_model=variogram_model,
+            variogram_parameters=variogram_parameters,
+            exact_values=False,  #  If True, results would be input values at input locations
+            drift_terms=kwargs.get('drift_terms', 'regional_linear') # this activates drift of order 1 by default
+        )
+
+        # Adjust some variables
+        kriging_obj.lags = lags
+        kriging_obj.semivariance = semivariances
+
+        return kriging_obj
+    else:
+        raise NotImplementedError(f"{method} is not implemented yet.")
 
 
-def krige_per_single_time(
+def solve_kriging_per_single_time(
         da: xr.DataArray,
         grid: xr.Dataset | xr.DataArray | None = None,
         method='universal',
@@ -322,43 +392,9 @@ def krige_per_single_time(
     sigmasq: np.ndarray
         The associated variance (sigmasq) for the interpolated values.
     """
-    # Check that da.data shape is 2d
-    if len(da.data.shape) > 2:
-        raise ValueError("DataArray must be 2D with coordinates 'x' and 'y'.")
 
-    # Check if there x, y coords
-    if 'x' not in da.coords or 'y' not in da.coords:
-        raise ValueError("DataArray must have coordinates 'x' and 'y'.")
-
-    # Define default variogram parameters
-    # as implemented in Matlab version
-    variogram_model = kwargs.get('variogram_model', 'gaussian')
-    if variogram_model == 'gaussian':
-        default_variogram_parameters = {
-            'sill': 0.8 * da.var(),
-            'range': 1000.0,
-            'nugget': 0.2 * da.var()
-        }
-    else:
-        default_variogram_parameters = None
-
-    # Create a kriging instance
-    if method == 'universal':
-        kriging_obj = pykrige.uk.UniversalKriging(
-            da.coords['x'],
-            da.coords['y'],
-            da,
-            variogram_model=variogram_model,
-            variogram_parameters=kwargs.get('variogram_parameters', default_variogram_parameters),
-            nlags=kwargs.get('nlags', 50),
-            exact_values=False,  #  If True, results would be input values at input locations
-            drift_terms=['regional_linear']  # this activates drift of order 1
-        )
-    else:
-        raise NotImplementedError(f"{method} is not implemented yet.")
-
-    if grid is None:
-        return kriging_obj
+    # setup kriging system
+    kriging_obj = setup_kriging_system(da, method=method, **kwargs)
 
     # Check if grid has x, y coords
     if 'x' not in grid.coords or 'y' not in grid.coords:
@@ -385,7 +421,8 @@ def krige_per_single_time(
     else:
         if 'space' not in da.dims and 'space' not in grid.dims:
             raise NotImplementedError(
-                "Kriging with nearest neighbors is not implemented for grid interpolation."
+                "Kriging with nearest neighbors is not implemented for grid interpolation. "
+                "Because this method can be very slow and memory intensive for a large grid. "
             )
 
         if n_nearest_neighbors > da.size:
@@ -420,7 +457,7 @@ def krige_per_single_time(
                 )
             return np.concatenate([zvalues, sigmasq])
 
-        # Loop over each point in grid and krige
+        # Loop over each point in grid and apply krige
         zvalues = np.empty(indices.shape[0])
         sigmasq = np.empty(indices.shape[0])
         for index, _ in enumerate(indices):
@@ -429,13 +466,13 @@ def krige_per_single_time(
         return zvalues, sigmasq
 
 
-def krige_in_space(
+def solve_kriging(
     ps_atmosphere: xr.DataArray,
     grid: xr.Dataset | xr.DataArray ,
     method='universal',
     **kwargs
 ):
-    """Kriging in space to estimate the atmosphere signal.
+    """Kriging in space to estimate the atmosphere signal time series.
 
     Parameters
     ----------
@@ -494,7 +531,7 @@ def krige_in_space(
             dims=input_core_dims
         )
 
-        interpolated, sigmasq = krige_per_single_time(da, grid, method=method, **kwargs)
+        interpolated, sigmasq = solve_kriging_per_single_time(da, grid, method=method, **kwargs)
         return interpolated, sigmasq
 
     interpolated, sigmasq = xr.apply_ufunc(
