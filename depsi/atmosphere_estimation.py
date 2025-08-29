@@ -146,7 +146,7 @@ def estimate_unmodeled_displacement(
 
 
 def calculate_variogram_cloud(da: xr.DataArray, cutoff: float = 10000.0):
-    """ Calculate the variogram cloud for a DataArray.
+    """Calculate the variogram cloud for a DataArray.
 
     Parameters
     ----------
@@ -154,6 +154,7 @@ def calculate_variogram_cloud(da: xr.DataArray, cutoff: float = 10000.0):
         The DataArray containing the data to calculate the variogram cloud.
     cutoff: float
         The maximum distance to consider for the variogram cloud. Default is 10000.0.
+
     Returns
     -------
     pairwise_distances: np.ndarray
@@ -179,7 +180,7 @@ def calculate_variogram_cloud(da: xr.DataArray, cutoff: float = 10000.0):
 
 
 def _calculate_binned_variances(variances, method: str = "standard"):
-    """ Calculate the binned variances based on the method specified.
+    """Calculate the binned variances based on the method specified.
 
     standard: Returns Experimental variogram.
     unbiased: Returns unbiased variogram mentioned in (Cressie-Hawkins, 1980).
@@ -200,7 +201,7 @@ def calculate_empirical_variogram(
         nlags: int= 50,
         cutoff=10000.0
     ):
-    """ Calculate the empirical variogram of a DataArray.
+    """Calculate the empirical variogram of a DataArray.
 
     Parameters
     ----------
@@ -213,6 +214,7 @@ def calculate_empirical_variogram(
         The number of lags to use for the empirical variogram. Default is 50.
     cutoff: float
         The maximum distance to consider for the empirical variogram. Default is 10000.0.
+
     Returns
     -------
     lags: np.ndarray
@@ -220,7 +222,6 @@ def calculate_empirical_variogram(
     semivariance: np.ndarray
         The semivariance for the empirical variogram.
     """
-
     distances, variances = calculate_variogram_cloud(da, cutoff=cutoff)
 
     # Bin edges (ensure last bin includes max distance)
@@ -228,7 +229,7 @@ def calculate_empirical_variogram(
 
     lags, semivariances = [], []
 
-    for left, right in zip(bins[:-1], bins[1:]):
+    for left, right in zip(bins[:-1], bins[1:], strict=False):
         mask = (distances >= left) & (distances < right)
         if mask.any():
             lags.append(distances[mask].mean())
@@ -258,8 +259,7 @@ def fit_variogram(
         semivariances: np.ndarray = None,
         variogram_model: str = 'gaussian',
         **kwrgs_empirical_variogram):
-
-    """ Fit a variogram model to the empirical variogram.
+    """Fit a variogram model to the empirical variogram.
 
     Parameters
     ----------
@@ -363,6 +363,7 @@ def setup_kriging_system(
     kwargs: dict
         Additional keyword arguments to pass to the kriging method, such as
         'variogram_model', 'variogram_parameters', etc.
+
     Returns
     -------
     kriging_obj: Any
@@ -446,6 +447,7 @@ def solve_kriging_per_single_time(
     kwargs: dict
         Additional keyword arguments to pass to the kriging method, such as
         'variogram_model', 'variogram_parameters', etc.
+
     Returns
     -------
     zvalues: np.ndarray
@@ -645,6 +647,7 @@ def estimate_atmosphere_phase(stm: xr.Dataset, **kwargs) -> xr.Dataset:
             Keyword arguments for the `estimate_unmodeled_displacement` function.
         - kriging_kwargs: dict
             Keyword arguments for the `solve_kriging` function.
+
     Returns
     -------
     xr.Dataset

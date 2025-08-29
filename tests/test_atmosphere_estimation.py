@@ -2,11 +2,20 @@ import numpy as np
 import pykrige
 import pytest
 import xarray as xr
-from numpy.testing import assert_almost_equal, assert_allclose
+from numpy.testing import assert_allclose, assert_almost_equal
 from scipy import signal
 from scipy.optimize import curve_fit
 
-from depsi.atmosphere_estimation import calculate_empirical_variogram, calculate_variogram_cloud, estimate_atmosphere_phase, estimate_unmodeled_displacement, fit_variogram, setup_kriging_system, solve_kriging, solve_kriging_per_single_time
+from depsi.atmosphere_estimation import (
+    calculate_empirical_variogram,
+    calculate_variogram_cloud,
+    estimate_atmosphere_phase,
+    estimate_unmodeled_displacement,
+    fit_variogram,
+    setup_kriging_system,
+    solve_kriging,
+    solve_kriging_per_single_time,
+)
 
 
 @pytest.fixture
@@ -226,7 +235,7 @@ class TestCalculateEmpiricalVariogram:
         nlags = 50
         bins = np.linspace(distances.min(), distances.max() + 1e-3, nlags + 1)
         lags, semivariances = [], []
-        for left, right in zip(bins[:-1], bins[1:]):
+        for left, right in zip(bins[:-1], bins[1:], strict=False):
             mask = (distances >= left) & (distances < right)
             if mask.any():
                 lags.append(distances[mask].mean())
@@ -252,7 +261,7 @@ class TestCalculateEmpiricalVariogram:
         nlags = 50
         bins = np.linspace(distances.min(), distances.max() + 1e-3, nlags + 1)
         lags, semivariances = [], []
-        for left, right in zip(bins[:-1], bins[1:]):
+        for left, right in zip(bins[:-1], bins[1:], strict=False):
             mask = (distances >= left) & (distances < right)
             if mask.any():
                 lags.append(distances[mask].mean())
@@ -280,7 +289,7 @@ class TestCalculateEmpiricalVariogram:
         nlags = 50
         bins = np.linspace(distances.min(), distances.max() + 1e-3, nlags + 1)
         lags, semivariances = [], []
-        for left, right in zip(bins[:-1], bins[1:]):
+        for left, right in zip(bins[:-1], bins[1:], strict=False):
             mask = (distances >= left) & (distances < right)
             if mask.any():
                 lags.append(distances[mask].mean())
@@ -359,7 +368,7 @@ class TestSetupKrigingSystem:
         assert krige_obj.variogram_model == 'gaussian'
         assert len(krige_obj.variogram_model_parameters) == 3
         assert krige_obj.variogram_model_parameters[2] > 0  # nugget
-        assert krige_obj.regional_linear_drift == True
+        assert krige_obj.regional_linear_drift
 
     def test_setup_kriging_system_other_method(self, get_test_data):
         da = get_test_data
@@ -387,7 +396,7 @@ class TestSetupKrigingSystem:
             krige_obj.variogram_model_parameters,
             list(kwargs["variogram_parameters"].values())
         )
-        assert krige_obj.regional_linear_drift == False
+        assert not krige_obj.regional_linear_drift
 
     def test_setup_kriging_system_invalid_kwrags(self, get_test_data):
         da = get_test_data
