@@ -6,7 +6,7 @@ from numpy.testing import assert_almost_equal, assert_allclose
 from scipy import signal
 from scipy.optimize import curve_fit
 
-from depsi.atmosphere_estimation import calculate_empirical_variogram, calculate_variogram_cloud, estimate_unmodeled_displacement, fit_variogram, setup_kriging_system
+from depsi.atmosphere_estimation import calculate_empirical_variogram, calculate_variogram_cloud, estimate_atmosphere_phase, estimate_unmodeled_displacement, fit_variogram, setup_kriging_system, solve_kriging, solve_kriging_per_single_time
 
 
 @pytest.fixture
@@ -24,7 +24,6 @@ def get_test_data():
             'y': ('space', np.array([ 8524, 13224, 13084, 13448,  6356,  6804,  8924,  2288, 11804, 5792])),
         }
     )
-
 
 
 def _calculate_weigths(baseline_years, filter_length, sampling_rate, filter_type):
@@ -56,6 +55,7 @@ def _calculate_weigths(baseline_years, filter_length, sampling_rate, filter_type
     weight_matrix = window[weight_indices]
     weight_matrix /= np.sum(weight_matrix, axis=1, keepdims=True)
     return weight_matrix
+
 
 class TestEstimateUnmodeledDisplacement:
     def test_estimate_unmodeled_displacement_block(self):
@@ -185,15 +185,8 @@ class TestEstimateUnmodeledDisplacement:
 
 
 class TestCalculateVariogramCloud:
-    def test_calculate_variogram_cloud(self):
-        da = xr.DataArray(
-            np.random.rand(5),
-            dims=('space',),
-            coords={
-                'x': ('space', np.arange(5)),
-                'y': ('space', np.arange(5)),
-            }
-        )
+    def test_calculate_variogram_cloud(self, get_test_data):
+        da = get_test_data
         actual_distances, actual_variances = calculate_variogram_cloud(da)
 
         x, y, z = da.x.values, da.y.values, da.values
@@ -297,6 +290,7 @@ class TestCalculateEmpiricalVariogram:
         assert_almost_equal(actual_lags, expected_lags)
         assert_almost_equal(actual_variances, expected_variances)
 
+
 class TestFitVariogram:
     def test_fit_variogram_gaussian(self, get_test_data):
         da = get_test_data
@@ -349,9 +343,15 @@ class TestFitVariogram:
         assert lags.max() < 5000
         assert_allclose(empirical_var[0], 0.3839, atol=1e-3)
 
+    def test_fit_variogram_with_invalid_kwrags(self, get_test_data):
+        da = get_test_data
+
+        with pytest.raises(ValueError):
+            fit_variogram(da, variogram_model='gaussian', nnlags=30)
+
 
 class TestSetupKrigingSystem:
-    def test_setup_kriging_system(self, get_test_data):
+    def test_setup_kriging_system_default(self, get_test_data):
         da = get_test_data
         krige_obj = setup_kriging_system(da)
 
@@ -365,3 +365,183 @@ class TestSetupKrigingSystem:
         da = get_test_data
         with pytest.raises(NotImplementedError):
             setup_kriging_system(da, method="ordinary")
+
+    def test_setup_kriging_system_kwargs(self, get_test_data):
+        da = get_test_data
+        kwargs = {
+            "variogram_model": "power",
+            "variogram_parameters":
+                {
+                    "scale": 0.5,
+                    "exponent": 1.5,
+                    "nugget": 0.1
+                },
+            "drift_terms": None,
+        }
+        krige_obj = setup_kriging_system(da, **kwargs)
+
+        assert isinstance(krige_obj, pykrige.uk.UniversalKriging)
+        assert krige_obj.variogram_model == 'power'
+        assert len(krige_obj.variogram_model_parameters) == 3
+        assert_almost_equal(
+            krige_obj.variogram_model_parameters,
+            list(kwargs["variogram_parameters"].values())
+        )
+        assert krige_obj.regional_linear_drift == False
+
+    def test_setup_kriging_system_invalid_kwrags(self, get_test_data):
+        da = get_test_data
+
+        with pytest.raises(ValueError):
+            setup_kriging_system(da, vario_model='gaussian')
+
+
+class TestSolveKrigingPerSingleTime:
+    def test_solve_kriging_per_single_time_grid(self, get_test_data):
+        da = get_test_data
+        x_min, x_max = da.x.min(), da.x.max()
+        y_min, y_max = da.y.min(), da.y.max()
+
+        grid_resolution = 500 # in meter
+        x_grid = np.arange(x_min, x_max + grid_resolution, grid_resolution)
+        y_grid = np.arange(y_min, y_max + grid_resolution, grid_resolution)
+        grid = xr.Dataset(coords={"x": x_grid, "y": y_grid})
+
+        zvalues, sigmasq = solve_kriging_per_single_time(da, grid)
+
+        assert zvalues.shape[0] == len(grid.y) and zvalues.shape[1] == len(grid.x)
+        assert not np.any(np.isnan(zvalues))
+        assert not np.any(np.isnan(sigmasq))
+
+    def test_solve_kriging_per_single_time_points(self, get_test_data):
+        da = get_test_data
+        points = xr.Dataset(coords = da.coords)
+
+        zvalues, _ = solve_kriging_per_single_time(da, points)
+
+        assert zvalues.shape[0] == len(points.space)
+        assert not np.any(np.isnan(zvalues))
+
+    def test_solve_kriging_per_single_time_n_neighbours(self, get_test_data):
+        da = get_test_data
+        points = xr.Dataset(coords = da.coords)
+
+        zvalues, _ = solve_kriging_per_single_time(da, points, n_nearest_neighbors=5)
+
+        assert zvalues.shape[0] == len(points.space)
+        assert not np.any(np.isnan(zvalues))
+
+    def test_solve_kriging_per_single_time_n_neighbours_grid(self, get_test_data):
+        da = get_test_data
+        x_min, x_max = da.x.min(), da.x.max()
+        y_min, y_max = da.y.min(), da.y.max()
+
+        grid_resolution = 500 # in meter
+        x_grid = np.arange(x_min, x_max + grid_resolution, grid_resolution)
+        y_grid = np.arange(y_min, y_max + grid_resolution, grid_resolution)
+        grid = xr.Dataset(coords={"x": x_grid, "y": y_grid})
+
+        with pytest.raises(NotImplementedError):
+            solve_kriging_per_single_time(da, grid, n_nearest_neighbors=5)
+
+    def test_setup_kriging_system_invalid_kwrags(self, get_test_data):
+        da = get_test_data
+
+        with pytest.raises(ValueError):
+            solve_kriging_per_single_time(da, da, n_neighbors=5)
+
+
+class TestSolveKriging:
+    def test_solve_kriging_no_time(self, get_test_data):
+        da = get_test_data
+
+        with pytest.raises(ValueError) as excinfo:
+            solve_kriging(da, da)
+        assert "ps_atmosphere must have a 'time' dimension." in str(excinfo.value)
+
+    def test_solve_kriging_chunked_space(self, get_test_data):
+        da = get_test_data
+        da.chunk({'space': 5})
+
+        with pytest.raises(ValueError) as excinfo:
+            solve_kriging(da, da)
+            assert "ps_atmosphere must not be chunked" in str(excinfo.value)
+
+    def test_solve_kriging_with_time(self, get_test_data):
+        da = get_test_data
+        points = xr.Dataset(coords=da.coords)
+
+        da = xr.concat([da]*3, dim='time')
+        da = da.assign_coords(time=np.array([1, 2, 3]))
+
+        results = solve_kriging(da, points)
+        assert isinstance(results, xr.Dataset)
+        assert 'interpolated' in results and 'sigmasq' in results
+        assert len(results.time) == len(da.time)
+
+    def test_solve_kriging_with_time_in_grid(self, get_test_data):
+        da = get_test_data
+        da = xr.concat([da]*3, dim='time')
+        da = da.assign_coords(time=np.array([1, 2, 3]))
+
+        points = xr.Dataset(coords=da.coords)
+        with pytest.raises(ValueError) as excinfo:
+            solve_kriging(da, points)
+
+        assert "Grid must not have 'time' dimension" in str(excinfo.value)
+
+
+class TestEstimateAtmospherePhase:
+    def test_estimate_atmosphere_phase_defaults(self, get_test_data):
+        da = get_test_data
+        da = xr.concat([da]*20, dim='time')
+        da = da.assign_coords(time=np.sort(np.random.rand(20) * 10))
+        stm = da.to_dataset(name="psc_phase_residuals")
+        stm["atmosphere_mother"] = (
+            ("time", "space"), np.random.rand(len(da.time), len(da.space))
+        )
+
+        results = estimate_atmosphere_phase(stm)
+        assert isinstance(results, xr.Dataset)
+        assert 'psc_phase_residuals' in results
+        assert 'atmosphere_mother' in results
+        assert 'unmodeled_disp' in results
+        assert 'atmosphere_estimates' in results
+        assert 'atmosphere_interpolated' in results
+        assert 'atmosphere_sigmasq' in results
+
+    def test_estimate_atmosphere_phase_kwargs(self, get_test_data):
+        da = get_test_data
+        da = xr.concat([da]*20, dim="time")
+        da = da.assign_coords(time=np.sort(np.random.rand(20) * 10))
+        stm = da.to_dataset(name="psc_phase_residuals")
+        stm["atmosphere_mother"] = (
+            ("time", "space"), np.random.rand(len(da.time), len(da.space))
+        )
+
+        kwargs = {
+            "unmodeled_displacement_kwargs": {
+                "filter_length": 2,
+                "sampling_rate": 1,
+                "filter_type": "triangle",
+            },
+            "kriging_kwargs": {
+                "variogram_model": "power",
+                "variogram_parameters": {
+                    "scale": 0.5,
+                    "exponent": 1.5,
+                    "nugget": 0.1
+                },
+                "drift_terms": None,
+            },
+        }
+
+        results = estimate_atmosphere_phase(stm, **kwargs)
+
+        assert isinstance(results, xr.Dataset)
+        assert 'psc_phase_residuals' in results
+        assert 'atmosphere_mother' in results
+        assert 'unmodeled_disp' in results
+        assert 'atmosphere_estimates' in results
+        assert 'atmosphere_interpolated' in results
+        assert 'atmosphere_sigmasq' in results

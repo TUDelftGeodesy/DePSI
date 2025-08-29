@@ -45,7 +45,7 @@ def _get_signal_window_with_zero_padding(
 def estimate_unmodeled_displacement(
         psc_phase_residuals: xr.DataArray,
         baseline_years: xr.DataArray,
-        filter_length: int,
+        filter_length: int = 1,
         sampling_rate: int = 1000,
         filter_type='gaussian',
     ) -> xr.DataArray:
@@ -58,7 +58,7 @@ def estimate_unmodeled_displacement(
     baseline_years: xr.DataArray
         The baseline years corresponding to the time series.
     filter_length: int
-        Length of the filter (year) to apply a low-pass filter to the time series.
+        Length of the filter (year) to apply a low-pass filter to the time series. Default is 1.
     sampling_rate: int, optional.
         Sampling rate of the time series, default is 1000.
     filter_type: str, optional
@@ -133,7 +133,7 @@ def estimate_unmodeled_displacement(
     def apply_filter(data):
         return np.einsum('ij,j->i', weight_matrix, data)
 
-    return xr.apply_ufunc(
+    unmodeled_disp = xr.apply_ufunc(
         apply_filter,
         psc_phase_residuals,
         input_core_dims=[['time']],
@@ -142,6 +142,7 @@ def estimate_unmodeled_displacement(
         dask='parallelized',
         output_dtypes=[psc_phase_residuals.dtype]
     )
+    return unmodeled_disp.transpose(*psc_phase_residuals.dims)  # align dims order
 
 
 def calculate_variogram_cloud(da: xr.DataArray, cutoff: float = 10000.0):
@@ -236,6 +237,21 @@ def calculate_empirical_variogram(
     return np.array(lags), np.array(semivariances)
 
 
+def _check_kriging_kwargs(kwargs):
+    valid_keys = {
+        'method',
+        'nlags',
+        'cutoff',
+        'variogram_model',
+        'variogram_parameters',
+        'kwrgs_empirical_variogram',
+        'drift_terms',
+    }
+    for key in kwargs.keys():
+        if key not in valid_keys:
+            raise ValueError(f"Invalid keyword argument: {key}")
+
+
 def fit_variogram(
         da: xr.DataArray,
         lags: np.ndarray = None,
@@ -270,6 +286,8 @@ def fit_variogram(
         A tuple containing the lags, the estimated semivariances from the fitted
         model, and the empirical semivariances.
     """
+    if kwrgs_empirical_variogram:
+        _check_kriging_kwargs(kwrgs_empirical_variogram)
 
     if lags is None or semivariances is None:
         if not kwrgs_empirical_variogram:
@@ -313,7 +331,7 @@ def fit_variogram(
         variogram_parameters['slope'] = etimated_model_parameters[0]
         variogram_parameters['nuggest'] = etimated_model_parameters[1]
     elif variogram_model == "power":
-        variogram_parameters['slope'] = etimated_model_parameters[0]
+        variogram_parameters['scale'] = etimated_model_parameters[0]
         variogram_parameters['exponent'] = etimated_model_parameters[1]
         variogram_parameters['nugget'] = etimated_model_parameters[2]
     else:
@@ -323,6 +341,7 @@ def fit_variogram(
 
     estimated_semivariances = variogram_function(etimated_model_parameters, lags)
     return variogram_parameters, (lags, estimated_semivariances, semivariances)
+
 
 def setup_kriging_system(
         da: xr.DataArray,
@@ -356,6 +375,9 @@ def setup_kriging_system(
     # Check if there x, y coords
     if 'x' not in da.coords or 'y' not in da.coords:
         raise ValueError("DataArray must have coordinates 'x' and 'y'.")
+
+    if kwargs:
+        _check_kriging_kwargs(kwargs)
 
     # Calculate empirical variogram
     if kwrgs_empirical_variogram:= kwargs.get('kwrgs_empirical_variogram'):
@@ -398,7 +420,7 @@ def setup_kriging_system(
 
 def solve_kriging_per_single_time(
         da: xr.DataArray,
-        grid: xr.Dataset | xr.DataArray | None = None,
+        grid: xr.Dataset | xr.DataArray,
         method='universal',
         n_nearest_neighbors: int | None = None,
         **kwargs
@@ -415,7 +437,7 @@ def solve_kriging_per_single_time(
         coordinates 'x' and 'y'.
     grid: xr.Dataset | xr.DataArray | None
         The grid on which to interpolate the data. It should have coordinates
-        'x' and 'y'. If None, the function returns a kriging object.
+        'x' and 'y'.
     method: str
         The kriging method to use, e.g. 'universal'. Default is 'universal'.
     n_nearest_neighbors: int | None
@@ -431,7 +453,6 @@ def solve_kriging_per_single_time(
     sigmasq: np.ndarray
         The associated variance (sigmasq) for the interpolated values.
     """
-
     # setup kriging system
     kriging_obj = setup_kriging_system(da, method=method, **kwargs)
 
@@ -458,7 +479,7 @@ def solve_kriging_per_single_time(
         )
         return zvalues.data, sigmasq.data  # numpy.ndarray
     else:
-        if 'space' not in da.dims and 'space' not in grid.dims:
+        if 'space' not in grid.dims:
             raise NotImplementedError(
                 "Kriging with nearest neighbors is not implemented for grid interpolation. "
                 "Because this method can be very slow and memory intensive for a large grid. "
@@ -549,9 +570,17 @@ def solve_kriging(
     if 'time' in input_core_dims:
         input_core_dims.remove('time')
 
+    coords_no_time = {
+        k: v for k, v in ps_atmosphere.coords.items() if 'time' not in v.dims
+    }
+
     # Check if grid has 'x' and 'y' coordinates
     if 'x' not in grid.coords or 'y' not in grid.coords:
         raise ValueError("Grid must have coordinates 'x' and 'y'.")
+
+    # Check if 'time' in grid dims
+    if 'time' in grid.dims:
+        raise ValueError("Grid must not have 'time' dimension.")
 
     # Check if `input_core_dims` are not chunked
     if ps_atmosphere.chunks is not None:
@@ -566,7 +595,7 @@ def solve_kriging(
         """Apply kriging for a single time step."""
         da = xr.DataArray(
             data=data,
-            coords=ps_atmosphere.coords,
+            coords=coords_no_time,
             dims=input_core_dims
         )
 
@@ -598,7 +627,7 @@ def solve_kriging(
     })
 
 
-def estimate_atmosphere_phase(stm: xr.Dataset, **unmodeled_displacement_kwargs) -> xr.Dataset:
+def estimate_atmosphere_phase(stm: xr.Dataset, **kwargs) -> xr.Dataset:
     """Estimate the atmosphere phase.
 
     This function applies a temporal filter to extract the high-frequency
@@ -609,20 +638,40 @@ def estimate_atmosphere_phase(stm: xr.Dataset, **unmodeled_displacement_kwargs) 
     ----------
     stm: xr.Dataset
         The network STMs with unwrapped phases.
-    unmodeled_displacement_kwargs: dict
-        Additional keyword arguments for the `estimate_unmodeled_displacement` function.
-
+    kwargs: dict
+        Additional keyword arguments for the `estimate_unmodeled_displacement` function and
+        the `solve_kriging` function. It can contain:
+        - unmodeled_displacement_kwargs: dict
+            Keyword arguments for the `estimate_unmodeled_displacement` function.
+        - kriging_kwargs: dict
+            Keyword arguments for the `solve_kriging` function.
     Returns
     -------
     xr.Dataset
         The STM with the estimated atmospheric phase.
     """
     # Step 1: Apply temporal filtering to extract high-frequency atmospheric signal
+    unmodeled_displacement_kwargs = kwargs.get('unmodeled_displacement_kwargs', {})
     unmodeled_disp = estimate_unmodeled_displacement(
         psc_phase_residuals=stm["psc_phase_residuals"],
         baseline_years=stm["time"],
         **unmodeled_displacement_kwargs,
     )
-    stm["atmosphere_estimates"] = stm["psc_phase_residuals"] - unmodeled_disp + stm["atmosphere_mother"]
+
+    # Add results to stm
+    stm["unmodeled_disp"] = unmodeled_disp
+
+    # Estimate atmosphere phase
+    stm["atmosphere_estimates"] = stm["psc_phase_residuals"] - stm["unmodeled_disp"] + stm["atmosphere_mother"]
 
     # Step 2: Apply spatial kriging to estimate atmospheric phase per epoch
+    kriging_kwargs = kwargs.get('kriging_kwargs', {})
+    interpolated_atmosphere = solve_kriging(
+        ps_atmosphere=stm["atmosphere_estimates"],
+        grid=xr.Dataset(coords=stm.isel(time=0).coords),
+        **kriging_kwargs
+    )
+
+    stm["atmosphere_interpolated"] = interpolated_atmosphere["interpolated"]
+    stm["atmosphere_sigmasq"] = interpolated_atmosphere["sigmasq"]
+    return stm
