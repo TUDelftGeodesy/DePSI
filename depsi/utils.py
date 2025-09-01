@@ -2,6 +2,7 @@ import math
 import os
 from typing import Literal
 
+import asf_search as asf
 import dask.array as da
 import pyproj
 
@@ -538,3 +539,62 @@ def stm_compute_single_time_differences(
     stm = stm.assign({"sd_phase": (["space", "time"], sd_phase.data)})
 
     return stm
+
+
+def identify_s1_orbits_in_aoi(lon: list | np.ndarray, lat: list | np.ndarray) -> tuple[list[str], dict]:
+    """Identify the Sentinel-1 orbit numbers and directions crossing a AoI.
+
+    Parameters
+    ----------
+    lon: list | np.ndarray
+        List of all the longitudes of all the points of interest in the AoI
+    lat: list | np.ndarray
+        List of all the latitudes of all the points of interest in the AoI
+
+    Returns
+    -------
+    list
+        The orbits overlapping with the AoI
+    dict
+        The footprints of the overlapping SLCs per track
+    """
+    bbox = [[np.min(lon), np.max(lon)], [np.min(lat), np.max(lat)]]
+    wkt = (
+        f"POLYGON(("
+        f"{bbox[0][0]} {bbox[1][0]}, "
+        f"{bbox[0][1]} {bbox[1][0]}, "
+        f"{bbox[0][1]} {bbox[1][1]}, "
+        f"{bbox[0][0]} {bbox[1][1]}, "
+        f"{bbox[0][0]} {bbox[1][0]}))"
+    )
+    slcs = None
+    counter = 0
+    while slcs is None:
+        try:
+            slcs = asf.geo_search(
+                intersectsWith=wkt,
+                platform=asf.PLATFORM.SENTINEL1,
+                beamMode="IW",
+                processingLevel="SLC",
+                start="one month ago",
+                end="now",
+            )
+        except (asf.exceptions.ASFSearch5xxError, asf.exceptions.ASFSearchError, TimeoutError):
+            counter += 1
+            print(f"ASF encountered an internal error. Retrying... (#{counter})")
+
+    orbits = [
+        f"s1_{slc.properties['flightDirection'].lower().replace('e', '')[:3]}_t{slc.properties['pathNumber']:0>3d}"
+        for slc in slcs
+    ]
+    filtered_orbits = list(sorted(list(set(orbits))))
+
+    extents = [slc.geojson()["geometry"]["coordinates"][0] for slc in slcs]
+    footprints = {}
+    for orbit in filtered_orbits:
+        footprints[orbit] = []
+
+    for extent in range(len(extents)):
+        footprints[orbits[extent]].append(extents[extent])
+
+    return filtered_orbits, footprints

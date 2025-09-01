@@ -217,18 +217,34 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
     return arcs
 
 
-def get_ordered_arcs(stm, x_ref_search, y_ref_search, buffer_radius_ref, dist_to_quality, n_max_arcs, nad_max=2):
+def get_ordered_arcs(
+    x_ref_search,
+    y_ref_search,
+    buffer_radius_ref,
+    dist_to_quality,
+    n_max_arcs,
+    nad_nmad_max,
+    x_coordinates,
+    y_coordinates,
+    slc_quality,
+    nad_nmad_vals,
+    coordinate_type,
+):
     """Get a list with ordered arcs based on pnt quality and a search area.
 
     Args:
     ----
-        stm (xr.Dataset): stm containing at least rd_x, rd_y, and slc quality
         x_ref_search (float): x-coordinate of the centre of the search area
-        y_ref_search (float): x-coordinate of the centre of the search area
+        y_ref_search (float): y-coordinate of the centre of the search area
         buffer_radius_ref (float): The buffer (in m) around the centre coordinates where potential arcs are computed
         dist_to_quality (float): parameter that relates arc length to additional sigma
         n_max_arcs (float): The maximum nr of arcs to be outputed
-        nad_max (float): The maximum NAD, for the entire time series, for a point to be considered
+        nad_nmad_max (float): The maximum NAD / NMAD, for the entire time series, for a point to be considered
+        x_coordinates (xr.DataArray): x-coordinates of all points in the STM
+        y_coordinates (xr.DataArray): y-coordinates of all points in the STM
+        slc_quality (xr.DataArray): quality of the estimates per partition
+        nad_nmad_vals (xr.DataArray): NAD / NMAD of the entire time series per point
+        coordinate_type: 'Euclidean' (RD) / 'geographic' (lon/lat)
 
     Returns:
     -------
@@ -236,17 +252,20 @@ def get_ordered_arcs(stm, x_ref_search, y_ref_search, buffer_radius_ref, dist_to
         arcs_and_quality (list): ordered list with the points and quality
         quality_dict (dictionary): dictionary with the arcs and their quality
     """
-    rdx = stm["rd_x"].values
-    rdy = stm["rd_y"].values
-    slc_quality = stm["slc_quality"].values
-    nad_vals = stm["nad_full"].values
-
     # Find all points within the buffer around the starting location x, y
-    idx_pnts_buffer_ref = find_points_within_buffer(rdx, rdy, x_ref_search, y_ref_search, buffer_radius_ref)
+    idx_pnts_buffer_ref = find_points_within_buffer(
+        x_coordinates, y_coordinates, x_ref_search, y_ref_search, buffer_radius_ref, coordinate_type
+    )
 
     # Get the a-priori quality of all potential arcs that can be made
     arcs_and_quality = _ordered_arcs_all_points(
-        rdx, rdy, slc_quality, idx_pnts_buffer_ref, dist_to_quality, nad_vals, nad_max=nad_max
+        x_coordinates,
+        y_coordinates,
+        slc_quality,
+        idx_pnts_buffer_ref,
+        dist_to_quality,
+        nad_nmad_vals,
+        nad_max=nad_nmad_max,
     )
 
     # We will only work with n_max_arcs, otherwise we need to load an extensive dataset everytime
@@ -817,7 +836,6 @@ def ordered_arcs_connection_point_and_control_network(
 
 
 def construct_control_network_test_arcs(
-    stm,
     x_ref_search,
     y_ref_search,
     buffer_radius_ref,
@@ -828,7 +846,7 @@ def construct_control_network_test_arcs(
     deg_threshold,
     min_nodes,
     min_redundancy,
-    nad_max,
+    nad_nmad_max,
     visualize_network,
     sigma_post_over_sigma_prior,
     nr_max_iter_control,
@@ -848,14 +866,13 @@ def construct_control_network_test_arcs(
     median_ampl_sd,
     x_coordinates,
     y_coordinates,
+    nad_nmad,
     coordinate_type: Literal["euclidean", "geographic"] = "euclidean",
 ):
-    """Test the arcs in the constructed control network.
+    """Construct the control network while testing the arcs inside.
 
     Parameters
     ----------
-    stm:
-        space_time_matrix
     x_ref_search:
         X coordinate of central point to search for reference point
     y_ref_search:
@@ -876,8 +893,8 @@ def construct_control_network_test_arcs(
         Minimum number of nodes required in the final network.
     min_redundancy:
         Minimum average redundancy (degree) required in the final network.
-    nad_max:
-        Maximum NAD
+    nad_nmad_max:
+        Maximum NAD / NMAD for a point to be considered
     visualize_network:
         Boolean whether or not to visualize the network
     sigma_post_over_sigma_prior:
@@ -916,6 +933,8 @@ def construct_control_network_test_arcs(
         x coordinates (RD or longitude)
     y_coordinates: np.ndarray
         y coordinates (RD or latitude)
+    nad_nmad: np.ndarray
+        NAD or NMAD to be used in the point selection upon which `nad_nmad_max` is imposed.
     coordinate_type: Literal["euclidean", "geographic"] = "euclidean"
         Whether the provided coordinates are Euclidean (such as RD) or geographic (such as lon/lat)
 
@@ -934,7 +953,17 @@ def construct_control_network_test_arcs(
 
     # Get an ordered list of all potential arcs with a buffer area
     arcs_search_area, _, quality_dict_arcs = get_ordered_arcs(
-        stm, x_ref_search, y_ref_search, buffer_radius_ref, dist_to_quality, N_max_arcs, nad_max
+        x_ref_search,
+        y_ref_search,
+        buffer_radius_ref,
+        dist_to_quality,
+        N_max_arcs,
+        nad_nmad_max,
+        x_coordinates,
+        y_coordinates,
+        slc_quality,
+        nad_nmad,
+        coordinate_type,
     )
 
     network_meets_requirements = False
@@ -1029,7 +1058,7 @@ def construct_control_network_test_arcs(
 
         if network_check == 1:
             print("Network meets requirements")
-            # After the last test, the isoltated arcs are removed (so they are still in
+            # After the last test, the isolated arcs are removed (so they are still in
             # 'succeeded_arcs' and in the dictionary)
             # And these arcs need to be removed from the dictionary
             missing_indices = [
@@ -1049,6 +1078,8 @@ def construct_control_network_test_arcs(
 
             # Now we have a network that fullfills requirements but there might be noisy arcs
             # We compute solutions for all arcs and computed RMSE
+            # In the next part, we will remove any arcs that are too noisy for the requirements, and then test if
+            # the network still fulfills the requirements
             print("Calculate whether there are arcs where the solution that we found is noisy")
 
             est_displ_phase = (
@@ -1071,7 +1102,7 @@ def construct_control_network_test_arcs(
 
             print(f"The value for sigma_post_over_prior is {sigma_post_over_sigma_prior}")
 
-            print("we removed acs")
+            print("we removed arcs")
 
             print("The bad arcs are")
             print(idx_bad_arcs)

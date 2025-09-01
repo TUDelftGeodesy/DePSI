@@ -850,7 +850,7 @@ def arc_estimation_xarray_input(
             "estimated_thermal",
             "estimated_cross_range",
             "estimated_cross_range_sigma",
-            "estimate_thermal_sigma",
+            "estimated_thermal_sigma",
         ]:
             results[key].append(np.nan)
 
@@ -1289,7 +1289,7 @@ def arc_estimation_control_network(
                 "estimated_thermal",
                 "estimated_cross_range",
                 "estimated_cross_range_sigma",
-                "estimate_thermal_sigma",
+                "estimated_thermal_sigma",
             ]:
                 results[key].append(np.nan)
 
