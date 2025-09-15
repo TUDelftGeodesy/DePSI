@@ -367,7 +367,22 @@ def crop_slc_spacetime(
             & (slcs["lon"] >= min(bounding_box[0]))
             & (slcs["lon"] <= max(bounding_box[0]))
         )
-        slcs = slcs.where(space_mask.compute(), drop=True)
+
+        comp_space_mask = space_mask.compute()
+        az_sum = comp_space_mask.sum(dim="azimuth")
+        rg_sum = comp_space_mask.sum(dim="range")
+
+        # first and last non zero
+        min_range, max_range = (
+            az_sum.where(az_sum > 0, drop=True)["range"].min().values,
+            az_sum.where(az_sum > 0, drop=True)["range"].max().values,
+        )
+        min_azimuth, max_azimuth = (
+            rg_sum.where(rg_sum > 0, drop=True)["azimuth"].min().values,
+            rg_sum.where(rg_sum > 0, drop=True)["azimuth"].max().values,
+        )
+        # data at original locations not nan
+        slcs = slcs.sel(azimuth=range(min_azimuth, max_azimuth), range=range(min_range, max_range))
 
     return slcs
 
