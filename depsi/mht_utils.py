@@ -127,7 +127,7 @@ def lambda_approx(lambda_init, df, gam0, cv):
     return lam0ap
 
 
-def lam0_accurate(lambda_init, df, gam0, cv):
+def _lam0_accurate(lambda_init, df, gam0, cv):
     """Compute the accurate value of the non-centrality parameter lambda.
 
     This function calculates the precise non-centrality parameter (λ) for statistical hypothesis testing.
@@ -159,15 +159,10 @@ def lam0_accurate(lambda_init, df, gam0, cv):
     References
     ----------
     - Original FORTRAN routine: CHILNC.F by F. Kenselaar.
-    - Script based on `lam0_accurate.m` function written in Matlab by Marcel Martens.
+    - Script based on `_lam0_accurate.m` function written in Matlab by Marcel Martens.
     - Translated to Python by Wietske Brouwer on 21-03-2024.
     """
-    if lambda_init < 0.0:
-        lambda_init = 0.0
-
-    lam0ac = (1.0 - ncx2.cdf(cv, df, lambda_init)) - gam0
-
-    return lam0ac
+    return (1.0 - ncx2.cdf(cv, df, lambda_init)) - gam0
 
 
 def lambda0(gam0, df, cv):
@@ -175,7 +170,7 @@ def lambda0(gam0, df, cv):
 
     This function computes the non-centrality parameter λ for the non-central chi-squared
     distribution using a bisection iteration method. It is based on the original FORTRAN
-    routine CHILNC.F by F. Kenselaar and relies on helper functions `lam0_accurate` and `lambda_approx`
+    routine CHILNC.F by F. Kenselaar and relies on helper functions `_lam0_accurate` and `lambda_approx`
     for approximation and accuracy.
 
     Parameters
@@ -206,7 +201,7 @@ def lambda0(gam0, df, cv):
       it using a root-finding method (`fsolve`).
     - If the critical value (`cv`) is close to the value obtained from the chi-squared
       distribution (`cv1`), λ is set to 0 directly.
-    - The maximum number of iterations (`mxit`) is set to 50, with an expansion factor (`fac`) of 1.6.
+    - The maximum number of iterations (`max_iter`) is set to 50, with an expansion factor (`fac`) of 1.6.
 
     References
     ----------
@@ -215,10 +210,7 @@ def lambda0(gam0, df, cv):
     - Translated to Python by Wietske Brouwer on 21-03-2024.
     """
     # Initializations
-    lam0 = 0.0
-    stop1 = 0
-    stop2 = 0
-    mxit = 50
+    max_iter = 50
     fac = 1.6
 
     # Checks on input
@@ -233,11 +225,9 @@ def lambda0(gam0, df, cv):
 
     if cv < cv1:
         raise ValueError("LAMBDA0: this gamma0 and Critical Value lead to negative lambda")
-    if cv == cv1:
-        lam0 = 0
-        stop1 = 1
-
-    if stop1 == 0:
+    elif cv == cv1:
+        lam0 = 0.0
+    else:
         # Compute start value for lambda (lstrt)
         x1 = 0
         x2 = 5
@@ -246,11 +236,8 @@ def lambda0(gam0, df, cv):
         f2 = lambda_approx(x2, df, gam0, cv)
         step = x2 - x1
 
-        while ii <= mxit and stop2 == 0:
+        while (ii <= max_iter) and (f1 * f2 >= 0):
             ii += 1
-
-            if f1 * f2 < 0:
-                stop2 = 1
 
             if abs(f1) < abs(f2):
                 x1 -= step
@@ -259,7 +246,6 @@ def lambda0(gam0, df, cv):
                 x2 += step
                 f2 = lambda_approx(x2, df, gam0, cv)
             step *= fac
-
         lstrt = (x1 + x2) / 2
 
         # Compute approximate value for lambda using an approximation formula for non-central chi-square distribution
@@ -269,6 +255,6 @@ def lambda0(gam0, df, cv):
             lambda_init = fsolve(lambda lambda_init: lambda_approx(lambda_init, df, gam0, cv), lstrt)
 
         # Compute an accurate value for lambda
-        lam0 = fsolve(lambda lambda_init: lam0_accurate(lambda_init, df, gam0, cv), lambda_init)
+        lam0 = fsolve(lambda lambda_init: _lam0_accurate(lambda_init, df, gam0, cv), lambda_init)
 
     return lam0
