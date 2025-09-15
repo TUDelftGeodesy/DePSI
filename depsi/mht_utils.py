@@ -1,8 +1,13 @@
 """utilities for statistical hypothesis testing."""
 
+import logging
+
 import numpy as np
 from scipy.optimize import fsolve
 from scipy.stats import chi2, ncx2, norm
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def pretest(b, alpha0=0.001, gamma0=0.80):
@@ -55,7 +60,7 @@ def pretest(b, alpha0=0.001, gamma0=0.80):
         kb = ncx2.ppf(1.0 - gamma0, b, lam0)
         alphab = 1.0 - chi2.cdf(kb, b)
     else:
-        print("message: zero redundancy")
+        logger.warning("zero redundancy (b=0) encountered in pretest")
         kb = np.nan
         alphab = np.nan
 
