@@ -70,7 +70,7 @@ def pretest(b, alpha0=0.001, gamma0=0.80):
     return lam0, k1, kb, alphab
 
 
-def lambda_approx(lambda_init, df, gam0, cv):
+def _lambda_approx(lambda_init, df, gam0, cv):
     """Approximation of the non-centrality parameter lambda.
 
     This function computes an approximation of the non-centrality parameter (λ)
@@ -104,7 +104,7 @@ def lambda_approx(lambda_init, df, gam0, cv):
     - Abramowitz, M., & Stegun, I. A. (1964). Handbook of Mathematical Functions.
       Dover Publications. (Formula 26.4.28)
     - Original FORTRAN routine: CHILNC.F by F. Kenselaar.
-    - Script based on `lambda_approx.m` function written in Matlab by Marcel Martens.
+    - Script based on `_lambda_approx.m` function written in Matlab by Marcel Martens.
     - Translated to Python by Wietske Brouwer on 21-03-2024.
     """
     a = df + lambda_init
@@ -170,7 +170,7 @@ def lambda0(gam0, df, cv):
 
     This function computes the non-centrality parameter λ for the non-central chi-squared
     distribution using a bisection iteration method. It is based on the original FORTRAN
-    routine CHILNC.F by F. Kenselaar and relies on helper functions `_lam0_accurate` and `lambda_approx`
+    routine CHILNC.F by F. Kenselaar and relies on helper functions `_lam0_accurate` and `_lambda_approx`
     for approximation and accuracy.
 
     Parameters
@@ -232,8 +232,8 @@ def lambda0(gam0, df, cv):
         x1 = 0
         x2 = 5
         ii = 0
-        f1 = lambda_approx(x1, df, gam0, cv)
-        f2 = lambda_approx(x2, df, gam0, cv)
+        f1 = _lambda_approx(x1, df, gam0, cv)
+        f2 = _lambda_approx(x2, df, gam0, cv)
         step = x2 - x1
 
         while (ii <= max_iter) and (f1 * f2 >= 0):
@@ -241,10 +241,10 @@ def lambda0(gam0, df, cv):
 
             if abs(f1) < abs(f2):
                 x1 -= step
-                f1 = lambda_approx(x1, df, gam0, cv)
+                f1 = _lambda_approx(x1, df, gam0, cv)
             else:
                 x2 += step
-                f2 = lambda_approx(x2, df, gam0, cv)
+                f2 = _lambda_approx(x2, df, gam0, cv)
             step *= fac
         lstrt = (x1 + x2) / 2
 
@@ -252,7 +252,7 @@ def lambda0(gam0, df, cv):
         if cv - cv1 < 0.1:
             lambda_init = 0
         else:
-            lambda_init = fsolve(lambda lambda_init: lambda_approx(lambda_init, df, gam0, cv), lstrt)
+            lambda_init = fsolve(lambda lambda_init: _lambda_approx(lambda_init, df, gam0, cv), lstrt)
 
         # Compute an accurate value for lambda
         lam0 = fsolve(lambda lambda_init: _lam0_accurate(lambda_init, df, gam0, cv), lambda_init)
