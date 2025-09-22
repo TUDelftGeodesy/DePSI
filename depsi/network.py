@@ -348,7 +348,7 @@ def _compute_phase_difference(
     return d_phase
 
 
-def _network_relation_matirx(idx_source, idx_target, n_points):
+def _network_relation_matrix(idx_source, idx_target, n_points):
     n_arcs = len(idx_source)
     A_sparse_start = sparse.COO(
         (np.arange(n_arcs), idx_source),
