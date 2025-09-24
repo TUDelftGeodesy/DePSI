@@ -6,7 +6,7 @@ import xarray as xr
 
 from depsi.network import (
     _compute_phase_difference,
-    _network_relation_matirx,
+    _network_relation_matrix,
     arc_selection,
     form_network,
     remove_isolated_stm,
@@ -254,7 +254,7 @@ class TestNetworkUnwrap:
         idx_target,
         n_points,
     ):
-        A = _network_relation_matirx(idx_source, idx_target, n_points)
+        A = _network_relation_matrix(idx_source, idx_target, n_points)
 
         # Create expected matrix in a for loop
         A_exp = np.zeros((idx_source.shape[0], n_points), dtype=int)

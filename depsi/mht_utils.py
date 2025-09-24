@@ -201,7 +201,7 @@ def lambda0(gam0, df, cv):
       it using a root-finding method (`fsolve`).
     - If the critical value (`cv`) is close to the value obtained from the chi-squared
       distribution (`cv1`), λ is set to 0 directly.
-    - The maximum number of iterations (`max_iter`) is set to 50, with an expansion factor (`fac`) of 1.6.
+    - The maximum number of iterations (`MAX_ITER`) is set to 50, with an expansion factor (`EXPANSION_FACTOR`) of 1.6.
 
     References
     ----------
@@ -210,8 +210,8 @@ def lambda0(gam0, df, cv):
     - Translated to Python by Wietske Brouwer on 21-03-2024.
     """
     # Initializations
-    max_iter = 50
-    fac = 1.6
+    MAX_ITER = 50
+    EXPANSION_FACTOR = 1.6
 
     # Checks on input
     if df < 1:
@@ -236,7 +236,7 @@ def lambda0(gam0, df, cv):
         f2 = _lambda_approx(x2, df, gam0, cv)
         step = x2 - x1
 
-        while (ii <= max_iter) and (f1 * f2 >= 0):
+        while (ii <= MAX_ITER) and (f1 * f2 >= 0):
             ii += 1
 
             if abs(f1) < abs(f2):
@@ -245,7 +245,7 @@ def lambda0(gam0, df, cv):
             else:
                 x2 += step
                 f2 = _lambda_approx(x2, df, gam0, cv)
-            step *= fac
+            step *= EXPANSION_FACTOR
         lstrt = (x1 + x2) / 2
 
         # Compute approximate value for lambda using an approximation formula for non-central chi-square distribution
@@ -257,4 +257,8 @@ def lambda0(gam0, df, cv):
         # Compute an accurate value for lambda
         lam0 = fsolve(lambda lambda_init: _lam0_accurate(lambda_init, df, gam0, cv), lambda_init)
 
-    return lam0
+        # If multiple solutions are found, raise an error
+        if lam0.size > 1:
+            raise ValueError("LAMBDA0: multiple solutions found for lambda!")
+
+    return lam0[0]
