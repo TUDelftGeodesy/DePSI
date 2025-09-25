@@ -6,11 +6,16 @@ from typing import Literal
 
 import networkx as nx
 import numpy as np
+import scipy
 import sparse
 import xarray as xr
 from scipy.spatial import Delaunay, KDTree
 
 logger = logging.getLogger(__name__)
+
+# Constants for MHT in network integration
+ALPHA0 = 0.1  # Significance level for 1-dimensional test
+GAMMA0 = 0.5  # Power of the test
 
 
 def form_network(
@@ -114,6 +119,85 @@ def form_network(
     )
 
     return arcs
+
+
+def _mht_network_adjustment(
+    A: scipy.sparse._csr.csr_matrix,
+    y: np.ndarray,
+    Qyy: np.ndarray,
+    k1: float,
+    kb_dict: dict,
+) -> (int, int):
+    """Remove one point/arc from the network to reduce the residual in ambiguity estimation."""
+    # Retrive shapes
+    N_arcs, N_epochs = y.shape
+    N_points = A.shape[1]
+
+    # Inverse of VCM of observations
+    if Qyy.ndim == 1:  # Diagonal VCM
+        invQy = scipy.sparse.diags(1 / Qyy, 0, shape=(N_arcs, N_arcs))
+    elif Qyy.ndim == 2:  # Full VCM
+        invQy = np.linalg.inv(Qyy)
+    else:
+        raise ValueError("Qyy must be either 1D (diagonal VCM) or 2D (full VCM)")
+
+    # Solve ambiguities as float
+    _, echeck = _solve_float_ambiguities(A, y, invQy)
+
+    # Post-priori VCM of residuals
+    # Qecheck = Qyy - Qycheck = Qyy - A Qxx A'
+    Qxx = np.linalg.inv((A.T @ invQy @ A).todense())
+    Qecheck = Qyy - (A @ Qxx @ A.T)  # TODO: check how to handle large Qecheck
+
+    # Test statistics TT1 for removing one arc
+    Qecheck_diag = np.array(Qecheck.diagonal().flatten()).squeeze()
+    w = echeck**2 / np.tile(np.abs(Qecheck_diag), (N_epochs, 1)).T
+    TT1 = np.sum(w, axis=0) / k1**2
+
+    # Test statistics for removing one point
+    TTq = np.zeros(N_points)
+    for pnt_idx in range(N_points):
+        arcs_idx = np.where(A[:, pnt_idx].todense() != 0)[0]  # Arcs connected to this point
+        arcs_idx = arcs_idx[1:]  # Drop one arc to create basis, see e.g. verhoef97
+        echeck_point = echeck[arcs_idx, :]  # Relevant echeck of this point
+        Qecheck_point = Qecheck[arcs_idx, :][:, arcs_idx]  # Relevant Qecheck_diag of this point
+
+        # Compute the test statistic for this point
+        # TODO: check if this abs is taken correctly
+        Tq = np.sum(
+            np.abs((echeck_point.T @ np.linalg.inv(Qecheck_point) @ echeck_point).diagonal())
+        )  # Before adjust for degree of freedom
+        TTq[pnt_idx] = Tq / kb_dict[len(arcs_idx)]
+
+    # Decision one removal strategy
+    if max(TT1) > max(TTq):
+        idx_removal = np.argmax(TT1)  # index of arc to remove
+        flag_removal = 0  # remove arc
+    else:
+        idx_removal = np.argmax(TTq)  # index of point to remove
+        flag_removal = 1  # remove point
+
+    return flag_removal, idx_removal
+
+
+def _solve_float_ambiguities(A, y, invQy):
+    """Solve ambiguities as a float based on Least-Squares."""
+    # Solve ambiguities as they are float numbers
+    # This solves the equation Ax = y in least square sense
+    # With A a sparse matrix
+    # And stochastic model Qyy taken into account
+    invQyA = invQy @ A  # Avoid repeated computation in vectorized lsmr
+
+    @np.vectorize(signature="(i)->(j)")
+    def lsmr(y):
+        """Least square iterative solver for sparse data."""
+        x, *_ = scipy.sparse.linalg.lsmr(invQyA, y)
+        return x
+
+    acheck = lsmr(y.T).T  # float ambiguity estimation
+    echeck = y - A @ acheck  # residuals estimation
+
+    return acheck, echeck
 
 
 def arc_selection(
@@ -362,4 +446,4 @@ def _network_relation_matrix(idx_source, idx_target, n_points):
     )
     A_sparse = A_sparse_start + A_sparse_end
 
-    return A_sparse
+    return A_sparse.tocsr()  # Convert to csr for efficient arithmetic and matrix vector operations
