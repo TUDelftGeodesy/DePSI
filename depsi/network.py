@@ -152,7 +152,7 @@ def _mht_network_adjustment(
     # Test statistics TT1 for removing one arc
     Qecheck_diag = np.array(Qecheck.diagonal().flatten()).squeeze()
     w = echeck**2 / np.tile(np.abs(Qecheck_diag), (N_epochs, 1)).T
-    TT1 = np.sum(w, axis=0) / k1**2
+    TT1 = np.sum(w, axis=1) / k1**2
 
     # Test statistics for removing one point
     TTq = np.zeros(N_points)
