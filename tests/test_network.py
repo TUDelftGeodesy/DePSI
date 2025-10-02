@@ -9,7 +9,7 @@ from depsi.network import (
     _network_relation_matrix,
     arc_selection,
     form_network,
-    remove_isolated_stm,
+    remove_network_points_min_connections,
 )
 
 
@@ -219,20 +219,20 @@ class TestArcSelection:
                 min_n_connection=0,
             )
 
-    def test_remove_isolated_stm_keep_all_pnts(self, stm_random, arcs_random):
+    def test_remove_network_points_min_connections_keep_all_pnts(self, stm_random, arcs_random):
         """No STM points removed since no arc is discarded."""
-        stm_updated, arcs_updated = remove_isolated_stm(stm_random, arcs_random)
+        stm_updated, arcs_updated = remove_network_points_min_connections(stm_random, arcs_random, min_connections=0)
 
         assert stm_updated.sizes["space"] == stm_random.sizes["space"]
         assert arcs_updated.sizes["space"] == arcs_random.sizes["space"]
 
-    def test_remove_isolated_stm_discard_one(self, stm_random, arcs_random):
+    def test_remove_network_points_min_connections_discard_one(self, stm_random, arcs_random):
         """Remove one STM point."""
         # remove arcs with source or target == 1
         arcs = arcs_random.copy(deep=True)
         arcs = arcs.where((arcs["source"] != 1) & (arcs["target"] != 1), drop=True)
 
-        stm_updated, arcs_updated = remove_isolated_stm(stm_random, arcs)
+        stm_updated, arcs_updated = remove_network_points_min_connections(stm_random, arcs, min_connections=0)
 
         # Should remove the point with index 1
         assert stm_updated.sizes["space"] == stm_random.sizes["space"] - 1

@@ -275,15 +275,28 @@ def arc_selection(
     return arcs_selected
 
 
-def remove_isolated_points(stm: xr.Dataset, arcs: xr.Dataset) -> xr.Dataset:
-    """Remove isolated points from the network."""
+def remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, min_connections: int) -> xr.Dataset:
+    """Remove points which have less than min_connections arc connections.
+
+    This function is used to remove untestable points (connections <= 2) or isolated points (connections = 0).
+    When min_connections=0, this function removes isolated points.
+    When min_connections>=1, this function removes points with less than min_connections connections.
+    After removal, the space indices in points/arcs STM are updated accordingly.
+    """
     # Load source and target indices from arcs
     # these are 1d arrays so should fit in memory
     idx_source = arcs["source"].values
     idx_target = arcs["target"].values
 
     # Select STM points that are in arcs
-    idx_selected = np.sort(np.unique(np.concatenate([idx_source, idx_target])))
+    if min_connections == 0:
+        # Remove isolated points with no connections
+        # Only keep points which ids are in arcs
+        idx_selected = np.sort(np.unique(np.concatenate([idx_source, idx_target])))
+    elif min_connections >= 1:
+        # only keep points with at least min_connections connections
+        idx_selected, counts = np.unique(np.concatenate([idx_source, idx_target]), return_counts=True)
+        idx_selected = idx_selected[counts >= min_connections]
     stm_updated = stm.isel(space=idx_selected)
 
     # The space size of the STM changes, resulting non-contiguous indices in space dimension
