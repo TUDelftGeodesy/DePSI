@@ -105,9 +105,18 @@ def form_network(
     target_idx = list(arcs_unzipped[1])
     d_phase = _compute_phase_difference(stm, source_idx, target_idx, key_phase, key_complex, method=dphase_method)
 
+    # Temporal base line
     Btemp = stm[key_Btemp].data
 
+    # Height to phase factor
     h2ph = (stm[key_h2ph].isel(space=source_idx).data + stm[key_h2ph].isel(space=target_idx).data) / 2
+
+    # Generate a unique identifier of arcs based on source and target for easy indexing
+    # This is because when updating network, points can be removed and reindexed
+    # Therefore we cannot use 2d index (source, target) as uid
+    scale = 10 ** (math.floor(math.log10(stm.sizes["space"])) + 1)  # Scale to ensure no overlap
+    uid = scale * (np.array(source_idx) + 1) + (np.array(target_idx) + 1)  # Plus one to avoid zero uid
+    uid = uid.astype(np.int64)
 
     arcs = xr.Dataset(
         data_vars={
@@ -115,7 +124,7 @@ def form_network(
             "Btemp": (["time"], Btemp),
             "h2ph": (["space", "time"], h2ph),
         },
-        coords={"source": (["space"], source_idx), "target": (["space"], target_idx)},
+        coords={"source": (["space"], source_idx), "target": (["space"], target_idx), "uid": (["space"], uid)},
     )
 
     return arcs
@@ -303,6 +312,12 @@ def remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, min
 
     # Select points
     stm_updated = stm.isel(space=idx_selected)
+
+    # Select arcs that connect selected points (Some arcs may be dropped together with points)
+    mask_source = np.isin(idx_source, idx_selected)
+    mask_target = np.isin(idx_target, idx_selected)
+    mask_arcs = mask_source & mask_target
+    arcs = arcs.isel(space=np.where(mask_arcs)[0])
 
     # The space size of the STM changes, resulting non-contiguous indices in space dimension
     # hence an update in arcs space coordinates is needed

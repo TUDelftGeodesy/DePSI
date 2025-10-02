@@ -112,6 +112,7 @@ class TestNetworkFormation:
         assert (
             np.unique(np.column_stack((source, target)), axis=0).shape[0] == source.shape[0]
         )  # check if all (source, target) pairs are unique
+        assert np.unique(arcs["uid"].values).shape[0] == arcs.sizes["space"]
 
     @pytest.mark.parametrize("method", ["subtract", "conjmult"])
     def test_compute_phase_difference(self, stm_random, method):
