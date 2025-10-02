@@ -287,11 +287,15 @@ def arc_selection(
 def remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, min_connections: int) -> xr.Dataset:
     """Remove points which have less than min_connections arc connections.
 
-    This function is typically used to remove untestable points (connections <= 2).
+    The following steps are performed:
 
-    The isolated points (connections = 0) will be removed as well, so min_connections should be at least 1.
+    1. Remove points from stm which have less than min_connections connections in arcs.
+    2. Remove arcs which connect to the removed points.
+    3. Update the space indices in points/arcs STM accordingly.
+       The point indices is always a 0-based continuous array.
 
-    After removal, the space indices in points/arcs STM are updated accordingly.
+    Note that this function does not perform interative removal to assure that all points have
+    at least min_connections connections, but only performs one round of removal.
     """
     if min_connections < 1:
         raise ValueError("min_connections must be at least 1")
