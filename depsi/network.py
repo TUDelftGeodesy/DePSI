@@ -296,6 +296,12 @@ def remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, min
     # Only keep points which ids are in arcs, isolated points are removed in idx_selected
     idx_selected, counts = np.unique(np.concatenate([idx_source, idx_target]), return_counts=True)
     idx_selected = idx_selected[counts >= min_connections]  # only keep points with at least min_connections connections
+
+    # If no change, return directly
+    if len(idx_selected) == stm.sizes["space"]:
+        return stm, arcs
+
+    # Select points
     stm_updated = stm.isel(space=idx_selected)
 
     # The space size of the STM changes, resulting non-contiguous indices in space dimension
