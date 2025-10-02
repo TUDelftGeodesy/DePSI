@@ -278,25 +278,24 @@ def arc_selection(
 def remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, min_connections: int) -> xr.Dataset:
     """Remove points which have less than min_connections arc connections.
 
-    This function is used to remove untestable points (connections <= 2) or isolated points (connections = 0).
-    When min_connections=0, this function removes isolated points.
-    When min_connections>=1, this function removes points with less than min_connections connections.
+    This function is typically used to remove untestable points (connections <= 2).
+
+    The isolated points (connections = 0) will be removed as well, so min_connections should be at least 1.
+
     After removal, the space indices in points/arcs STM are updated accordingly.
     """
+    if min_connections < 1:
+        raise ValueError("min_connections must be at least 1")
+
     # Load source and target indices from arcs
     # these are 1d arrays so should fit in memory
     idx_source = arcs["source"].values
     idx_target = arcs["target"].values
 
     # Select STM points that are in arcs
-    if min_connections == 0:
-        # Remove isolated points with no connections
-        # Only keep points which ids are in arcs
-        idx_selected = np.sort(np.unique(np.concatenate([idx_source, idx_target])))
-    elif min_connections >= 1:
-        # only keep points with at least min_connections connections
-        idx_selected, counts = np.unique(np.concatenate([idx_source, idx_target]), return_counts=True)
-        idx_selected = idx_selected[counts >= min_connections]
+    # Only keep points which ids are in arcs, isolated points are removed in idx_selected
+    idx_selected, counts = np.unique(np.concatenate([idx_source, idx_target]), return_counts=True)
+    idx_selected = idx_selected[counts >= min_connections]  # only keep points with at least min_connections connections
     stm_updated = stm.isel(space=idx_selected)
 
     # The space size of the STM changes, resulting non-contiguous indices in space dimension
