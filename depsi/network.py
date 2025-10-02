@@ -275,8 +275,8 @@ def arc_selection(
     return arcs_selected
 
 
-def remove_isolated_stm(stm: xr.Dataset, arcs: xr.Dataset) -> xr.Dataset:
-    """Remove isolated points from the STM."""
+def remove_isolated_points(stm: xr.Dataset, arcs: xr.Dataset) -> xr.Dataset:
+    """Remove isolated points from the network."""
     # Load source and target indices from arcs
     # these are 1d arrays so should fit in memory
     idx_source = arcs["source"].values
