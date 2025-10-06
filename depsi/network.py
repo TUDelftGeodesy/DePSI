@@ -145,6 +145,7 @@ def _mht_network_adjustment(
     # Inverse of VCM of observations
     if Qyy.ndim == 1:  # Diagonal VCM
         invQy = scipy.sparse.diags(1 / Qyy, 0, shape=(N_arcs, N_arcs))
+        Qyy = scipy.sparse.diags(Qyy, 0, shape=(N_arcs, N_arcs))
     elif Qyy.ndim == 2:  # Full VCM
         invQy = np.linalg.inv(Qyy)
     else:
@@ -169,12 +170,11 @@ def _mht_network_adjustment(
         arcs_idx = np.where(A[:, pnt_idx].todense() != 0)[0]  # Arcs connected to this point
         arcs_idx = arcs_idx[1:]  # Drop one arc to create basis, see e.g. verhoef97
         echeck_point = echeck[arcs_idx, :]  # Relevant echeck of this point
-        Qecheck_point = Qecheck[arcs_idx, :][:, arcs_idx]  # Relevant Qecheck_diag of this point
+        Qecheck_point = Qecheck[arcs_idx, :][:, arcs_idx]  # Relevant Qecheck of this point
 
         # Compute the test statistic for this point
-        # TODO: check if this abs is taken correctly
         Tq = np.sum(
-            np.abs((echeck_point.T @ np.linalg.inv(Qecheck_point) @ echeck_point).diagonal())
+            (echeck_point.T @ np.linalg.inv(Qecheck_point) @ echeck_point).diagonal()
         )  # Before adjust for degree of freedom
         TTq[pnt_idx] = Tq / kb_dict[len(arcs_idx)]
 
