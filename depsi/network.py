@@ -133,7 +133,7 @@ def form_network(
 def _mht_network_adjustment(
     A: scipy.sparse._csr.csr_matrix,
     y: np.ndarray,
-    Qyy: np.ndarray,
+    Qyy_diag: np.ndarray,
     k1: float,
     kb_dict: dict,
 ) -> (int, int):
@@ -143,13 +143,11 @@ def _mht_network_adjustment(
     N_points = A.shape[1]
 
     # Inverse of VCM of observations
-    if Qyy.ndim == 1:  # Diagonal VCM
-        invQy = scipy.sparse.diags(1 / Qyy, 0, shape=(N_arcs, N_arcs))
-        Qyy = scipy.sparse.diags(Qyy, 0, shape=(N_arcs, N_arcs))
-    elif Qyy.ndim == 2:  # Full VCM
-        invQy = np.linalg.inv(Qyy)
+    if Qyy_diag.ndim == 1:  # Diagonal VCM
+        invQy = scipy.sparse.diags(1 / Qyy_diag, 0, shape=(N_arcs, N_arcs))
+        Qyy = scipy.sparse.diags(Qyy_diag, 0, shape=(N_arcs, N_arcs))
     else:
-        raise ValueError("Qyy must be either 1D (diagonal VCM) or 2D (full VCM)")
+        raise NotImplementedError("Currently only diagonal VCM is supported. Qyy_diag should be an 1d array.")
 
     # Solve ambiguities as float
     _, echeck = _solve_float_ambiguities(A, y, invQy)
