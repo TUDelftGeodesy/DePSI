@@ -161,6 +161,7 @@ def _mht_network_adjustment(
     Qecheck_diag = np.array(Qecheck.diagonal().flatten()).squeeze()
     w = echeck**2 / np.tile(np.abs(Qecheck_diag), (N_epochs, 1)).T
     TT1 = np.sum(w, axis=1) / k1**2
+    TT1max = max(TT1)
 
     # Test statistics for removing one point
     TTq = np.zeros(N_points)
@@ -175,16 +176,17 @@ def _mht_network_adjustment(
             (echeck_point.T @ np.linalg.inv(Qecheck_point) @ echeck_point).diagonal()
         )  # Before adjust for degree of freedom
         TTq[pnt_idx] = Tq / kb_dict[len(arcs_idx)]
+    TTqmax = max(TTq)
 
     # Decision one removal strategy
-    if max(TT1) > max(TTq):
+    if TT1max > TTqmax:
         idx_removal = np.argmax(TT1)  # index of arc to remove
         flag_removal = 0  # remove arc
     else:
         idx_removal = np.argmax(TTq)  # index of point to remove
         flag_removal = 1  # remove point
 
-    return flag_removal, idx_removal
+    return flag_removal, idx_removal, TT1max, TTqmax
 
 
 def _solve_float_ambiguities(A, y, invQy):
