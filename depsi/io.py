@@ -5,10 +5,13 @@ import re
 from datetime import datetime
 from glob import glob
 from io import StringIO
+from typing import Literal
 
+import fiona
 import numpy as np
 import pandas as pd
 import sarxarray
+import scipy.spatial as scs
 import xarray as xr
 
 from depsi.utils import _orbit_fit
@@ -17,6 +20,18 @@ from depsi.utils import _orbit_fit
 SC_N_PATTERN = r"\s+([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
 SPEED_OF_LIGHT = 299792458.0  # m/s
 ALLOWED_KNMI_DATA_COLUMNS = ["TG", "TN", "TX", "RH", "RXH", "EV24"]
+SHAPEFILE_PROJECTIONS = {
+    "RD": {
+        "EPSG_code": "EPSG:28992",
+        "x_crd_layer": "rd_x",
+        "y_crd_layer": "rd_y",
+    },
+    "WGS84": {
+        "EPSG_code": "EPSG:4326",
+        "x_crd_layer": "lon",
+        "y_crd_layer": "lat",
+    },
+}
 
 
 def read_metadata(resfile, mode="raw", **kwargs):
@@ -570,7 +585,7 @@ def export_to_shapefile(stm: xr.Dataset, save_path: str) -> None:
     pass
 
 
-def export_convex_hull_to_shapefile(stm: xr.Dataset, save_path: str) -> None:
+def export_convex_hull_to_shapefile(stm: xr.Dataset, save_path: str, projection: Literal["RD", "WGS84"]) -> None:
     """Export the convex hull of an STM to a shapefile.
 
     Parameters
@@ -578,6 +593,36 @@ def export_convex_hull_to_shapefile(stm: xr.Dataset, save_path: str) -> None:
     stm: xr.Dataset
         The STM to export
     save_path: str
-        Full path to where to save the shapefile
+        Full path to where to save the shapefile, ending in .shp
+    projection: Literal["RD", "WGS84"]
+        Whether to output the convex hull in RD or in WGS84
+
+    Raises
+    ------
+    AssertionError
+        When an unknown projection is provided
+        When the provided save_path does not end in .shp
     """
-    pass
+    assert projection in SHAPEFILE_PROJECTIONS.keys(), f"Unknown requested projection {projection}!"
+    assert save_path.split(".")[-1] == "shp", f"Provided path {save_path} is not a shapefile!"
+
+    point_coords_x = stm[SHAPEFILE_PROJECTIONS["x_crd_layer"]].values.flatten()
+    point_coords_y = stm[SHAPEFILE_PROJECTIONS["x_crd_layer"]].values.flatten()
+    point_coords = np.vstack([point_coords_x, point_coords_y]).T
+
+    hull = scs.ConvexHull(point_coords)
+
+    hull_vertices = hull.points[hull.vertices]
+    listified_hull = [list(vertex) for vertex in hull_vertices]
+    listified_hull.append(listified_hull[0])  # to make it a closed hull
+
+    schema = {"geometry": "Polygon"}
+
+    shapefile = fiona.open(
+        save_path, mode="w", driver="ESRI Shapefile", schema=schema, crs=SHAPEFILE_PROJECTIONS["EPSG_code"]
+    )
+
+    rows = {"geometry": {"type": "Polygon", "coordinates": [listified_hull]}}
+
+    shapefile.write(rows)
+    shapefile.close()
