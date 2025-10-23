@@ -475,8 +475,6 @@ def read_rcs_csv(file_path):
         raise RuntimeError(f"Error loading the Radar Coding (RC) Toolbox output file '{file_path}") from e
 
 
-
-
 def get_targets_from_slc(slc_stack, targets):
     """Extract target-matched data from a SLC stack.
 
@@ -530,3 +528,56 @@ def get_targets_from_slc(slc_stack, targets):
 
     return matching_scatterers
 
+
+def export_to_csv(stm: xr.Dataset, save_path: str) -> None:
+    """Export an STM to CSV-format.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+        The STM to export
+    save_path: str
+        Full path to where to save the CSV
+    """
+    pass
+
+
+def export_to_skygeo_portal(stm: xr.Dataset, save_path: str) -> None:
+    """Export an STM to the files necessary for uploading to the SkyGeo portal.
+
+    This function produces both a CSV and a JSON, which together can be uploaded to the SkyGeo portal.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+        The STM to export
+    save_path: str
+        Full path to where to save the CSV file. The JSON file will be saved in the same directory.
+    """
+    pass
+
+
+def export_to_shapefile(stm: xr.Dataset, save_path: str) -> None:
+    """Export an STM to a shapefile.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+        The STM to export
+    save_path: str
+        Full path to where to save the shapefile
+    """
+    pass
+
+
+def export_convex_hull_to_shapefile(stm: xr.Dataset, save_path: str) -> None:
+    """Export the convex hull of an STM to a shapefile.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+        The STM to export
+    save_path: str
+        Full path to where to save the shapefile
+    """
+    pass
