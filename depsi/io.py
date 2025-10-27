@@ -14,7 +14,7 @@ import sarxarray
 import scipy.spatial as scs
 import xarray as xr
 
-from depsi.utils import _orbit_fit
+from depsi.utils import _orbit_fit, npdatetime64_to_datetime
 
 # Define constants
 SC_N_PATTERN = r"\s+([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
@@ -32,6 +32,24 @@ SHAPEFILE_PROJECTIONS = {
         "y_crd_layer": "lat",
     },
 }
+CSV_FIELD_NAMES = [
+    "ID",
+    "X (RD) [m]",
+    "Y (RD) [m]",
+    "H [m-NAP]",
+    "Lat (WGS84) [deg]",
+    "Lon (WGS84) [deg]",
+    "h (WGS84) [m]",
+    "Azimuth",
+    "Range",
+    "FUNC_INSERTS_MODEL_PARAMS_HERE",
+    "Std linear [mm/y]",
+    "STC [mm]",
+    "Coherence [0-1]",
+    "Std [mm]",
+    "FUNC_INSERTS_TIMESERIES_HERE",
+    "FUNC_INSERTS_AMP_HERE",
+]
 
 
 def read_metadata(resfile, mode="raw", **kwargs):
@@ -544,7 +562,13 @@ def get_targets_from_slc(slc_stack, targets):
     return matching_scatterers
 
 
-def export_to_csv(stm: xr.Dataset, save_path: str) -> None:
+def export_to_csv(
+    stm: xr.Dataset,
+    save_path: str,
+    model_parameter_layer_names: tuple,
+    ts_proj: Literal["los", "vertical"],
+    point_annotation_label: str,
+) -> None:
     """Export an STM to CSV-format.
 
     Parameters
@@ -553,8 +577,105 @@ def export_to_csv(stm: xr.Dataset, save_path: str) -> None:
         The STM to export
     save_path: str
         Full path to where to save the CSV
+    model_parameter_layer_names: tuple
+        Tuple with the layer names of the model parameters in the order that they will be stored in the csv
+    ts_proj: Literal["los", "vertical"]
+        Whether the saved time series is Line-of-Sight or projected onto the vertical
+    point_annotation_label: str
+        An extra annotation given to the point IDs in the CSV (`point_annotation_label`_az########r########)
+
+    Raises
+    ------
+    AssertionError
+        - if the provided path does not end in .csv
+    ValueError
+        - If unknown or unmodeled parameters have been added to `CSV_FIELD_NAMES`
     """
-    pass
+    assert save_path.split(".")[-1] == "csv", f"Provided path {save_path} is not a csv!"
+
+    fmt_dates = [npdatetime64_to_datetime(date).strftime("%Y%m%d") for date in stm["time"].values]
+    headers = []
+    for name in CSV_FIELD_NAMES:
+        if "FUNC_INSERTS" not in name:
+            headers.append(name)
+        else:
+            match name:
+                case "FUNC_INSERTS_MODEL_PARAMS_HERE":
+                    for param in model_parameter_layer_names:
+                        headers.append(param)
+                case "FUNC_INSERTS_TIMESERIES_HERE":
+                    for fmt_date in fmt_dates:
+                        headers.append(fmt_date)
+                case "FUNC_INSERTS_AMP_HERE":
+                    for fmt_date in fmt_dates:
+                        headers.append(f"a_{fmt_date}")
+                case _:
+                    raise ValueError(f"Function insert {name} requested but not defined!")
+
+    f = open(save_path, "w")
+    f.write(",".join(headers) + "\n")
+    for point in stm["space"].values:
+        point_values = []
+        for value in headers:
+            match value:
+                case "ID":
+                    az = int(stm.azimuth.sel(space=point).values)
+                    r = int(stm.range.sel(space=point).values)
+                    point_values.append(f"{point_annotation_label}_az{az:0>8d}r{r:0>8d}")
+                case "X (RD) [m]":
+                    if "rd_x" in stm.variables.keys():
+                        point_values.append(round(float(stm.rd_x.sel(space=point).values), 2))
+                    else:
+                        point_values.append("NULL")
+                case "Y (RD) [m]":
+                    if "rd_y" in stm.variables.keys():
+                        point_values.append(round(float(stm.rd_y.sel(space=point).values), 2))
+                    else:
+                        point_values.append("NULL")
+                case "H [m-NAP]":
+                    if "rd_h" in stm.variables.keys():
+                        point_values.append(round(float(stm.rd_h.sel(space=point).values), 4))
+                    else:
+                        point_values.append("NULL")
+                case "Lat (WGS84) [deg]":
+                    point_values.append(round(float(stm.lat.sel(space=point).values), 8))
+                case "Lon (WGS84) [deg]":
+                    point_values.append(round(float(stm.lon.sel(space=point).values), 8))
+                case "h (WGS84) [m]":
+                    point_values.append(round(float(stm.height.sel(space=point).values), 3))
+                case "Azimuth":
+                    point_values.append(int(stm.azimuth.sel(space=point).values))
+                case "Range":
+                    point_values.append(int(stm.range.sel(space=point).values))
+                case "Std linear [mm/y]":
+                    point_values.append(round(float(stm.linear_std.sel(space=point).values), 3))
+                case "STC [mm]":
+                    point_values.append(round(float(stm.stc.sel(space=point).values), 3))
+                case "Coherence [0-1]":
+                    point_values.append(round(float(stm.coherence.sel(space=point).values), 4))
+                case "Std [mm]":
+                    point_values.append(round(float(stm.ts_std.sel(space=point).values), 3))
+                case _:
+                    if value in model_parameter_layer_names:
+                        point_values.append(round(float(stm[value].sel(space=point).values), 5))
+                    elif value in fmt_dates:
+                        if ts_proj == "vertical":
+                            point_values.append(
+                                round(float(stm.ts_vert.sel(space=point).isel(time=fmt_dates.index(value))), 5)
+                            )
+                        elif ts_proj == "los":
+                            point_values.append(
+                                round(float(stm.ts_los.sel(space=point).isel(time=fmt_dates.index(value))), 5)
+                            )
+                    elif value[:2] == "a_" and value[2:] in fmt_dates:
+                        point_values.append(
+                            round(float(stm.amplitude.sel(space=point).isel(time=fmt_dates.index(value[2:]))), 3)
+                        )
+                    else:
+                        raise ValueError(f"Requested header {value} but this is undefined!")
+
+        f.write(",".join(point_values) + "\n")
+    f.close()
 
 
 def export_to_skygeo_portal(stm: xr.Dataset, save_path: str) -> None:
