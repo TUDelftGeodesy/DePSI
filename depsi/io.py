@@ -1,5 +1,6 @@
 """io methods."""
 
+import json
 import os
 import re
 from datetime import datetime
@@ -47,6 +48,19 @@ CSV_FIELD_NAMES = [
     "STC [mm]",
     "Coherence [0-1]",
     "Std [mm]",
+    "FUNC_INSERTS_TIMESERIES_HERE",
+    "FUNC_INSERTS_AMP_HERE",
+]
+PORTAL_CSV_FIELD_NAMES = [
+    "pnt_id",
+    "pnt_lat",
+    "pnt_lon",
+    "pnt_demheight",
+    "pnt_height",
+    "pnt_azimuth",
+    "pnt_range",
+    "pnt_quality",
+    "pnt_linear",
     "FUNC_INSERTS_TIMESERIES_HERE",
     "FUNC_INSERTS_AMP_HERE",
 ]
@@ -678,19 +692,138 @@ def export_to_csv(
     f.close()
 
 
-def export_to_skygeo_portal(stm: xr.Dataset, save_path: str) -> None:
-    """Export an STM to the files necessary for uploading to the SkyGeo portal.
-
-    This function produces both a CSV and a JSON, which together can be uploaded to the SkyGeo portal.
+def export_to_skygeo_portal(
+    stm: xr.Dataset,
+    save_path: str,
+    ts_proj: Literal["los", "vertical"],
+    point_annotation_label: str,
+    satellite: str,
+    asc_dsc: Literal["asc", "dsc"],
+    azimuth_spacing: float,
+    range_spacing: float,
+) -> None:
+    """Export an STM to CSV-format.
 
     Parameters
     ----------
     stm: xr.Dataset
         The STM to export
     save_path: str
-        Full path to where to save the CSV file. The JSON file will be saved in the same directory.
+        Full path to where to save the CSV
+    ts_proj: Literal["los", "vertical"]
+        Whether the saved time series is Line-of-Sight or projected onto the vertical
+    point_annotation_label: str
+        An extra annotation given to the point IDs in the CSV (`point_annotation_label`_az########r########)
+    satellite: str
+        Name of the satellite that acquired the imagery
+    asc_dsc: Literal["asc", "dsc"]
+        Whether the viewing geometry is ascending or descending
+    azimuth_spacing: float
+        The pixel spacing in azimuth direction
+    range_spacing: float
+        The pixel spacing in range direction
+
+    Raises
+    ------
+    AssertionError
+        - if the provided path does not end in .csv
+    ValueError
+        - If unknown or unmodeled parameters have been added to `CSV_FIELD_NAMES`
     """
-    pass
+    assert save_path.split(".")[-1] == "csv", f"Provided path {save_path} is not a csv!"
+
+    # first generate the CSV file
+
+    if save_path.split(".")[-2].split("_")[-1] != "portal":
+        save_path = ".".join(save_path.split(".")[:-1]) + "_portal.csv"
+
+    fmt_dates = [npdatetime64_to_datetime(date).strftime("%Y%m%d") for date in stm["time"].values]
+    headers = []
+    for name in CSV_FIELD_NAMES:
+        if "FUNC_INSERTS" not in name:
+            headers.append(name)
+        else:
+            match name:
+                case "FUNC_INSERTS_TIMESERIES_HERE":
+                    for fmt_date in fmt_dates:
+                        headers.append(f"d_{fmt_date}")
+                case "FUNC_INSERTS_AMP_HERE":
+                    for fmt_date in fmt_dates:
+                        headers.append(f"a_{fmt_date}")
+                case _:
+                    raise ValueError(f"Function insert {name} requested but not defined!")
+
+    f = open(save_path, "w")
+    f.write(",".join(headers) + "\n")
+    for point in stm["space"].values:
+        point_values = []
+        for value in headers:
+            match value:
+                case "pnt_id":
+                    az = int(stm.azimuth.sel(space=point).values)
+                    r = int(stm.range.sel(space=point).values)
+                    point_values.append(f"{point_annotation_label}_az{az:0>8d}r{r:0>8d}")
+                case "pnt_lat":
+                    point_values.append(round(float(stm.lat.sel(space=point).values), 8))
+                case "pnt_lon":
+                    point_values.append(round(float(stm.lon.sel(space=point).values), 8))
+                case "pnt_height" | "pnt_demheight":
+                    point_values.append(round(float(stm.height.sel(space=point).values), 3))
+                case "pnt_azimuth":
+                    point_values.append(int(stm.azimuth.sel(space=point).values))
+                case "pnt_range":
+                    point_values.append(int(stm.range.sel(space=point).values))
+                case "pnt_quality":
+                    point_values.append(round(float(stm.ens_coh_local.sel(space=point).values), 3))
+                case "pnt_linear":
+                    point_values.append(round(float(stm.linear_velocity.sel(space=point).values), 3))
+                case _:
+                    if value[:2] == "d_" and value[2:] in fmt_dates:
+                        if ts_proj == "vertical":
+                            point_values.append(
+                                round(float(stm.ts_vert.sel(space=point).isel(time=fmt_dates.index(value))), 5)
+                            )
+                        elif ts_proj == "los":
+                            point_values.append(
+                                round(float(stm.ts_los.sel(space=point).isel(time=fmt_dates.index(value))), 5)
+                            )
+                    elif value[:2] == "a_" and value[2:] in fmt_dates:
+                        point_values.append(
+                            round(float(stm.amplitude.sel(space=point).isel(time=fmt_dates.index(value[2:]))), 3)
+                        )
+                    else:
+                        raise ValueError(f"Requested header {value} but this is undefined!")
+
+        f.write(",".join(point_values) + "\n")
+    f.close()
+
+    ref_point_idx = np.where(np.abs(np.sum(np.round(stm.ts_vert.values, 2), axis=1)) < 0.01)[0]
+    ref_pt_coords = [
+        f"{round(float(stm.lat.sel(space=point).values), 8)}, {round(float(stm.lon.sel(space=point).values), 8)}"
+        for point in ref_point_idx
+    ]
+    ref_pts = " ; ".join(ref_pt_coords)
+
+    # then generate the JSON file
+    json_dict = {
+        "acquisition_period": f"{min(fmt_dates)} - {max(fmt_dates)}",
+        "number_of_observations_in_time": len(fmt_dates),
+        "number_of_measurements_in_AoI": len(list(stm["space"].values)),
+        "resolution": f"{round(azimuth_spacing, 1)} x {round(range_spacing, 1)} m",
+        "deformation_direction": "Line of Sight" if ts_proj == "los" else "Projected onto Vertical",
+        "DEM": "SRTM",
+        "reference_point_location": ref_pts,
+        "satellite_name": satellite,
+        "satellite_incidence_angle": round(np.mean(stm.local_incidence_angle.values)[0], 1),
+        "satellite_pass_direction": asc_dsc,
+        "processing_id": point_annotation_label,
+        "DePSI_version": "DePSI_group",
+        "description": "",
+        "estimated_models_for_time_series": "linear",
+    }
+    json_filename = ".".join(save_path.split(".")[:-1]) + ".json"
+    with open(json_filename, "w") as f:
+        json.dump(json_dict, f, ensure_ascii=False, indent=4)
 
 
 def export_to_shapefile(stm: xr.Dataset, save_path: str) -> None:
