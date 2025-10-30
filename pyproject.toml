@@ -12,7 +12,7 @@ dependencies = [
     "sarxarray",
     "stmtools",
     "ruptures",
-    "fiona",
+    "fiona<1.10", # smaller than 1.10 because at time of writing (30 Oct 2025) release 1.10.1 is broken
 ]
 description = "Python package for interferometric synthetic aperture radar (InSAR) time series processing."
 readme = "README.md"
