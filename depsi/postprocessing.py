@@ -3,12 +3,16 @@ import xarray as xr
 
 
 def stm_point_filter(
-    stm: xr.Dataset, layer_to_filter: str, filter_bounds: tuple, return_removed: bool = False
+    stm: xr.Dataset,
+    layer_to_filter: str,
+    vmin: float | int | None = None,
+    vmax: float | int | None = None,
+    return_removed: bool = False,
 ) -> xr.Dataset | tuple[xr.Dataset, xr.Dataset]:
     """Filter the points in an STM based on a given layer name and an allowed value range.
 
-    To filter with just an upper or lower limit, use `filter_bounds=(None, upper value)` (just upper limit) or
-    `filter_bounds=(lower value, None)` (just lower limit).
+    To filter with just an upper or lower limit, leave `vmin` to `None` (just upper limit) or `vmax` to `None` (just
+    lower limit). Leaving both `vmin` and `vmax` to `None` will return the original STM.
 
     Parameters
     ----------
@@ -16,9 +20,10 @@ def stm_point_filter(
         STM with at least the layer `layer_to_filter` and dimension `space`
     layer_to_filter: str
         Name of the layer on which the filter should be applied
-    filter_bounds: tuple
-        (minimum allowed value, maximum allowed value). Values equal to the given value are included. If either bound
-        is set to `None`, no lower or upper bound is used.
+    vmin: float | int | None
+        Minimum allowed value. Values equal to `vmin` are included. No lower bound is used if set to `None`.
+    vmax: float | int | None
+        Maximum allowed value. Values equal to `vmax` are included. No upper bound is used if set to `None`.
     return_removed: bool, default False
         If True, a second STM with the removed points is returned as second output alongside the STM with the retained
         points
@@ -30,22 +35,15 @@ def stm_point_filter(
     tuple[xr.Dataset, xr.Dataset] (if `return_removed` is `True`)
         STM containing all points where `layer_to_filter` is within the given bounds
         STM containing all points where `layer_to_filter` is outside the given bounds
-
-    Raises
-    ------
-    AssertionError
-        - if length of `filter_bounds` is not 2
     """
-    assert len(filter_bounds) == 2, f"Expected filter_bounds=(lower, upper), got {filter_bounds} instead."
-
-    if filter_bounds[0] is not None:
-        if filter_bounds[1] is not None:
-            mask = (stm[layer_to_filter] >= filter_bounds[0]) & (stm[layer_to_filter] <= filter_bounds[1])
+    if vmin is not None:
+        if vmax is not None:
+            mask = (stm[layer_to_filter] >= vmin) & (stm[layer_to_filter] <= vmax)
         else:
-            mask = stm[layer_to_filter] >= filter_bounds[0]
+            mask = stm[layer_to_filter] >= vmin
     else:
-        if filter_bounds[1] is not None:
-            mask = stm[layer_to_filter] <= filter_bounds[1]
+        if vmax is not None:
+            mask = stm[layer_to_filter] <= vmax
         else:
             mask = da.array([True] * len(list(stm["space"].values)))  # no filter applied, so return everything
 
