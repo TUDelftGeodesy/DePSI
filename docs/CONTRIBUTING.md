@@ -3,7 +3,7 @@
 
 We welcome any kind of contribution to our software, from a simple comment 
 or question to a full fledged [pull request](https://help.github.com/articles/about-pull-requests/). 
-Please read and follow our [Code of Conduct](./CODE_OF_CONDUCT.md).
+Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 A contribution can be one of the following cases:
 
@@ -33,6 +33,7 @@ to see if someone already filed the same issue;
 
 - (**important**) announce your plan to the rest of the community *before you start working*. This announcement should be in the form of a (new) issue;
 - (**important**) wait until some kind of consensus is reached about your idea being a good idea;
+- (**important**) check the ["Practical info for developers"](dev_guide.md) to make sure you have the right set up for development;
 - if needed, fork the repository to your own Github profile and create your own feature branch off of the latest master commit. While working on your feature branch, make sure to stay up to date with the master branch by pulling in changes, possibly from the 'upstream' repository (follow the instructions from GitHub: [instruction 1: configuring a remote for a fork](https://help.github.com/articles/configuring-a-remote-for-a-fork/) and [instruction 2: syncing a fork](https://help.github.com/articles/syncing-a-fork/));
 - install the pre-commit hooks by running `pre-commit install` in the project root directory;
 - make sure the existing tests still work by running, e.g. `pytest tests`;
