@@ -8,13 +8,13 @@ from glob import glob
 from io import StringIO
 from typing import Literal
 
-import fiona
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import sarxarray
 import scipy.spatial as scs
 import xarray as xr
-from shapely.geometry import Point, mapping
+from shapely.geometry import Point, Polygon
 
 from depsi.utils import _orbit_fit, npdatetime64_to_datetime
 
@@ -34,26 +34,24 @@ SHAPEFILE_PROJECTIONS = {
         "y_crd_layer": "lat",
     },
 }
-SHAPEFILE_SCHEMA = {
+SHAPEFILE_FIELD_NAMES = {
     "geometry": "Point",
-    "properties": {
-        "ID": "str",
-        "X (RD) [m]": "float:6.3",
-        "Y (RD) [m]": "float:6.3",
-        "H [m-NAP]": "float:3.3",
-        "Lat (WGS84) [deg]": "float:3.8",
-        "Lon (WGS84) [deg]": "float:3.8",
-        "h (WGS84) [m]": "float:4.3",
-        "Azimuth": "int",
-        "Range": "int",
-        "FUNC_INSERTS_MODEL_PARAMS_HERE": "float:12.12",
-        "Std linear [mm/y]": "float:4.2",
-        "STC [mm]": "float:4.3",
-        "Coherence [0-1]": "float:1.5",
-        "Std [mm]": "float:4.3",
-        "FUNC_INSERTS_TIMESERIES_HERE": "float:4.4",
-        "FUNC_INSERTS_AMP_HERE": "float:6.2",
-    },
+    "properties": [
+        "ID",
+        "X (RD) [m]",
+        "Y (RD) [m]",
+        "H [m-NAP]",
+        "Lat (WGS84) [deg]",
+        "Lon (WGS84) [deg]",
+        "h (WGS84) [m]",
+        "Azimuth",
+        "Range",
+        "FUNC_INSERTS_MODEL_PARAMS_HERE",
+        "Std linear [mm/y]",
+        "STC [mm]",
+        "Coherence [0-1]",
+        "Std [mm]",
+    ],
 }
 CSV_FIELD_NAMES = [
     "ID",
@@ -885,93 +883,77 @@ def export_to_shapefile(
     assert projection in SHAPEFILE_PROJECTIONS.keys(), f"Unknown requested projection {projection}!"
     assert save_path.split(".")[-1] == "shp", f"Provided path {save_path} is not a shapefile!"
 
-    fmt_dates = [npdatetime64_to_datetime(date).strftime("%Y%m%d") for date in stm["time"].values]
-    schema = {}
-    for name in SHAPEFILE_SCHEMA.keys():
+    schema = []
+    for name in SHAPEFILE_FIELD_NAMES["properties"]:
         if "FUNC_INSERTS" not in name:
-            schema[name] = SHAPEFILE_SCHEMA[name]
+            schema.append(name)
         else:
             match name:
                 case "FUNC_INSERTS_MODEL_PARAMS_HERE":
                     for param in model_parameter_layer_names:
-                        schema[param] = SHAPEFILE_SCHEMA[name]
-                case "FUNC_INSERTS_TIMESERIES_HERE":
-                    for fmt_date in fmt_dates:
-                        schema[f"d_{fmt_date}"] = SHAPEFILE_SCHEMA[name]
-                case "FUNC_INSERTS_AMP_HERE":
-                    for fmt_date in fmt_dates:
-                        schema[f"a_{fmt_date}"] = SHAPEFILE_SCHEMA[name]
+                        schema.append(param)
                 case _:
                     raise ValueError(f"Function insert {name} requested but not defined!")
 
-    with fiona.open(
-        save_path, mode="w", driver="ESRI Shapefile", schema=schema, crs=SHAPEFILE_PROJECTIONS[projection]["EPSG_code"]
-    ) as output:
-        for point in stm["space"].values:
-            point_values = {}
-            geometry = Point(
+    properties = {}
+    geometry = []
+    for point in stm["space"].values:
+        geometry.append(
+            Point(
                 float(stm[SHAPEFILE_PROJECTIONS[projection]["x_crd_layer"]].sel(space=point).values),
                 float(stm[SHAPEFILE_PROJECTIONS[projection]["y_crd_layer"]].sel(space=point).values),
             )
-            for value in schema.keys():
-                match value:
-                    case "ID":
-                        az = int(stm.azimuth.sel(space=point).values)
-                        r = int(stm.range.sel(space=point).values)
-                        point_values[value] = f"{point_annotation_label}_az{az:0>8d}r{r:0>8d}"
-                    case "X (RD) [m]":
-                        if "rd_x" in stm.variables.keys():
-                            point_values[value] = round(float(stm.rd_x.sel(space=point).values), 2)
-                        else:
-                            point_values[value] = np.nan
-                    case "Y (RD) [m]":
-                        if "rd_y" in stm.variables.keys():
-                            point_values[value] = round(float(stm.rd_y.sel(space=point).values), 2)
-                        else:
-                            point_values[value] = np.nan
-                    case "H [m-NAP]":
-                        if "rd_h" in stm.variables.keys():
-                            point_values[value] = round(float(stm.rd_h.sel(space=point).values), 4)
-                        else:
-                            point_values[value] = np.nan
-                    case "Lat (WGS84) [deg]":
-                        point_values[value] = round(float(stm.lat.sel(space=point).values), 8)
-                    case "Lon (WGS84) [deg]":
-                        point_values[value] = round(float(stm.lon.sel(space=point).values), 8)
-                    case "h (WGS84) [m]":
-                        point_values[value] = round(float(stm.height.sel(space=point).values), 3)
-                    case "Azimuth":
-                        point_values[value] = int(stm.azimuth.sel(space=point).values)
-                    case "Range":
-                        point_values[value] = int(stm.range.sel(space=point).values)
-                    case "Std linear [mm/y]":
-                        point_values[value] = round(float(stm.linear_std.sel(space=point).values), 3)
-                    case "STC [mm]":
-                        point_values[value] = round(float(stm.stc.sel(space=point).values), 3)
-                    case "Coherence [0-1]":
-                        point_values[value] = round(float(stm.coherence.sel(space=point).values), 4)
-                    case "Std [mm]":
-                        point_values[value] = round(float(stm.ts_std.sel(space=point).values), 3)
-                    case _:
-                        if value in model_parameter_layer_names:
-                            point_values[value] = round(float(stm[value].sel(space=point).values), 5)
-                        elif value[:2] == "d_" and value[2:] in fmt_dates:
-                            if ts_proj == "vertical":
-                                point_values[value] = round(
-                                    float(stm.ts_vert.sel(space=point).isel(time=fmt_dates.index(value))), 5
-                                )
-                            elif ts_proj == "los":
-                                point_values[value] = round(
-                                    float(stm.ts_los.sel(space=point).isel(time=fmt_dates.index(value))), 5
-                                )
-                        elif value[:2] == "a_" and value[2:] in fmt_dates:
-                            point_values[value] = round(
-                                float(stm.amplitude.sel(space=point).isel(time=fmt_dates.index(value[2:]))), 3
-                            )
-                        else:
-                            raise ValueError(f"Requested header {value} but this is undefined!")
+        )
+    for value in schema:
+        match value:
+            case "ID":
+                properties[value] = []
+                for point in stm["space"].values:
+                    az = int(stm.azimuth.sel(space=point).values)
+                    r = int(stm.range.sel(space=point).values)
+                    properties[value].append(f"{point_annotation_label}_az{az:0>8d}r{r:0>8d}")
+            case "X (RD) [m]":
+                if "rd_x" in stm.variables.keys():
+                    properties[value] = [round(float(val), 2) for val in stm.rd_x.values]
+                else:
+                    properties[value] = [np.nan for _ in stm["space"].values]
+            case "Y (RD) [m]":
+                if "rd_y" in stm.variables.keys():
+                    properties[value] = [round(float(val), 2) for val in stm.rd_y.values]
+                else:
+                    properties[value] = [np.nan for _ in stm["space"].values]
+            case "H [m-NAP]":
+                if "rd_h" in stm.variables.keys():
+                    properties[value] = [round(float(val), 3) for val in stm.rd_h.values]
+                else:
+                    properties[value] = [np.nan for _ in stm["space"].values]
+            case "Lat (WGS84) [deg]":
+                properties[value] = [round(float(val), 8) for val in stm.lat.values]
+            case "Lon (WGS84) [deg]":
+                properties[value] = [round(float(val), 8) for val in stm.lon.values]
+            case "h (WGS84) [m]":
+                properties[value] = [round(float(val), 3) for val in stm.height.values]
+            case "Azimuth":
+                properties[value] = [int(val) for val in stm.azimuth.values]
+            case "Range":
+                properties[value] = [int(val) for val in stm.range.values]
+            case "Std linear [mm/y]":
+                properties[value] = [round(float(val), 3) for val in stm.linear_std.values]
+            case "STC [mm]":
+                properties[value] = [round(float(val), 3) for val in stm.stc.values]
+            case "Coherence [0-1]":
+                properties[value] = [round(float(val), 4) for val in stm.coherence.values]
+            case "Std [mm]":
+                properties[value] = [round(float(val), 3) for val in stm.ts_std.values]
+            case _:
+                if value in model_parameter_layer_names:
+                    properties[value] = [round(float(val), 5) for val in stm[value].values]
+                else:
+                    raise ValueError(f"Requested header {value} but this is undefined!")
 
-            output.write({"geometry": mapping(geometry), "properties": point_values})
+    properties["geometry"] = geometry
+    dataframe = gpd.GeoDataFrame(properties, crs=SHAPEFILE_PROJECTIONS[projection]["EPSG_code"])
+    dataframe.to_file(save_path)
 
 
 def export_convex_hull_to_shapefile(stm: xr.Dataset, save_path: str, projection: Literal["RD", "WGS84"]) -> None:
@@ -1005,13 +987,8 @@ def export_convex_hull_to_shapefile(stm: xr.Dataset, save_path: str, projection:
     listified_hull = [list(vertex) for vertex in hull_vertices]
     listified_hull.append(listified_hull[0])  # to make it a closed hull
 
-    schema = {"geometry": "Polygon"}
-
-    shapefile = fiona.open(
-        save_path, mode="w", driver="ESRI Shapefile", schema=schema, crs=SHAPEFILE_PROJECTIONS[projection]["EPSG_code"]
+    hull_gdf = gpd.GeoDataFrame(
+        {"geometry": [Polygon(listified_hull)]}, crs=SHAPEFILE_PROJECTIONS[projection]["EPSG_code"]
     )
 
-    rows = {"geometry": {"type": "Polygon", "coordinates": [listified_hull]}}
-
-    shapefile.write(rows)
-    shapefile.close()
+    hull_gdf.to_file(save_path)
