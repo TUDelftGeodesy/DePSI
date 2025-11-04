@@ -26,7 +26,8 @@ def test_stm_point_filter_two_bounds():
     assert res_rejected.sizes["time"] == 10
     assert res.sizes["space"] == 3
     assert res_rejected.sizes["space"] == 2
-    assert np.all(vmin <= res[filter_layer].values <= vmax)
+    assert np.all(vmin <= res[filter_layer].values)
+    assert np.all(vmax >= res[filter_layer].values)
 
 
 def test_stm_point_filter_two_bounds_no_return_removed():
@@ -49,7 +50,8 @@ def test_stm_point_filter_two_bounds_no_return_removed():
     res = stm_point_filter(stm, filter_layer, vmin=vmin, vmax=vmax, return_removed=False)
     assert res.sizes["time"] == 10
     assert res.sizes["space"] == 3
-    assert np.all(vmin <= res[filter_layer].values <= vmax)
+    assert np.all(vmin <= res[filter_layer].values)
+    assert np.all(vmax >= res[filter_layer].values)
 
 
 def test_stm_point_filter_upper_bound_no_return_removed():
@@ -96,3 +98,25 @@ def test_stm_point_filter_lower_bound_no_return_removed():
     assert res.sizes["time"] == 10
     assert res.sizes["space"] == 2
     assert np.all(vmin <= res[filter_layer].values)
+
+
+def test_stm_point_filter_no_filter():
+    stm = xr.Dataset(
+        data_vars={
+            "amplitude": (("space", "time"), np.ones((5, 10))),
+            "time_selection_nad": (("space"), np.array([0.3, 0.01, 0.5, 0.2, 0.9])),
+        },
+        coords={
+            "space": np.array([3, 1, 2, 5, 7]),  # non monotonic space coords
+            "time": np.arange(10),
+            "azimuth": (("space"), np.arange(5)),
+            "range": (("space"), np.arange(5)),
+        },
+    )
+    filter_layer = "time_selection_nad"
+    vmin = None
+    vmax = None
+
+    res = stm_point_filter(stm, filter_layer, vmin=vmin, vmax=vmax, return_removed=False)
+    assert res.sizes["time"] == 10
+    assert res.sizes["space"] == stm.sizes["space"]

@@ -1,4 +1,4 @@
-import dask.array as da
+import numpy as np
 import xarray as xr
 
 
@@ -41,13 +41,13 @@ def stm_point_filter(
             mask = (stm[layer_to_filter] >= vmin) & (stm[layer_to_filter] <= vmax)
         else:
             mask = stm[layer_to_filter] >= vmin
+        mask = mask.values
     else:
         if vmax is not None:
             mask = stm[layer_to_filter] <= vmax
+            mask = mask.values
         else:
-            mask = da.array([True] * len(list(stm["space"].values)))  # no filter applied, so return everything
-
-    mask = mask.values  # compute it
+            mask = np.array([True] * stm.sizes["space"])  # no filter applied, so return everything
 
     retained_stm = stm.sel(space=stm["space"].values[mask])
 
