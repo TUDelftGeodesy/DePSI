@@ -132,32 +132,32 @@ class TestNetworkFormation:
 
 
 class TestArcSelection:
-    @pytest.mark.parametrize("thres, min_n_connection", [(0.99, 0), (0.5, 999)])
-    def test_select_arcs_return_zero(self, arcs_random, thres, min_n_connection):
-        """Should return zero arcs, two high threshold or too high min_n_connection."""
+    @pytest.mark.parametrize("thres, min_n_connections", [(0.99, 0), (0.5, 999)])
+    def test_select_arcs_return_zero(self, arcs_random, thres, min_n_connections):
+        """Should return zero arcs, two high threshold or too high min_n_connections."""
         # Select arcs based on ens_coh threshold.
         selected_arcs = arc_selection(
             arcs_random,
             threshold=thres,
             selection_method="ens_coh",
-            min_n_connection=min_n_connection,
+            min_n_connections=min_n_connections,
         )
 
         assert selected_arcs.sizes["space"] == 0
 
-    @pytest.mark.parametrize("thres, min_n_connection", [(0.5, 2), (0.5, 1)])
-    def test_select_arcs_discard_two(self, arcs_random, thres, min_n_connection):
+    @pytest.mark.parametrize("thres, min_n_connections", [(0.5, 2), (0.5, 1)])
+    def test_select_arcs_discard_two(self, arcs_random, thres, min_n_connections):
         """Should only discard two arcs, with ens_coh < 0.5."""
         # Select arcs based on ens_coh threshold.
         selected_arcs = arc_selection(
             arcs_random,
             threshold=thres,
             selection_method="ens_coh",
-            min_n_connection=min_n_connection,
+            min_n_connections=min_n_connections,
         )
 
         # Threshold is 0.5, so only the last two arcs are discarded
-        # The min_n_connection should not affect the selection
+        # The min_n_connections should not affect the selection
         assert selected_arcs.sizes["space"] == arcs_random.sizes["space"] - 2
 
     def test_select_arcs_non_connected(self, arcs_random, caplog):
@@ -168,7 +168,7 @@ class TestArcSelection:
                 arcs_random,
                 threshold=0.99,
                 selection_method="ens_coh",
-                min_n_connection=0,
+                min_n_connections=0,
             )
 
     def test_remove_isolated_stm_keep_all_pnts(self, stm_random, arcs_random):
@@ -206,7 +206,7 @@ class TestNetworkUnwrap:
         idx_target,
         n_points,
     ):
-        A = _network_relation_matirx(idx_source, idx_target, n_points)
+        A = _network_relation_matrix(idx_source, idx_target, n_points)
 
         # Create expected matrix in a for loop
         A_exp = np.zeros((idx_source.shape[0], n_points), dtype=int)

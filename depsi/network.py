@@ -19,8 +19,8 @@ def form_network(
     key_h2ph: str,
     key_Btemp: str,
     key_complex: str = "complex",
-    key_xlabel: str = "lon",
-    key_ylabel: str = "lat",
+    key_xcrds: str = "lon",
+    key_ycrds: str = "lat",
     network_method: Literal["redundant", "delaunay"] = "redundant",
     max_length: float = None,
     min_links: int = 16,
@@ -43,9 +43,9 @@ def form_network(
         Key of the temporal baseline values in the STM.
     key_complex : str, optional
         Key of the complex values, by default "complex"
-    key_xlabel : str, optional
+    key_xcrds  : str, optional
         Key of the x coordinates for calulating arc length, by default "lon"
-    key_ylabel : str, optional
+    key_ycrds  : str, optional
         Key of the y coordinates for calulating arc length, by default "lat"
     network_method : Literal["redundant", "delaunay"], optional
         network formation method, by default "redundant"
@@ -83,7 +83,7 @@ def form_network(
         raise NotImplementedError(f"Unknown network method {network_method}, known are delaunay and redundant")
 
     # Collect point coordinates.
-    indices = [stm[coord] for coord in [key_xlabel, key_ylabel]]
+    indices = [stm[coord] for coord in [key_xcrds, key_ycrds]]
     coordinates = np.column_stack(indices)
 
     arcs = None
@@ -120,7 +120,7 @@ def arc_selection(
     arcs: xr.Dataset,
     threshold: float,
     selection_method: Literal["ens_coh"] = "ens_coh",
-    min_n_connection: int = 2,
+    min_n_connections: int = 2,
 ) -> xr.Dataset:
     """Select arcs based on arc quality and connectivity.
 
@@ -162,9 +162,9 @@ def arc_selection(
         [arcs_selected["source"].data, arcs_selected["target"].data]
     )  # all occurrances of point ids
     point_ids_unique, counts = np.unique(point_ids_all, return_counts=True)  # unique point ids and their counts
-    while np.any(counts <= min_n_connection):
+    while np.any(counts <= min_n_connections):
         # Find points with <=3 arcs connected
-        point_ids_to_remove = point_ids_unique[counts <= min_n_connection]
+        point_ids_to_remove = point_ids_unique[counts <= min_n_connections]
         # Create a mask for arcs to remove
         mask_remove = np.isin(arcs_selected["source"].data, point_ids_to_remove) | np.isin(
             arcs_selected["target"].data, point_ids_to_remove
