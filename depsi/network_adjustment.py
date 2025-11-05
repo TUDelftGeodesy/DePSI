@@ -1,3 +1,5 @@
+"""Functions for the network adjustment in the CORG network."""
+
 from itertools import combinations, product
 
 import numpy as np
