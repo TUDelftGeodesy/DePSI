@@ -6,6 +6,7 @@ from typing import Literal
 
 import networkx as nx
 import numpy as np
+import scipy
 import sparse
 import xarray as xr
 from scipy.spatial import Delaunay
@@ -350,7 +351,30 @@ def _compute_phase_difference(
     return d_phase
 
 
-def _network_relation_matrix(idx_source, idx_target, n_points):
+def _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt):
+    """Create the network relation matrix A as a sparse matrix.
+
+    A network relation matrix has shape (n_arcs, n_points - 1).
+    Each row corresponds to an arc, and each column corresponds to a point, excluding the reference point.
+    For each arc, the column corresponding to the source point has a value of -1, and the column corresponding
+    to the target point has a value of +1.
+    All other entries are zero.
+
+    The reference point column removal refers to Eq.4.11 of the following book:
+    Kampes, Bert M. Radar interferometry: persistent scatterer technique. Dordrecht: Springer Netherlands, 2006.
+    DOI: 10.1007/978-1-4020-4723-7
+
+    Parameters
+    ----------
+    idx_source : list or np.ndarray
+        List of source point indices for each arc.
+    idx_target : list or np.ndarray
+        List of target point indices for each arc.
+    n_points : int
+        Total number of points in the network.
+    idx_refpnt : int
+        Index of the reference point to be excluded from the matrix. This index assumes 0-based indexing of the points.
+    """
     n_arcs = len(idx_source)
     A_sparse_start = sparse.COO(
         (np.arange(n_arcs), idx_source),
@@ -363,5 +387,11 @@ def _network_relation_matrix(idx_source, idx_target, n_points):
         shape=(n_arcs, n_points),
     )
     A_sparse = A_sparse_start + A_sparse_end
+
+    # Convert to csr for efficient arithmetic and matrix vector operations
+    A_sparse = A_sparse.tocsr()
+
+    # Remove reference point column
+    A_sparse = scipy.sparse.hstack([A_sparse[:, :idx_refpnt], A_sparse[:, idx_refpnt + 1 :]])
 
     return A_sparse
