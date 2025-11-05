@@ -20,7 +20,7 @@ def stm_random():
     Npoints = 12  # Number of points
     Ntimes = 31  # Number of epochs
     # Coordinates and time
-    lat = np.linspace(51.14, 51.15, Npoints)
+    lat = rng.uniform(51.14, 51.15, Npoints)
     lon = rng.uniform(6.9, 7.0, Npoints)
     time = np.arange(Ntimes)
     # Data
@@ -56,10 +56,10 @@ def arcs_random(stm_random):
     # Most arcs have quality 0.9
     # Except the last two have quality 0.0
     # And the first five have quality 0.99
-    real_ens_coh = np.zeros((arcs.sizes["space"],))  # Put all values in real, all imaginary are 0
-    real_ens_coh[:-2] = 0.9
-    real_ens_coh[:5] = 0.99
-    arcs["ens_coh"] = (("space"), real_ens_coh + 1j * np.zeros((arcs.sizes["space"],)))
+    ens_coh = np.zeros((arcs.sizes["space"],))
+    ens_coh[:-2] = 0.9
+    ens_coh[:5] = 0.99
+    arcs["ens_coh"] = (("space"), ens_coh)
 
     return arcs
 
