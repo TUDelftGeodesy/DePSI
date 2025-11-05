@@ -242,7 +242,7 @@ def _get_distance(s, t):
     return math.dist(s, t)
 
 
-def _generate_arcs_delaunay(coordinates, max_length=None):
+def _generate_arcs_delaunay(coordinates, max_length):
     """Create a network using Delaunay triangulation."""
     # Create network and collect neighbors.
     network = Delaunay(coordinates)
@@ -262,7 +262,7 @@ def _generate_arcs_delaunay(coordinates, max_length=None):
     return arcs
 
 
-def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_partitions=8):
+def _generate_arcs_redundant(coordinates, max_length, min_links, num_partitions):
     """Create a network with at least min_links arcs per node.
 
     Arcs are created ordered by length.
