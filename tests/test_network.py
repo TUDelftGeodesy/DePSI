@@ -6,7 +6,7 @@ import xarray as xr
 
 from depsi.network import (
     _compute_phase_difference,
-    _network_relation_matirx,
+    _network_relation_matrix,
     arc_selection,
     form_network,
     remove_isolated_stm,
@@ -53,9 +53,9 @@ def arcs_random(stm_random):
     # No max_length, so all points are connected
     arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
 
-    # Most arcs has quality 0.9
-    # Except the last two are 0.0
-    # The first five are 0.99
+    # Most arcs have quality 0.9
+    # Except the last two have quality 0.0
+    # And the first five have quality 0.99
     real_ens_coh = np.zeros((arcs.sizes["space"],))  # Put all values in real, all imaginary are 0
     real_ens_coh[:-2] = 0.9
     real_ens_coh[:5] = 0.99

@@ -23,7 +23,7 @@ def form_network(
     key_ylabel: str = "lat",
     network_method: Literal["redundant", "delaunay"] = "redundant",
     max_length: float = None,
-    min_links: int = 12,
+    min_links: int = 16,
     num_partitions: int = 8,
     dphase_method: Literal["conjmult", "subtract"] = "subtract",
 ) -> xr.Dataset:
@@ -32,7 +32,7 @@ def form_network(
     Parameters
     ----------
     stm : xr.Dataset
-        Space-Time Matrix of scatteres.
+        Space-Time Matrix of scatterers.
     key_phase : str
         Key of the phase values in the STM.
         This phase will be used to compute the differential arc phase.
@@ -40,7 +40,7 @@ def form_network(
         Key of the h2ph values in the STM.
         The arc h2ph will be computed as the average between source and target.
     key_Btemp : str
-        Key of the Btemp values in the STM.
+        Key of the temporal baseline values in the STM.
     key_complex : str, optional
         Key of the complex values, by default "complex"
     key_xlabel : str, optional
@@ -52,14 +52,14 @@ def form_network(
     max_length : float, optional
         maximum arc length, by default None
     min_links : int, optional
-        minimum links per point, by default 12
+        minimum links per point, by default 16
         only effective when network_method is "redundant"
     num_partitions : int, optional
         number of partitions of searching when forming redundant network, by default 8
         only effective when network_method is "redundant"
     dphase_method : Literal["conjmult", "subtract"], optional
         method of computing phase difference, by default "subtract"
-        "subtract" method subtracts the source phase from the target phase;
+        "subtract" method subtracts the source phase from the target phase (without re-wrapping);
         "conjmult" method computes the phase difference by conjugate multiplication:
             d_phase = np.angle(complex_target * complex_source.conj())
 
@@ -122,10 +122,10 @@ def arc_selection(
     selection_method: Literal["ens_coh"] = "ens_coh",
     min_n_connection: int = 2,
 ) -> xr.Dataset:
-    """Select aracs based on arc quality and connectivity.
+    """Select arcs based on arc quality and connectivity.
 
     This function selects arcs in two steps:
-    1. It selects arcs based on a threshold value(e.g., ens_coh).
+    1. It selects arcs based on a threshold value (e.g., ens_coh).
     2. It removes arcs connected to points which have less than a minimum number of connections.
 
     Parameters
@@ -138,7 +138,7 @@ def arc_selection(
         values to use for selection, by default "ens_coh". The available options are:
         - "ens_coh": ensemble coherence, arcs with ens_coh > threshold are selected.
           assumes that arcs have a variable "ens_coh" in the dataset.
-    min_n_connection : int, optional
+    min_n_connections : int, optional
         minimum number of connections, by default 2
 
     Returns
@@ -155,7 +155,7 @@ def arc_selection(
             raise NotImplementedError
 
     # Remove arcs which can not be tested
-    # These arcs are identified by the points which has <= min_n_connection arcs connected to them
+    # These arcs are identified by the points which have <= min_n_connections arcs connected to them
     # All arcs connected to such points are removed
     # An iterative approach is used to remove all arcs connected to such points
     point_ids_all = np.concat(
@@ -350,7 +350,7 @@ def _compute_phase_difference(
     return d_phase
 
 
-def _network_relation_matirx(idx_source, idx_target, n_points):
+def _network_relation_matrix(idx_source, idx_target, n_points):
     n_arcs = len(idx_source)
     A_sparse_start = sparse.COO(
         (np.arange(n_arcs), idx_source),
