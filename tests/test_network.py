@@ -20,7 +20,7 @@ def stm_random():
     Npoints = 12  # Number of points
     Ntimes = 31  # Number of epochs
     # Coordinates and time
-    lat = np.linspace(51.14, 51.15, Npoints)
+    lat = rng.uniform(51.14, 51.15, Npoints)
     lon = rng.uniform(6.9, 7.0, Npoints)
     time = np.arange(Ntimes)
     # Data
@@ -78,13 +78,13 @@ def arcs_random(stm_random):
     # No max_length, so all points are connected
     arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
 
-    # Most arcs has quality 0.9
-    # Except the last two are 0.0
-    # The first five are 0.99
-    real_ens_coh = np.zeros((arcs.sizes["space"],))  # Put all values in real, all imaginary are 0
-    real_ens_coh[:-2] = 0.9
-    real_ens_coh[:5] = 0.99
-    arcs["ens_coh"] = (("space"), real_ens_coh + 1j * np.zeros((arcs.sizes["space"],)))
+    # Most arcs have quality 0.9
+    # Except the last two have quality 0.0
+    # And the first five have quality 0.99
+    ens_coh = np.zeros((arcs.sizes["space"],))
+    ens_coh[:-2] = 0.9
+    ens_coh[:5] = 0.99
+    arcs["ens_coh"] = (("space"), ens_coh)
 
     return arcs
 
@@ -96,10 +96,10 @@ class TestNetworkFormation:
             key_phase="phase",
             key_h2ph="h2ph",
             key_Btemp="time",
-            key_xlabel="x",
-            key_ylabel="y",
+            key_xcrds="x",
+            key_ycrds="y",
             max_length=25,
-            n_links=8,
+            min_links=8,
             num_partitions=8,
         )
 
@@ -181,32 +181,32 @@ class TestNetworkFormation:
 
 
 class TestArcSelection:
-    @pytest.mark.parametrize("thres, min_n_connection", [(0.99, 0), (0.5, 999)])
-    def test_select_arcs_return_zero(self, arcs_random, thres, min_n_connection):
-        """Should return zero arcs, two high threshold or too high min_n_connection."""
+    @pytest.mark.parametrize("thres, min_n_connections", [(0.99, 0), (0.5, 999)])
+    def test_select_arcs_return_zero(self, arcs_random, thres, min_n_connections):
+        """Should return zero arcs, two high threshold or too high min_n_connections."""
         # Select arcs based on ens_coh threshold.
         selected_arcs = arc_selection(
             arcs_random,
             threshold=thres,
             selection_method="ens_coh",
-            min_n_connection=min_n_connection,
+            min_n_connections=min_n_connections,
         )
 
         assert selected_arcs.sizes["space"] == 0
 
-    @pytest.mark.parametrize("thres, min_n_connection", [(0.5, 2), (0.5, 1)])
-    def test_select_arcs_discard_two(self, arcs_random, thres, min_n_connection):
+    @pytest.mark.parametrize("thres, min_n_connections", [(0.5, 2), (0.5, 1)])
+    def test_select_arcs_discard_two(self, arcs_random, thres, min_n_connections):
         """Should only discard two arcs, with ens_coh < 0.5."""
         # Select arcs based on ens_coh threshold.
         selected_arcs = arc_selection(
             arcs_random,
             threshold=thres,
             selection_method="ens_coh",
-            min_n_connection=min_n_connection,
+            min_n_connections=min_n_connections,
         )
 
         # Threshold is 0.5, so only the last two arcs are discarded
-        # The min_n_connection should not affect the selection
+        # The min_n_connections should not affect the selection
         assert selected_arcs.sizes["space"] == arcs_random.sizes["space"] - 2
 
     def test_select_arcs_non_connected(self, arcs_random, caplog):
@@ -217,7 +217,7 @@ class TestArcSelection:
                 arcs_random,
                 threshold=0.99,
                 selection_method="ens_coh",
-                min_n_connection=0,
+                min_n_connections=0,
             )
 
     def test_remove_network_points_min_connections_nconnection_zero(self, stm_random, arcs_random):

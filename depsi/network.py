@@ -24,11 +24,11 @@ def form_network(
     key_h2ph: str,
     key_Btemp: str,
     key_complex: str = "complex",
-    key_xlabel: str = "lon",
-    key_ylabel: str = "lat",
+    key_xcrds: str = "lon",
+    key_ycrds: str = "lat",
     network_method: Literal["redundant", "delaunay"] = "redundant",
     max_length: float = None,
-    n_links: int = 12,
+    min_links: int = 16,
     num_partitions: int = 8,
     dphase_method: Literal["conjmult", "subtract"] = "subtract",
 ) -> xr.Dataset:
@@ -37,7 +37,7 @@ def form_network(
     Parameters
     ----------
     stm : xr.Dataset
-        Space-Time Matrix of scatteres.
+        Space-Time Matrix of scatterers.
     key_phase : str
         Key of the phase values in the STM.
         This phase will be used to compute the differential arc phase.
@@ -45,26 +45,26 @@ def form_network(
         Key of the h2ph values in the STM.
         The arc h2ph will be computed as the average between source and target.
     key_Btemp : str
-        Key of the Btemp values in the STM.
+        Key of the temporal baseline values in the STM.
     key_complex : str, optional
         Key of the complex values, by default "complex"
-    key_xlabel : str, optional
+    key_xcrds  : str, optional
         Key of the x coordinates for calulating arc length, by default "lon"
-    key_ylabel : str, optional
+    key_ycrds  : str, optional
         Key of the y coordinates for calulating arc length, by default "lat"
     network_method : Literal["redundant", "delaunay"], optional
         network formation method, by default "redundant"
     max_length : float, optional
         maximum arc length, by default None
-    n_links : int, optional
-        target number of links per point, by default 12
+    min_links : int, optional
+        minimum links per point, by default 16
         only effective when network_method is "redundant"
     num_partitions : int, optional
         number of partitions of searching when forming redundant network, by default 8
         only effective when network_method is "redundant"
     dphase_method : Literal["conjmult", "subtract"], optional
         method of computing phase difference, by default "subtract"
-        "subtract" method subtracts the source phase from the target phase;
+        "subtract" method subtracts the source phase from the target phase (without re-wrapping);
         "conjmult" method computes the phase difference by conjugate multiplication:
             d_phase = np.angle(complex_target * complex_source.conj())
 
@@ -78,8 +78,8 @@ def form_network(
     """
     # Generate the network arcs.
     if network_method == "redundant":
-        if n_links <= 0:
-            logger.error(f"n_links must be strictly positive (currently: {n_links})")
+        if min_links <= 0:
+            logger.error(f"min_links must be strictly positive (currently: {min_links})")
             return
         if num_partitions <= 0:
             logger.error(f"num_partitions must be strictly positive (currently: {num_partitions})")
@@ -88,7 +88,7 @@ def form_network(
         raise NotImplementedError(f"Unknown network method {network_method}, known are delaunay and redundant")
 
     # Collect point coordinates.
-    indices = [stm[coord] for coord in [key_xlabel, key_ylabel]]
+    indices = [stm[coord] for coord in [key_xcrds, key_ycrds]]
     coordinates = np.column_stack(indices)
 
     arcs = None
@@ -97,7 +97,7 @@ def form_network(
     if network_method == "delaunay":
         arcs = _generate_arcs_delaunay(coordinates, max_length)
     elif network_method == "redundant":
-        arcs = _generate_arcs_redundant(coordinates, max_length, n_links, num_partitions)
+        arcs = _generate_arcs_redundant(coordinates, max_length, min_links, num_partitions)
 
     # Compute the phase difference.
     arcs_unzipped = list(zip(*arcs, strict=False))
@@ -213,12 +213,12 @@ def arc_selection(
     arcs: xr.Dataset,
     threshold: float,
     selection_method: Literal["ens_coh"] = "ens_coh",
-    min_n_connection: int = 2,
+    min_n_connections: int = 2,
 ) -> xr.Dataset:
-    """Select aracs based on arc quality and connectivity.
+    """Select arcs based on arc quality and connectivity.
 
     This function selects arcs in two steps:
-    1. It selects arcs based on a threshold value(e.g., ens_coh).
+    1. It selects arcs based on a threshold value (e.g., ens_coh).
     2. It removes arcs connected to points which have less than a minimum number of connections.
 
     Parameters
@@ -231,7 +231,7 @@ def arc_selection(
         values to use for selection, by default "ens_coh". The available options are:
         - "ens_coh": ensemble coherence, arcs with ens_coh > threshold are selected.
           assumes that arcs have a variable "ens_coh" in the dataset.
-    min_n_connection : int, optional
+    min_n_connections : int, optional
         minimum number of connections, by default 2
 
     Returns
@@ -248,16 +248,16 @@ def arc_selection(
             raise NotImplementedError
 
     # Remove arcs which can not be tested
-    # These arcs are identified by the points which has <= min_n_connection arcs connected to them
+    # These arcs are identified by the points which have <= min_n_connections arcs connected to them
     # All arcs connected to such points are removed
     # An iterative approach is used to remove all arcs connected to such points
     point_ids_all = np.concat(
         [arcs_selected["source"].data, arcs_selected["target"].data]
     )  # all occurrances of point ids
     point_ids_unique, counts = np.unique(point_ids_all, return_counts=True)  # unique point ids and their counts
-    while np.any(counts <= min_n_connection):
+    while np.any(counts <= min_n_connections):
         # Find points with <=3 arcs connected
-        point_ids_to_remove = point_ids_unique[counts <= min_n_connection]
+        point_ids_to_remove = point_ids_unique[counts <= min_n_connections]
         # Create a mask for arcs to remove
         mask_remove = np.isin(arcs_selected["source"].data, point_ids_to_remove) | np.isin(
             arcs_selected["target"].data, point_ids_to_remove
@@ -356,8 +356,8 @@ def _generate_arcs_delaunay(coordinates, max_length=None):
     return arcs
 
 
-def _generate_arcs_redundant(coordinates, max_length=None, n_links=12, num_partitions=8):
-    """Create a redundant network.
+def _generate_arcs_redundant(coordinates, max_length, min_links, num_partitions):
+    """Create a network with at least min_links arcs per node.
 
     The redundant network is formed with the following steps:
 
@@ -365,9 +365,9 @@ def _generate_arcs_redundant(coordinates, max_length=None, n_links=12, num_parti
     2. Loop through each point and find its neighbors within the maximum distance.
     3. Divide neighbors into partitions based on their direction.
     4. Select the nth nearest neighbors from all partitions, starting from n=1.
-    5. Sort the selected neighbors by distance, add them to the arcs list. If n_links is not
+    5. Sort the selected neighbors by distance, add them to the arcs list. If min_links is not
        exceeded, continue to the n+1th nearest neighbors of all partitions.
-    6. Repeat until n_links is reached.
+    6. Repeat until min_links is reached.
     """
     arcs = []
     indices = range(len(coordinates))
@@ -389,7 +389,7 @@ def _generate_arcs_redundant(coordinates, max_length=None, n_links=12, num_parti
 
         if len(neighbors) == 0:  # skip if there are no neighbors
             continue
-        elif len(neighbors) <= n_links:
+        elif len(neighbors) <= min_links:
             # If there are not enough neighbors, connect them all.
             for idx in neighbors:
                 arc_to_add = (min(cur_index, idx), max(cur_index, idx))
@@ -409,14 +409,14 @@ def _generate_arcs_redundant(coordinates, max_length=None, n_links=12, num_parti
             partitions_diff = sorted_arr[1:, 0] - sorted_arr[:-1, 0]
             separators = np.where(partitions_diff > 0)[0]
             partitions_split = np.split(sorted_arr, separators + 1)
-            partitions_split = [partition[:n_links] for partition in partitions_split]
+            partitions_split = [partition[:min_links] for partition in partitions_split]
 
             # Collect the neighbor 'hierarchies'
-            neighbor_hierarchies = [[] for _ in range(n_links)]
+            neighbor_hierarchies = [[] for _ in range(min_links)]
             count = 0
-            for n in range(n_links):
+            for n in range(min_links):
                 # Break early if we have gathered enough neighbors.
-                if n_links <= count:
+                if min_links <= count:
                     break
                 for partition in partitions_split:
                     # Note that we do not break inside this loop,
@@ -430,13 +430,13 @@ def _generate_arcs_redundant(coordinates, max_length=None, n_links=12, num_parti
                 sorted(hierarchy, key=lambda x: x[1]) for hierarchy in neighbor_hierarchies if len(hierarchy) != 0
             ]
 
-            # Add sorted arcs to at least n_links neighbors
+            # Add sorted arcs to at least min_links neighbors
             cur_arcs = [
                 (min(cur_index, int(neighbor[2])), max(cur_index, int(neighbor[2])))
                 for hierarchy in neighbor_hierarchies
                 for neighbor in hierarchy
             ]
-            cur_arcs = cur_arcs[:n_links]
+            cur_arcs = cur_arcs[:min_links]
 
             arcs.extend(cur_arcs)
 
@@ -506,7 +506,7 @@ def _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt):
     )
     A_sparse = A_sparse_start + A_sparse_end
 
-    # Convert to csr for efficient arithmetic and matrix vector operations
+    # Convert to Compressed Sparse Row (CSR) matrix for efficient arithmetic and matrix vector operations
     A_sparse = A_sparse.tocsr()
 
     # Remove reference point column
