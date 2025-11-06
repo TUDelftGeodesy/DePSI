@@ -13,13 +13,13 @@ from depsi.viewing_geometry import add_local_viewing_geometry
 
 # the original STM is output from the script script_sidelobe_detection.py
 stm_original = (
-    "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t110_stm_nosl.zarr"
+    "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_stm_nosl.zarr"
 )
 stm_viewing_save_path = (
-    "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t110_stm_nosl_view.zarr"
+    "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_stm_nosl_view.zarr"
 )  # this one is there to speed up the testing
 stm_save_path = (
-    "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t110_stm_CORG.zarr"
+    "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_stm_CORG.zarr"
 )
 knmi_file_path = "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/etmgeg_240.txt"
 
@@ -29,7 +29,7 @@ orbit_cfg_file = Path(
 
 # User settings
 # orbit identifier
-orbit_identifier = "s1_dsc_t110"
+orbit_identifier = "s1_dsc_t037"
 
 # Input for the OMT in the network
 alpha = 0.05
@@ -76,7 +76,8 @@ coordinate_type = "euclidean"
 # Network creation settings
 N_max_arcs = 100  # Nr of arcs that we will analyse, otherwise we need to load a very big dataset everytime
 N_top = 35  # The Nr of arcs where we start
-nad_max = 0.3  # Maximum NAD value for a point to be considered in the control network, otherwise the distance matrices to be computed are large
+nad_max = 0.3  # Maximum NAD value for a point to be considered in the control network, otherwise the distance matrices
+# to be computed are large
 buffer_radius_ref = 700  # Value I work normally with 700
 
 # Initialization
@@ -95,7 +96,6 @@ visualize_network = False
 orbit_mode = "IWS"
 orbit_resolution = 0.01
 
-
 #
 # Calculations
 try:
@@ -110,8 +110,6 @@ except IOError:
     temperatures = read_weather_data(knmi_file_path, timestamps, requested_data_columns=("TG", ))
     temp = np.array([temperatures[day]["TG"] for day in timestamps])
     stm = stm.assign(temperature=(["time"], temp))
-
-
 
     # add the incidence angle
     print(f"Time: {dt.datetime.now().strftime('%H:%M:%S')}")
@@ -134,11 +132,6 @@ y_min = np.min(stm[y_crd_label].values)
 y_max = np.max(stm[y_crd_label].values)
 x_center = x_min + (x_max - x_min) * 0.5
 y_center = y_min + (y_max - y_min) * 0.5
-
-import pdb; pdb.set_trace()
-# the next function crashes since the arcs cannot be evaluated, as the last h2ph value is np.nan for all of them in the
-# test stack I have. We need to figure out why this is the case, or whether this is just bad input data or something
-# larger is afoot (bug in the crop_to_zarr / reSLC code)
 
 # construct the CORG control network
 results_control_network, ref_pnt, arcs_updated_network = construct_control_network_test_arcs(

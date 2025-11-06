@@ -397,7 +397,7 @@ def detect_side_lobes(
     Parameters
     ----------
     stm : xarray.Dataset
-      An input stm must include 'range', 'azimuth', 'pnt_idx', 'sd_complex', and 'nmad_full'.
+      An input stm must include 'range', 'azimuth', 'space', 'sd_complex', and 'nmad_full'.
     max_pixel_dist : float
       The maximum allowed spatial distance (in pixels) between points to be considered potential side-lobes.
     min_correlation : float
@@ -418,7 +418,7 @@ def detect_side_lobes(
     range_vals = stm["range"].data
     azimuth_vals = stm["azimuth"].data
     nr_epochs = len(stm.time)
-    point_idx = stm["pnt_idx"].values
+    point_idx = stm["space"].values
     sd_complex = stm["sd_complex"].data
 
     if stm_version == 1:
