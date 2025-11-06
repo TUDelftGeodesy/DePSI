@@ -6,10 +6,10 @@ import xarray as xr
 
 from depsi.network import (
     _compute_phase_difference,
-    _network_relation_matirx,
+    _network_relation_matrix,
     arc_selection,
     form_network,
-    remove_isolated_stm,
+    remove_isolated_points,
 )
 
 
@@ -20,7 +20,7 @@ def stm_random():
     Npoints = 12  # Number of points
     Ntimes = 31  # Number of epochs
     # Coordinates and time
-    lat = np.linspace(51.14, 51.15, Npoints)
+    lat = rng.uniform(51.14, 51.15, Npoints)
     lon = rng.uniform(6.9, 7.0, Npoints)
     time = np.arange(Ntimes)
     # Data
@@ -78,13 +78,13 @@ def arcs_random(stm_random):
     # No max_length, so all points are connected
     arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
 
-    # Most arcs has quality 0.9
-    # Except the last two are 0.0
-    # The first five are 0.99
-    real_ens_coh = np.zeros((arcs.sizes["space"],))  # Put all values in real, all imaginary are 0
-    real_ens_coh[:-2] = 0.9
-    real_ens_coh[:5] = 0.99
-    arcs["ens_coh"] = (("space"), real_ens_coh + 1j * np.zeros((arcs.sizes["space"],)))
+    # Most arcs have quality 0.9
+    # Except the last two have quality 0.0
+    # And the first five have quality 0.99
+    ens_coh = np.zeros((arcs.sizes["space"],))
+    ens_coh[:-2] = 0.9
+    ens_coh[:5] = 0.99
+    arcs["ens_coh"] = (("space"), ens_coh)
 
     return arcs
 
@@ -96,10 +96,10 @@ class TestNetworkFormation:
             key_phase="phase",
             key_h2ph="h2ph",
             key_Btemp="time",
-            key_xlabel="x",
-            key_ylabel="y",
+            key_xcrds="x",
+            key_ycrds="y",
             max_length=25,
-            n_links=8,
+            min_links=8,
             num_partitions=8,
         )
 
@@ -180,32 +180,32 @@ class TestNetworkFormation:
 
 
 class TestArcSelection:
-    @pytest.mark.parametrize("thres, min_n_connection", [(0.99, 0), (0.5, 999)])
-    def test_select_arcs_return_zero(self, arcs_random, thres, min_n_connection):
-        """Should return zero arcs, two high threshold or too high min_n_connection."""
+    @pytest.mark.parametrize("thres, min_n_connections", [(0.99, 0), (0.5, 999)])
+    def test_select_arcs_return_zero(self, arcs_random, thres, min_n_connections):
+        """Should return zero arcs, two high threshold or too high min_n_connections."""
         # Select arcs based on ens_coh threshold.
         selected_arcs = arc_selection(
             arcs_random,
             threshold=thres,
             selection_method="ens_coh",
-            min_n_connection=min_n_connection,
+            min_n_connections=min_n_connections,
         )
 
         assert selected_arcs.sizes["space"] == 0
 
-    @pytest.mark.parametrize("thres, min_n_connection", [(0.5, 2), (0.5, 1)])
-    def test_select_arcs_discard_two(self, arcs_random, thres, min_n_connection):
+    @pytest.mark.parametrize("thres, min_n_connections", [(0.5, 2), (0.5, 1)])
+    def test_select_arcs_discard_two(self, arcs_random, thres, min_n_connections):
         """Should only discard two arcs, with ens_coh < 0.5."""
         # Select arcs based on ens_coh threshold.
         selected_arcs = arc_selection(
             arcs_random,
             threshold=thres,
             selection_method="ens_coh",
-            min_n_connection=min_n_connection,
+            min_n_connections=min_n_connections,
         )
 
         # Threshold is 0.5, so only the last two arcs are discarded
-        # The min_n_connection should not affect the selection
+        # The min_n_connections should not affect the selection
         assert selected_arcs.sizes["space"] == arcs_random.sizes["space"] - 2
 
     def test_select_arcs_non_connected(self, arcs_random, caplog):
@@ -216,23 +216,23 @@ class TestArcSelection:
                 arcs_random,
                 threshold=0.99,
                 selection_method="ens_coh",
-                min_n_connection=0,
+                min_n_connections=0,
             )
 
-    def test_remove_isolated_stm_keep_all_pnts(self, stm_random, arcs_random):
+    def test_remove_isolated_points_keep_all_pnts(self, stm_random, arcs_random):
         """No STM points removed since no arc is discarded."""
-        stm_updated, arcs_updated = remove_isolated_stm(stm_random, arcs_random)
+        stm_updated, arcs_updated = remove_isolated_points(stm_random, arcs_random)
 
         assert stm_updated.sizes["space"] == stm_random.sizes["space"]
         assert arcs_updated.sizes["space"] == arcs_random.sizes["space"]
 
-    def test_remove_isolated_stm_discard_one(self, stm_random, arcs_random):
+    def test_remove_isolated_points_discard_one(self, stm_random, arcs_random):
         """Remove one STM point."""
         # remove arcs with source or target == 1
         arcs = arcs_random.copy(deep=True)
         arcs = arcs.where((arcs["source"] != 1) & (arcs["target"] != 1), drop=True)
 
-        stm_updated, arcs_updated = remove_isolated_stm(stm_random, arcs)
+        stm_updated, arcs_updated = remove_isolated_points(stm_random, arcs)
 
         # Should remove the point with index 1
         assert stm_updated.sizes["space"] == stm_random.sizes["space"] - 1
@@ -240,12 +240,12 @@ class TestArcSelection:
 
 class TestNetworkUnwrap:
     @pytest.mark.parametrize(
-        ["idx_source", "idx_target", "n_points"],
+        ["idx_source", "idx_target", "n_points", "idx_refpnt"],
         [
-            (np.array([0, 1, 2]), np.array([1, 2, 3]), 4),  # 4 points, 3 arcs
-            (np.array([0, 1, 2]), np.array([1, 2, 3]), 7),  # 7 points, 3 arcs
-            (np.array([1, 1, 2, 2]), np.array([0, 2, 1, 3]), 4),  # 4 points, 4 arcs, unsorted
-            (np.array([0, 0, 0, 1, 1, 2, 2]), np.array([1, 2, 3, 3, 4, 3, 4]), 5),  # 5 points, 6 arcs
+            (np.array([0, 1, 2]), np.array([1, 2, 3]), 4, 0),  # 4 points, 3 arcs
+            (np.array([0, 1, 2]), np.array([1, 2, 3]), 7, 0),  # 7 points, 3 arcs
+            (np.array([1, 1, 2, 2]), np.array([0, 2, 1, 3]), 4, 2),  # 4 points, 4 arcs, unsorted
+            (np.array([0, 0, 0, 1, 1, 2, 2]), np.array([1, 2, 3, 3, 4, 3, 4]), 5, 3),  # 5 points, 6 arcs
         ],
     )
     def test_init_network_relation_matrix(
@@ -253,14 +253,16 @@ class TestNetworkUnwrap:
         idx_source,
         idx_target,
         n_points,
+        idx_refpnt,
     ):
-        A = _network_relation_matirx(idx_source, idx_target, n_points)
+        A = _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt)
 
         # Create expected matrix in a for loop
         A_exp = np.zeros((idx_source.shape[0], n_points), dtype=int)
         for i, (src, tgt) in enumerate(zip(idx_source, idx_target, strict=False)):
             A_exp[i, src] = -1
             A_exp[i, tgt] = 1
+        A_exp = np.delete(A_exp, idx_refpnt, axis=1)  # Remove reference point column
 
         assert A.shape == A_exp.shape
         assert np.all(A.todense() == A_exp)

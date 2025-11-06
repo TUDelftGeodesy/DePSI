@@ -392,7 +392,9 @@ def stm_compute_single_time_differences(
     """Compute the single differences of an STM in time with respect to a given mother image.
 
     This computes the single difference complex value, phase, unnormalized amplitude, and h2ph values with respect
-    to the provided single difference mother
+    to the provided single difference mother. The mother image is the first image acquired on or after the provided
+    date (if a datetime object or str object is provided), or the mother image of the input dataset (if 'auto' mode
+    is selected).
 
     Parameters
     ----------
@@ -419,7 +421,7 @@ def stm_compute_single_time_differences(
     ValueError
       Raised when:
         - single_difference_mother is of an unsupported format
-        - the date provided to single_difference_mother is not in the input stack
+        - the date provided to single_difference_mother is not in the input stack date range
     """
     # Identify the mother image
     if isinstance(single_difference_mother, datetime):
@@ -427,8 +429,8 @@ def stm_compute_single_time_differences(
             single_difference_mother.year, single_difference_mother.month, single_difference_mother.day, tzinfo=pytz.UTC
         )
         mother_index = [
-            idx for idx, date in enumerate(stm["time"].values) if format_mother_date == npdatetime64_to_datetime(date)
-        ]
+            idx for idx, date in enumerate(stm["time"].values) if format_mother_date <= npdatetime64_to_datetime(date)
+        ]  # select all images beyond the mother date
     elif isinstance(single_difference_mother, str):
         if single_difference_mother == "auto":
             mother_index = np.where(abs(stm["h2ph"]).sum(axis=0).values == 0)[0]
@@ -442,8 +444,8 @@ def stm_compute_single_time_differences(
             mother_index = [
                 idx
                 for idx, date in enumerate(stm["time"].values)
-                if format_mother_date == npdatetime64_to_datetime(date)
-            ]
+                if format_mother_date <= npdatetime64_to_datetime(date)
+            ]  # select all images beyond the mother date
         else:
             raise ValueError(f'Cannot parse {single_difference_mother}, not of type "auto" or "YYYYMMDD"!')
     else:
@@ -451,10 +453,10 @@ def stm_compute_single_time_differences(
     if len(mother_index) == 0:
         raise ValueError(
             f"Cannot find provided mother date {single_difference_mother}, "
-            f"please provide a date that is part of the stack! Possible dates: "
-            f"{stm.time.values}"
+            "please provide a date that is within the range of the stack! Possible dates: "
+            f"{stm.time.values[0]}--{stm.time.values[-1]}"
         )
-    sd_mother_index = mother_index[0]  # 0 in case somehow more than 1 image is detected
+    sd_mother_index = mother_index[0]  # 0 in case more than 1 image is detected
     # In that case we take the first image that was detected, as this is expected
     sd_mother = npdatetime64_to_datetime(stm["time"].values[sd_mother_index])
 
