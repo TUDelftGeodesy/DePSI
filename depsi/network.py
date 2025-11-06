@@ -216,7 +216,7 @@ def remove_isolated_points(stm: xr.Dataset, arcs: xr.Dataset) -> xr.Dataset:
     return stm_updated, arcs_updated
 
 
-def _generate_arcs_delaunay(coordinates, max_length=None):
+def _generate_arcs_delaunay(coordinates, max_length):
     """Create a network using Delaunay triangulation."""
     # Create network and collect neighbors.
     network = Delaunay(coordinates)
