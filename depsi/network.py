@@ -11,11 +11,20 @@ import sparse
 import xarray as xr
 from scipy.spatial import Delaunay, KDTree
 
+from depsi.mht_utils import pretest
+
 logger = logging.getLogger(__name__)
 
 # Constants for MHT in network integration
 ALPHA0 = 0.1  # Significance level for 1-dimensional test
 GAMMA0 = 0.5  # Power of the test
+OMT_THRES = 1e-7  # Overall Model Test threshold for accepting the network
+# In arc/point rejection phase, if OMT < OMT_THRES, stop rejection iteration
+# In ambiguity fixing phase, if OMT < OMT_THRES, stop fixing iteration
+# In arc/point rejection phase this is hardly triggered
+TT1_THRES = 1.0  # Threshold for arc rejection statistics TT1,
+# If for all arcs max(TT1) < TT1_THRES, stop rejection iteration
+# For most cases this threshold is triggered in rejection phase
 
 
 def form_network(
@@ -131,6 +140,102 @@ def form_network(
 
 
 def _mht_network_adjustment(
+    stm_arcs: xr.Dataset,
+    stm_pnts: xr.Dataset,
+    idx_refpnt: int,
+    azimuth_refpnt: int | float,
+    range_refpnt: int | float,
+    Qyy_diag: np.ndarray,
+) -> (xr.Dataset, xr.Dataset):
+    # First estimation
+    A_sparse = _network_relation_matrix(
+        stm_arcs["source"], stm_arcs["target"], stm_pnts.sizes["space"], idx_refpnt
+    )  # Network relation matrix A
+    y = stm_arcs["ambigs"].data  # Observations y
+    invQy = scipy.sparse.diags(
+        1 / Qyy_diag, 0, shape=(stm_arcs.sizes["space"], stm_arcs.sizes["space"])
+    )  # Stochastic model assuming independent observations
+    _, echeck = _solve_float_ambiguities(A_sparse, y, invQy)
+
+    # Setup tests
+    kb_dict = {}
+    max_con = np.abs(A_sparse).sum(axis=0).max()
+    for n_con in range(1, max_con + 1):
+        _, k1, kb, _ = pretest(n_con, ALPHA0, GAMMA0)
+        kb_dict[n_con] = kb
+
+    # Compute test statistics for Overall Model Test
+    OMT = (echeck.T @ invQy @ echeck).diagonal().sum()
+
+    # Initial TT1_max to trigger the while loop
+    stm_updated = stm_pnts.copy()
+    stm_arcs_updated = stm_arcs.copy()
+    TT1max = TT1_THRES + 1.0
+    niter = 0
+    while (TT1max > TT1_THRES) and (OMT > OMT_THRES) and (niter < stm_arcs.sizes["space"]):
+        # In the loop, OMT fail
+        # Choose from two Ha: 1) remove an arc; 2) remove a point
+        flag_rm, idx_rm, TT1max, TTqmax = _mht_network_adjustment_reject_one(A_sparse, y, Qyy_diag, k1, kb_dict)
+
+        if flag_rm == 0:  # remove arcs
+            stm_arcs_updated = stm_arcs_updated.drop_isel(space=idx_rm)  # Remove the arc
+        elif flag_rm == 1:  # remove points
+            if idx_rm >= idx_refpnt:
+                idx_rm += 1  # Adjust index due to removed reference point column in A_sparse
+
+            # Removing points is achieved by removing all arcs connects to the point
+            # Later the points will be actually removed when ensuring minimum connections
+            # Arc indices connecting to the point to remove
+            idx_arcs_selected = np.where(
+                ((stm_arcs_updated["source"] != idx_rm) & (stm_arcs_updated["target"] != idx_rm)).data
+            )[0]
+            # Remove all arcs connects to the point to remove
+            stm_arcs_updated = stm_arcs_updated.isel(space=idx_arcs_selected)
+
+        # Ensure all points have at least 3 connections
+        previous_size = -1  # Initialize with an impossible value to trigger the while loop
+        # Keep iterating until no more points are removed
+        while stm_updated.sizes["space"] != previous_size:
+            previous_size = stm_updated.sizes["space"]
+            # Remove points with <=2 connections
+            stm_updated, stm_arcs_updated = remove_network_points_min_connections(
+                stm_updated, stm_arcs_updated, min_connections=3
+            )
+
+        # Make sure the reference point is still in stm_updated, by checking its azimuth and range
+        mask_refpnt = (stm_updated["azimuth"].values == azimuth_refpnt) & (stm_updated["range"].values == range_refpnt)
+        if not np.any(mask_refpnt):
+            raise ValueError(
+                f"Reference point ({azimuth_refpnt}, {range_refpnt}) removed in the MHT process. "
+                f"Please choose another reference point."
+            )
+        idx_refpnt = np.where(mask_refpnt)[0][0]  # Update idx_refpnt
+
+        # Get indices of selected arcs based on uid
+        idx_arcs_selected = np.where(stm_arcs_updated["uid"].isin(stm_arcs["uid"]))[0]
+
+        # Update the functional and stochastic model
+        Qyy_diag = Qyy_diag[idx_arcs_selected]
+        invQy = scipy.sparse.diags(
+            1 / Qyy_diag, 0, shape=(stm_arcs_updated.sizes["space"], stm_arcs_updated.sizes["space"])
+        )
+        A_sparse = _network_relation_matrix(
+            stm_arcs_updated["source"], stm_arcs_updated["target"], stm_updated.sizes["space"], idx_refpnt
+        )
+
+        y = stm_arcs_updated["ambigs"].data
+
+        # Estimate residual again
+        _, echeck = _solve_float_ambiguities(A_sparse, y, invQy)
+
+        OMT = (echeck.T @ invQy @ echeck).diagonal().sum()
+
+        niter += 1
+
+    return stm_arcs_updated, stm_updated
+
+
+def _mht_network_adjustment_reject_one(
     A: scipy.sparse._csr.csr_matrix,
     y: np.ndarray,
     Qyy_diag: np.ndarray,
