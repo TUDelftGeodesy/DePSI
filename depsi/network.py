@@ -2,130 +2,218 @@
 
 import logging
 import math
+from typing import Literal
 
+import networkx as nx
 import numpy as np
+import scipy
+import sparse
 import xarray as xr
 from scipy.spatial import Delaunay
 
 logger = logging.getLogger(__name__)
 
 
-def stm_to_arcs(
-    stm_points,
-    network="delaunay",
-    x="lon",
-    y="lat",
-    max_length=None,
-    min_links=12,
-    num_partitions=8,
-    difference="subtract",
+def form_network(
+    stm: xr.Dataset,
+    key_phase: str,
+    key_h2ph: str,
+    key_Btemp: str,
+    key_complex: str = "complex",
+    key_xcrds: str = "lon",
+    key_ycrds: str = "lat",
+    network_method: Literal["redundant", "delaunay"] = "redundant",
+    max_length: float = None,
+    min_links: int = 16,
+    num_partitions: int = 8,
+    dphase_method: Literal["conjmult", "subtract"] = "subtract",
 ) -> xr.Dataset:
-    """Get an STM of arcs and phase differences from an STM of points.
+    """Generate an STM of arcs from an STM of points.
 
-    Args:
-    ----
-        stm_points: Xarray.Dataset, input Space-Time Matrix.
-        network: method to form the network; either "delaunay" or "redundant".
-        x: str, first coordinate used to describe a point.
-        y: str, second coordinate used to describe a point.
-        max_length: float, maximum length of any generated arc or None.
-        min_links: int, minimum number of arcs per node, limited by max_length. Only used for the redundant method.
-        num_partitions: int, number of partitions to split the nodes into based on orientation from the current node.
-          Only used for the redundant method.
-        difference: str, method for computing the phase difference; either "subtract" or "conjmult".
+    Parameters
+    ----------
+    stm : xr.Dataset
+        Space-Time Matrix of scatterers.
+    key_phase : str
+        Key of the phase values in the STM.
+        This phase will be used to compute the differential arc phase.
+    key_h2ph : str
+        Key of the h2ph values in the STM.
+        The arc h2ph will be computed as the average between source and target.
+    key_Btemp : str
+        Key of the temporal baseline values in the STM.
+    key_complex : str, optional
+        Key of the complex values, by default "complex"
+    key_xcrds  : str, optional
+        Key of the x coordinates for calulating arc length, by default "lon"
+    key_ycrds  : str, optional
+        Key of the y coordinates for calulating arc length, by default "lat"
+    network_method : Literal["redundant", "delaunay"], optional
+        network formation method, by default "redundant"
+    max_length : float, optional
+        maximum arc length, by default None
+    min_links : int, optional
+        minimum links per point, by default 16
+        only effective when network_method is "redundant"
+    num_partitions : int, optional
+        number of partitions of searching when forming redundant network, by default 8
+        only effective when network_method is "redundant"
+    dphase_method : Literal["conjmult", "subtract"], optional
+        method of computing phase difference, by default "subtract"
+        "subtract" method subtracts the source phase from the target phase (without re-wrapping);
+        "conjmult" method computes the phase difference by conjugate multiplication:
+            d_phase = np.angle(complex_target * complex_source.conj())
 
-    Returns:
+    Returns
     -------
-        arcs: Xarray.Dataset, STM of arcs, pairs of point indices describing the adjacent nodes and the difference
-          between their phases.
-          The index pairs are sorted, as is the list of pairs.
-          The phase difference depends on the method used:
-            either the source phase subtracted from the target phase,
-            or the wrapped conjugate multiplication of these phases.
-
-    Raises:
-    ------
-    NotImplementedError
-        Raised when an unknown network or difference method is provided.
+    xr.Dataset
+        Space-Time Matrix of arcs, containing the following variables:
+        - d_phase: the arc phase, which is the difference between source and target points
+        - Btemp: the temporal baseline, which is the same for all arcs
+        - h2ph: the arc h2ph, which is the average between source and target points
     """
     # Generate the network arcs.
-    _, arcs = generate_arcs(
-        stm_points, method=network, x=x, y=y, max_length=max_length, min_links=min_links, num_partitions=num_partitions
-    )
-
-    # Compute the phase difference.
-    arcs_unzipped = list(zip(*arcs, strict=False))
-    arcs_unzipped = [list(arcs_unzipped[0]), list(arcs_unzipped[1])]
-    d_phase = _compute_phase_difference(stm_points, arcs_unzipped[0], arcs_unzipped[1], method=difference)
-
-    # Store the phase difference in a DataArray,
-    # with source and target coordinates as indices into the points STM.
-    d_phase_array = xr.DataArray(
-        d_phase,
-        name="d_phase",
-        dims=("space", "time"),
-        coords={
-            "source": (["space"], arcs_unzipped[0]),
-            "target": (["space"], arcs_unzipped[1]),
-            "time": stm_points.time,
-        },
-    )
-
-    # Create a dataset to hold the array.
-    stm_arcs = xr.Dataset({"d_phase": d_phase_array})
-
-    return stm_arcs
-
-
-def generate_arcs(stm_points, method="delaunay", x="lon", y="lat", max_length=None, min_links=12, num_partitions=8):
-    """Generate a network from a list of STM points.
-
-    The network is undirected and without self-loops.
-
-    Args:
-    ----
-        stm_points: Xarray.Dataset, input Space-Time Matrix.
-        method: str, method to form the network; either "delaunay" or "redundant".
-        x: str, first coordinate used to describe a point.
-        y: str, second coordinate used to describe a point.
-        max_length: float, maximum length of any generated arc or None.
-        min_links: int, minimum number of arcs per node, limited by max_length. Only used for the redundant method.
-        num_partitions: int, number of partitions to split the nodes into based on orientation from the current node.
-          Only used for the redundant method.
-
-    Returns:
-    -------
-        coordinates: list, [x, y] point coordinates extracted from stm_points.
-        arcs: list of pairs, point indices describing the adjacent nodes. The pairs are sorted, as is the list.
-
-    Raises:
-    ------
-    NotImplementedError
-        Raised when an unknown method is provided.
-    """
-    if method == "redundant":
+    if network_method == "redundant":
         if min_links <= 0:
             logger.error(f"min_links must be strictly positive (currently: {min_links})")
             return
         if num_partitions <= 0:
             logger.error(f"num_partitions must be strictly positive (currently: {num_partitions})")
             return
-    elif method != "delaunay":
-        raise NotImplementedError(f"Unknown network method {method}, known are delaunay and redundant")
+    elif network_method != "delaunay":
+        raise NotImplementedError(f"Unknown network method {network_method}, known are delaunay and redundant")
 
     # Collect point coordinates.
-    indices = [stm_points[coord] for coord in [x, y]]
+    indices = [stm[coord] for coord in [key_xcrds, key_ycrds]]
     coordinates = np.column_stack(indices)
 
     arcs = None
 
-    # Create network arcs.
-    if method == "delaunay":
+    # Create network arcs as list of tuples of point ids.
+    if network_method == "delaunay":
         arcs = _generate_arcs_delaunay(coordinates, max_length)
-    elif method == "redundant":
+    elif network_method == "redundant":
         arcs = _generate_arcs_redundant(coordinates, max_length, min_links, num_partitions)
 
-    return coordinates, arcs
+    # Compute the phase difference.
+    arcs_unzipped = list(zip(*arcs, strict=False))
+    source_idx = list(arcs_unzipped[0])
+    target_idx = list(arcs_unzipped[1])
+    d_phase = _compute_phase_difference(stm, source_idx, target_idx, key_phase, key_complex, method=dphase_method)
+
+    Btemp = stm[key_Btemp].data
+
+    h2ph = (stm[key_h2ph].isel(space=source_idx).data + stm[key_h2ph].isel(space=target_idx).data) / 2
+
+    arcs = xr.Dataset(
+        data_vars={
+            "d_phase": (["space", "time"], d_phase),
+            "Btemp": (["time"], Btemp),
+            "h2ph": (["space", "time"], h2ph),
+        },
+        coords={"source": (["space"], source_idx), "target": (["space"], target_idx)},
+    )
+
+    return arcs
+
+
+def arc_selection(
+    arcs: xr.Dataset,
+    threshold: float,
+    selection_method: Literal["ens_coh"] = "ens_coh",
+    min_n_connections: int = 2,
+) -> xr.Dataset:
+    """Select arcs based on arc quality and connectivity.
+
+    This function selects arcs in two steps:
+    1. It selects arcs based on a threshold value (e.g., ens_coh).
+    2. It removes arcs connected to points which have less than a minimum number of connections.
+
+    Parameters
+    ----------
+    arcs : xr.Dataset
+        arcs to select from, in space-time matrix
+    threshold : float
+        threshold value for selection
+    selection_method : Literal["ens_coh"]
+        values to use for selection, by default "ens_coh". The available options are:
+        - "ens_coh": ensemble coherence, arcs with ens_coh > threshold are selected.
+          assumes that arcs have a variable "ens_coh" in the dataset.
+    min_n_connections : int, optional
+        minimum number of connections, by default 2
+
+    Returns
+    -------
+    xr.Dataset
+        selected arcs in space-time matrix
+    """
+    # Threshold selection
+    match selection_method:
+        case "ens_coh":
+            mask = np.abs(arcs["ens_coh"]) > threshold  # mask as DataArray
+            arcs_selected = arcs.where(mask, drop=True)
+        case _:
+            raise NotImplementedError
+
+    # Remove arcs which can not be tested
+    # These arcs are identified by the points which have <= min_n_connections arcs connected to them
+    # All arcs connected to such points are removed
+    # An iterative approach is used to remove all arcs connected to such points
+    point_ids_all = np.concat(
+        [arcs_selected["source"].data, arcs_selected["target"].data]
+    )  # all occurrances of point ids
+    point_ids_unique, counts = np.unique(point_ids_all, return_counts=True)  # unique point ids and their counts
+    while np.any(counts <= min_n_connections):
+        # Find points with <=3 arcs connected
+        point_ids_to_remove = point_ids_unique[counts <= min_n_connections]
+        # Create a mask for arcs to remove
+        mask_remove = np.isin(arcs_selected["source"].data, point_ids_to_remove) | np.isin(
+            arcs_selected["target"].data, point_ids_to_remove
+        )
+        idx_select = np.where(~mask_remove)[0]  # indices of arcs to remove
+        # Remove these arcs
+        arcs_selected = arcs_selected.isel(space=idx_select)
+
+        # Update point ids and counts
+        point_ids_all = np.concat([arcs_selected["source"].data, arcs_selected["target"].data])
+        point_ids_unique, counts = np.unique(point_ids_all, return_counts=True)
+
+    # Check if the network has more than one component
+    # NetworkX is used. It should have good performance on large datasets.
+    G = nx.Graph()
+    G.add_edges_from(np.stack((arcs_selected["source"].data, arcs_selected["target"].data)).T)
+    if nx.number_connected_components(G) > 1:
+        logger.warning(
+            "The network has more than one component. Currently, this is not supported by DePSI. "
+            "Please adjust the network formation parameters, or decrease the threshold, "
+            "to increase the connectivity of the network."
+        )
+
+    return arcs_selected
+
+
+def remove_isolated_points(stm: xr.Dataset, arcs: xr.Dataset) -> xr.Dataset:
+    """Remove isolated points from the STM."""
+    # Load source and target indices from arcs
+    # these are 1d arrays so should fit in memory
+    idx_source = arcs["source"].values
+    idx_target = arcs["target"].values
+
+    # Select STM points that are in arcs
+    idx_selected = np.sort(np.unique(np.concatenate([idx_source, idx_target])))
+    stm_updated = stm.isel(space=idx_selected)
+
+    # The space size of the STM changes, resulting non-contiguous indices in space dimension
+    # hence an update in arcs space coordinates is needed
+    # Here we use a mapping solution, since the maximum number of network points is usually <100k
+    # Map old indices in arcs to new indices
+    idx_map = {old_idx: new_idx for new_idx, old_idx in enumerate(idx_selected)}
+    # apply the mapping to the source and target indices in arcs
+    arcs_updated = arcs.copy()
+    arcs_updated["source"] = xr.DataArray(np.vectorize(idx_map.get)(arcs["source"].values), dims="space")
+    arcs_updated["target"] = xr.DataArray(np.vectorize(idx_map.get)(arcs["target"].values), dims="space")
+
+    return stm_updated, arcs_updated
 
 
 def _get_distance(s, t):
@@ -155,7 +243,8 @@ def _get_distance(s, t):
     return math.dist(s, t)
 
 
-def _generate_arcs_delaunay(coordinates, max_length=None):
+def _generate_arcs_delaunay(coordinates, max_length):
+    """Create a network using Delaunay triangulation."""
     # Create network and collect neighbors.
     network = Delaunay(coordinates)
     neighbors_ptr, neighbors_idx = network.vertex_neighbor_vertices
@@ -174,15 +263,16 @@ def _generate_arcs_delaunay(coordinates, max_length=None):
     return arcs
 
 
-def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_partitions=8):
-    # Create a network with at least min_links arcs per node.
-    # Arcs are created ordered by length.
-    # However, the orientations around the node are split into num_partitions partitions;
-    # each partition can only get an (x+1)th arc if every other partition either
-    # already has x arcs connected or already has all allowed arcs connected
-    # (e.g. there are no more nodes in that partition, or they are all too far away).
-    # Note that a node may get less than min_links arcs if there are not enough neighbors within max_length.
+def _generate_arcs_redundant(coordinates, max_length, min_links, num_partitions):
+    """Create a network with at least min_links arcs per node.
 
+    Arcs are created ordered by length.
+    However, the orientations around the node are split into num_partitions partitions;
+    each partition can only get an (x+1)th arc if every other partition either
+    already has x arcs connected or already has all allowed arcs connected
+    (e.g. there are no more nodes in that partition, or they are all too far away).
+    Note that a node may get less than min_links arcs if there are not enough neighbors within max_length.
+    """
     arcs = []
     indices = range(len(coordinates))
     for cur_index in indices:
@@ -238,42 +328,70 @@ def _generate_arcs_redundant(coordinates, max_length=None, min_links=12, num_par
     return arcs
 
 
-def _compute_direct_phase_difference(stm_points, source_idx, target_idx):
-    # Calculate the unwrapped direct phase difference between two points,
-    # as the phase of the target minus the phase of the source.
-    d_phase = stm_points.isel(space=target_idx).phase - stm_points.isel(space=source_idx).phase
-    return d_phase
+def _compute_phase_difference(
+    stm,
+    source_idx,
+    target_idx,
+    key_phase: str,
+    key_complex: str,
+    method: Literal["subtract", "conjmult"],
+) -> np.ndarray:
+    """Calculate the phase difference between two points.
 
-
-def _compute_wrapped_phase_difference(stm_points, source_idx, target_idx):
-    # Calculate the wrapped phase difference between two points,
-    # as the wrapped complex conjugate multiplication of the phases of the target and the source.
-
-    # The original code in `demo_dynamic_estimation.ipynb` used `.sd_complex` (single difference complex),
-    # which is computed as the SD (Single (temporal) Difference) phase values between the stm and a mother epoch
-    # (`compute_sd` function called from `output_stm.ipynb`; probably imported from `arc_estimation_toolbox`).
-
-    # Extract information of the two points of the arc
-    complex_source = stm_points.isel(space=source_idx).complex
-    complex_target = stm_points.isel(space=target_idx).complex
-
-    # Compute DD phase for the arc
-    complex_conj_source = complex_source.conj()
-    d_phase = complex_target * complex_conj_source
-
-    # Get the wrapped phase
-    d_phase_wrapped = np.angle(d_phase)
-
-    return d_phase_wrapped
-
-
-def _compute_phase_difference(stm_points, source_idx, target_idx, method="subtract"):
-    # Calculate the phase difference between two points.
-    # The method can either be "subtract" or "conjmult".
+    The method can either be "subtract" or "conjmult".
+    """
     if method == "subtract":
-        d_phase = _compute_direct_phase_difference(stm_points, source_idx, target_idx)
+        d_phase = stm[key_phase].isel(space=target_idx).data - stm[key_phase].isel(space=source_idx).data
     elif method == "conjmult":
-        d_phase = _compute_wrapped_phase_difference(stm_points, source_idx, target_idx)
+        complex_source = stm[key_complex].isel(space=source_idx).data
+        complex_target = stm[key_complex].isel(space=target_idx).data
+        d_phase = np.angle(complex_target * complex_source.conj())
     else:
         raise NotImplementedError(f"Unknown difference method {method}, known are subtract and conjmult")
     return d_phase
+
+
+def _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt):
+    """Create the network relation matrix A as a sparse matrix.
+
+    A network relation matrix has shape (n_arcs, n_points - 1).
+    Each row corresponds to an arc, and each column corresponds to a point, excluding the reference point.
+    For each arc, the column corresponding to the source point has a value of -1, and the column corresponding
+    to the target point has a value of +1.
+    All other entries are zero.
+
+    The reference point column removal refers to Eq.4.11 of the following book:
+    Kampes, Bert M. Radar interferometry: persistent scatterer technique. Dordrecht: Springer Netherlands, 2006.
+    DOI: 10.1007/978-1-4020-4723-7
+
+    Parameters
+    ----------
+    idx_source : list or np.ndarray
+        List of source point indices for each arc.
+    idx_target : list or np.ndarray
+        List of target point indices for each arc.
+    n_points : int
+        Total number of points in the network.
+    idx_refpnt : int
+        Index of the reference point to be excluded from the matrix. This index assumes 0-based indexing of the points.
+    """
+    n_arcs = len(idx_source)
+    A_sparse_start = sparse.COO(
+        (np.arange(n_arcs), idx_source),
+        np.full_like(np.arange(n_arcs), -1, dtype=np.int8),
+        shape=(n_arcs, n_points),
+    )
+    A_sparse_end = sparse.COO(
+        (np.arange(n_arcs), idx_target),
+        np.full_like(np.arange(n_arcs), 1, dtype=np.int8),
+        shape=(n_arcs, n_points),
+    )
+    A_sparse = A_sparse_start + A_sparse_end
+
+    # Convert to Compressed Sparse Row (CSR) matrix for efficient arithmetic and matrix vector operations
+    A_sparse = A_sparse.tocsr()
+
+    # Remove reference point column
+    A_sparse = scipy.sparse.hstack([A_sparse[:, :idx_refpnt], A_sparse[:, idx_refpnt + 1 :]])
+
+    return A_sparse

@@ -4,94 +4,217 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.network import _compute_phase_difference, generate_arcs, stm_to_arcs
+from depsi.network import (
+    _compute_phase_difference,
+    _network_relation_matrix,
+    arc_selection,
+    form_network,
+    remove_isolated_points,
+)
 
 
 @pytest.fixture
-def stm_sparse():
-    # A sparse STM.
-    return xr.open_zarr("tests/data/stm_sparse.zarr")
+def stm_random():
+    """Fixture to create a random STM dataset."""
+    rng = np.random.default_rng(42)
+    Npoints = 12  # Number of points
+    Ntimes = 31  # Number of epochs
+    # Coordinates and time
+    lat = rng.uniform(51.14, 51.15, Npoints)
+    lon = rng.uniform(6.9, 7.0, Npoints)
+    time = np.arange(Ntimes)
+    # Data
+    complex = rng.uniform(-1, 1, (Npoints, Ntimes)) + 1j * rng.uniform(-1, 1, (Npoints, Ntimes))
+    phase = np.angle(complex)
+    h2ph = rng.uniform(1e3, 1e4, (Npoints, Ntimes))
+    # Create the xarray Dataset
+    stm = xr.Dataset(
+        data_vars={
+            "phase": (("space", "time"), phase),
+            "h2ph": (("space", "time"), h2ph),
+            "complex": (("space", "time"), complex),
+        },
+        coords={
+            "space": ("space", np.arange(Npoints)),
+            "time": ("time", time),
+            "lat": ("space", lat),
+            "lon": ("space", lon),
+        },
+    )
+
+    return stm
 
 
 @pytest.fixture
-def stm_sparse_arcs_unzipped(stm_sparse):
-    # A sparse network.
-    _, arcs = generate_arcs(stm_sparse, method="delaunay", max_length=0.05)
+def arcs_random(stm_random):
+    """Fixture of fully connected arcs from stm_random."""
+    # Fully connected arcs
+    # Defaul method is redundant
+    # No max_length, so all points are connected
+    arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
 
-    # Compute the phase differences between points and themselves or their neighbors using different methods.
-    arcs_unzipped = list(zip(*arcs, strict=False))
-    arcs_unzipped = [list(arcs_unzipped[0]), list(arcs_unzipped[1])]
+    # Most arcs have quality 0.9
+    # Except the last two have quality 0.0
+    # And the first five have quality 0.99
+    ens_coh = np.zeros((arcs.sizes["space"],))
+    ens_coh[:-2] = 0.9
+    ens_coh[:5] = 0.99
+    arcs["ens_coh"] = (("space"), ens_coh)
 
-    return arcs_unzipped
+    return arcs
 
 
-class TestNetwork:
-    def test_generate_arcs_fail(self, stm_sparse):
-        # Test min_links must be strictly positive.
-        result = generate_arcs(stm_sparse, method="redundant", min_links=0)
-        assert result is None
+class TestNetworkFormation:
+    @pytest.mark.parametrize("method", ["subtract", "conjmult"])
+    def test_compute_phase_difference(self, stm_random, method):
+        arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
+        d_phase_subtract_0_0 = _compute_phase_difference(
+            stm_random, arcs["source"], arcs["source"], "phase", "complex", method=method
+        )
+        d_phase_subtract_0_1 = _compute_phase_difference(
+            stm_random, arcs["source"], arcs["target"], "phase", "complex", method=method
+        )
+        # Phase differences should be zero for the same source.
+        assert d_phase_subtract_0_0 == pytest.approx(np.zeros(d_phase_subtract_0_0.shape), abs=1e-7)
+        # Phase difference should be within the range of -2*pi to 2*pi for different sources.
+        assert d_phase_subtract_0_1 == pytest.approx(np.zeros(d_phase_subtract_0_1.shape), abs=2 * np.pi + 1e-7)
 
-        # Test num_partitions must be strictly positive.
-        result = generate_arcs(stm_sparse, method="redundant", num_partitions=0)
-        assert result is None
-
-        # Test incorrect method fail.
-        with pytest.raises(NotImplementedError):
-            result = generate_arcs(stm_sparse, method="unknown")
-
-    def test_generate_arcs_delaunay(self, stm_sparse):
-        # Generate a Delaunay network with long edges removed.
-        coordinates, arcs = generate_arcs(stm_sparse, method="delaunay", max_length=0.05)
-
-        assert len(coordinates) == 156
-        assert len(arcs) == 442
-
-    def test_generate_arcs_redundant(self, stm_sparse):
-        # Generate a 'redundant' network with long edges removed.
-        coordinates, arcs = generate_arcs(
-            stm_sparse, method="redundant", max_length=0.05, min_links=8, num_partitions=4
+    def test_stm_to_arcs_subtract(self, stm_random):
+        # Generate arcs of a Delaunay network with subtracted phase differences.
+        stm_arcs = form_network(
+            stm_random,
+            key_phase="phase",
+            key_h2ph="h2ph",
+            key_Btemp="time",
+            network_method="delaunay",
+            max_length=0.05,
+            dphase_method="subtract",
         )
 
-        assert len(coordinates) == 156
-        assert len(arcs) == 797
-
-    def test_compute_phase_difference_subtract(self, stm_sparse, stm_sparse_arcs_unzipped):
-        arcs = stm_sparse_arcs_unzipped
-        d_phase_subtract_0_0 = _compute_phase_difference(stm_sparse, arcs[0], arcs[0], method="subtract")
-        d_phase_subtract_0_1 = _compute_phase_difference(stm_sparse, arcs[0], arcs[1], method="subtract")
-
-        # Test these phase differences.
-        assert d_phase_subtract_0_0.values == pytest.approx(np.zeros(d_phase_subtract_0_0.shape), abs=1e-7)
-        assert d_phase_subtract_0_1.values == pytest.approx(np.zeros(d_phase_subtract_0_1.shape), abs=2 * np.pi + 1e-7)
-
-    def test_compute_phase_difference_conjmult(self, stm_sparse, stm_sparse_arcs_unzipped):
-        arcs = stm_sparse_arcs_unzipped
-        d_phase_conjmult_0_0 = _compute_phase_difference(stm_sparse, arcs[0], arcs[0], method="conjmult")
-        d_phase_conjmult_0_1 = _compute_phase_difference(stm_sparse, arcs[0], arcs[1], method="conjmult")
-
-        # Test these phase differences.
-        assert d_phase_conjmult_0_0 == pytest.approx(np.zeros(d_phase_conjmult_0_0.shape), abs=1e-7)
-        assert d_phase_conjmult_0_1 == pytest.approx(np.zeros(d_phase_conjmult_0_1.shape), abs=np.pi + 1e-7)
-
-    def test_stm_to_srcs_subtract(self, stm_sparse):
-        # Generate arcs of a Delaunay network with subtracted phase differences.
-        stm_arcs = stm_to_arcs(stm_sparse, network="delaunay", max_length=0.05, difference="subtract")
-
-        assert len(stm_arcs["space"]) == 442
         assert all(
             [all([-2 * np.pi <= phase <= 2 * np.pi for phase in phases]) for phases in stm_arcs["d_phase"].values]
         )
 
-    def test_stm_to_srcs_conjmult(self, stm_sparse):
+    def test_stm_to_arcs_conjmult(self, stm_random):
         # Generate arcs of a Delaunay network with conjugate multiplication phase differences.
-        stm_arcs = stm_to_arcs(stm_sparse, network="delaunay", max_length=0.05, difference="conjmult")
+        stm_arcs = form_network(
+            stm_random,
+            key_phase="phase",
+            key_h2ph="h2ph",
+            key_Btemp="time",
+            network_method="delaunay",
+            max_length=0.05,
+            dphase_method="conjmult",
+        )
 
-        assert len(stm_arcs["space"]) == 442
         assert all([all([-np.pi <= phase <= np.pi for phase in phases]) for phases in stm_arcs["d_phase"].values])
 
-    def test_stm_to_srcs_fail(self, stm_sparse):
+    def test_stm_to_arcs_fail(self, stm_random):
         # Test incorrect method fail.
         with pytest.raises(NotImplementedError):
-            stm_to_arcs(stm_sparse, network="unknown", difference="subtract")
+            form_network(
+                stm_random,
+                key_phase="phase",
+                key_h2ph="h2ph",
+                key_Btemp="time",
+                network_method="unknown",
+                dphase_method="subtract",
+            )
         with pytest.raises(NotImplementedError):
-            stm_to_arcs(stm_sparse, network="delaunay", difference="unknown")
+            form_network(
+                stm_random,
+                key_phase="phase",
+                key_h2ph="h2ph",
+                key_Btemp="time",
+                network_method="delaunay",
+                dphase_method="unknown",
+            )
+
+
+class TestArcSelection:
+    @pytest.mark.parametrize("thres, min_n_connections", [(0.99, 0), (0.5, 999)])
+    def test_select_arcs_return_zero(self, arcs_random, thres, min_n_connections):
+        """Should return zero arcs, two high threshold or too high min_n_connections."""
+        # Select arcs based on ens_coh threshold.
+        selected_arcs = arc_selection(
+            arcs_random,
+            threshold=thres,
+            selection_method="ens_coh",
+            min_n_connections=min_n_connections,
+        )
+
+        assert selected_arcs.sizes["space"] == 0
+
+    @pytest.mark.parametrize("thres, min_n_connections", [(0.5, 2), (0.5, 1)])
+    def test_select_arcs_discard_two(self, arcs_random, thres, min_n_connections):
+        """Should only discard two arcs, with ens_coh < 0.5."""
+        # Select arcs based on ens_coh threshold.
+        selected_arcs = arc_selection(
+            arcs_random,
+            threshold=thres,
+            selection_method="ens_coh",
+            min_n_connections=min_n_connections,
+        )
+
+        # Threshold is 0.5, so only the last two arcs are discarded
+        # The min_n_connections should not affect the selection
+        assert selected_arcs.sizes["space"] == arcs_random.sizes["space"] - 2
+
+    def test_select_arcs_non_connected(self, arcs_random, caplog):
+        """Should keep the first five arcs which are disconnected."""
+        # this should raise a logger warning of disconnected arcs
+        with caplog.at_level("WARNING"):
+            _ = arc_selection(
+                arcs_random,
+                threshold=0.99,
+                selection_method="ens_coh",
+                min_n_connections=0,
+            )
+
+    def test_remove_isolated_points_keep_all_pnts(self, stm_random, arcs_random):
+        """No STM points removed since no arc is discarded."""
+        stm_updated, arcs_updated = remove_isolated_points(stm_random, arcs_random)
+
+        assert stm_updated.sizes["space"] == stm_random.sizes["space"]
+        assert arcs_updated.sizes["space"] == arcs_random.sizes["space"]
+
+    def test_remove_isolated_points_discard_one(self, stm_random, arcs_random):
+        """Remove one STM point."""
+        # remove arcs with source or target == 1
+        arcs = arcs_random.copy(deep=True)
+        arcs = arcs.where((arcs["source"] != 1) & (arcs["target"] != 1), drop=True)
+
+        stm_updated, arcs_updated = remove_isolated_points(stm_random, arcs)
+
+        # Should remove the point with index 1
+        assert stm_updated.sizes["space"] == stm_random.sizes["space"] - 1
+
+
+class TestNetworkUnwrap:
+    @pytest.mark.parametrize(
+        ["idx_source", "idx_target", "n_points", "idx_refpnt"],
+        [
+            (np.array([0, 1, 2]), np.array([1, 2, 3]), 4, 0),  # 4 points, 3 arcs
+            (np.array([0, 1, 2]), np.array([1, 2, 3]), 7, 0),  # 7 points, 3 arcs
+            (np.array([1, 1, 2, 2]), np.array([0, 2, 1, 3]), 4, 2),  # 4 points, 4 arcs, unsorted
+            (np.array([0, 0, 0, 1, 1, 2, 2]), np.array([1, 2, 3, 3, 4, 3, 4]), 5, 3),  # 5 points, 6 arcs
+        ],
+    )
+    def test_init_network_relation_matrix(
+        self,
+        idx_source,
+        idx_target,
+        n_points,
+        idx_refpnt,
+    ):
+        A = _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt)
+
+        # Create expected matrix in a for loop
+        A_exp = np.zeros((idx_source.shape[0], n_points), dtype=int)
+        for i, (src, tgt) in enumerate(zip(idx_source, idx_target, strict=False)):
+            A_exp[i, src] = -1
+            A_exp[i, tgt] = 1
+        A_exp = np.delete(A_exp, idx_refpnt, axis=1)  # Remove reference point column
+
+        assert A.shape == A_exp.shape
+        assert np.all(A.todense() == A_exp)

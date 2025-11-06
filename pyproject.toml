@@ -12,6 +12,8 @@ dependencies = [
     "sarxarray",
     "stmtools",
     "ruptures",
+    "networkx",
+    "sparse"
 ]
 description = "Python package for interferometric synthetic aperture radar (InSAR) time series processing."
 readme = "README.md"
