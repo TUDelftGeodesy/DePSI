@@ -388,7 +388,7 @@ def _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt):
     )
     A_sparse = A_sparse_start + A_sparse_end
 
-    # Convert to csr for efficient arithmetic and matrix vector operations
+    # Convert to Compressed Sparse Row (CSR) matrix for efficient arithmetic and matrix vector operations
     A_sparse = A_sparse.tocsr()
 
     # Remove reference point column
