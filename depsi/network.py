@@ -182,7 +182,7 @@ def _mht_network_adjustment(
     invQy = scipy.sparse.diags(
         1 / Qyy_diag, 0, shape=(stm_arcs.sizes["space"], stm_arcs.sizes["space"])
     )  # Stochastic model assuming independent observations
-    _, echeck = _solve_float_ambiguities(A_sparse, stm_arcs["ambigs"].data, invQy)  # Estimate initial residual
+    _, echeck = _solve_float_ambiguities(A_sparse, stm_arcs["ambiguities"].data, invQy)  # Estimate initial residual
     OMT = (echeck.T @ invQy @ echeck).diagonal().sum()  # Test statistics for Overall Model Test
 
     # Setup test parameters
@@ -206,7 +206,7 @@ def _mht_network_adjustment(
         # Because OMT failed, choose from two Ha: 1) remove an arc; 2) remove a point
         # Decision is made based on flag_rm
         flag_rm, idx_rm, TT1max, TTqmax = _mht_network_adjustment_reject_one(
-            A_sparse, stm_arcs_updated["ambigs"].data, Qyy_diag, k1, kb_dict
+            A_sparse, stm_arcs_updated["ambiguities"].data, Qyy_diag, k1, kb_dict
         )
 
         if flag_rm == 0:  # remove arcs
@@ -251,7 +251,7 @@ def _mht_network_adjustment(
             stm_arcs_updated["source"], stm_arcs_updated["target"], stm_updated.sizes["space"], idx_refpnt
         )  # Update A matrix
         _, echeck = _solve_float_ambiguities(
-            A_sparse, stm_arcs_updated["ambigs"].data, invQy
+            A_sparse, stm_arcs_updated["ambiguities"].data, invQy
         )  # Estimate residual again
         OMT = (echeck.T @ invQy @ echeck).diagonal().sum()  # Update OMT statistic
 
@@ -339,7 +339,7 @@ def _ambiguities_adjustment(
     stm_arcs_updated = stm_arcs.copy()
     stm_pnts_updated = stm_pnts.copy()
     for epoch in range(stm_pnts.sizes["time"]):
-        y = stm_arcs["ambigs"].isel(time=epoch).data
+        y = stm_arcs["ambiguities"].isel(time=epoch).data
         acheck_ifg, echeck_ifg = _solve_float_ambiguities(A_sparse, y, invQy)
         OMT = echeck_ifg.T @ invQy @ echeck_ifg
         idx_previous_arc_fix = -1  # Avoid fixing the same arc again in the same epoch
@@ -366,7 +366,7 @@ def _ambiguities_adjustment(
             acheck_ifg, echeck_ifg = _solve_float_ambiguities(A_sparse, y, invQy)
             OMT = echeck_ifg.T @ invQy @ echeck_ifg
 
-        stm_arcs_updated["ambigs"][:, epoch] = y  # Store adjusted arc ambiguities
+        stm_arcs_updated["ambiguities"][:, epoch] = y  # Store adjusted arc ambiguities
         acheck[:, epoch] = acheck_ifg  # Store adjusted point ambiguities
 
     # Round acheck to closest integer

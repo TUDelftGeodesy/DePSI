@@ -266,11 +266,11 @@ def _periodogram_arc(
     # Calculate the modelled phase and unwrapped phase
     model_est = B @ np.array([param_height, param_vel]) + np.angle(coh_best)  # Absolute modelled phase
     dphase_new = wrap_phase(phs_obs_wrapped - model_est)  # Wrapped modelled phase
-    ambigs = np.round((model_est + dphase_new - phs_obs_wrapped) / (2 * np.pi))  # Ambiguities
-    phs_obs_unwrapped = 2 * np.pi * ambigs + phs_obs_wrapped  # Unwrapped phase
+    ambiguities = np.round((model_est + dphase_new - phs_obs_wrapped) / (2 * np.pi))  # Ambiguities
+    phs_obs_unwrapped = 2 * np.pi * ambiguities + phs_obs_wrapped  # Unwrapped phase
     param = rhs @ phs_obs_unwrapped  # [height_est, velocity_est]
 
-    return phs_obs_unwrapped, ambigs, param[0], param[1], np.abs(coh_best)
+    return phs_obs_unwrapped, ambiguities, param[0], param[1], np.abs(coh_best)
 
 
 def _build_periodogram_search_space(init_height, init_vel, step_height, step_vel, n_steps_height, n_steps_vel):
