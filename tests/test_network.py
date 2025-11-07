@@ -6,8 +6,8 @@ import xarray as xr
 
 from depsi.network import (
     _compute_phase_difference,
+    _ensure_network_min_connections,
     _network_relation_matrix,
-    arc_selection,
     form_network,
     remove_network_points_min_connections,
 )
@@ -180,45 +180,18 @@ class TestNetworkFormation:
             )
 
 
-class TestArcSelection:
-    @pytest.mark.parametrize("thres, min_n_connections", [(0.99, 0), (0.5, 999)])
-    def test_select_arcs_return_zero(self, arcs_random, thres, min_n_connections):
-        """Should return zero arcs, two high threshold or too high min_n_connections."""
-        # Select arcs based on ens_coh threshold.
-        selected_arcs = arc_selection(
-            arcs_random,
-            threshold=thres,
-            selection_method="ens_coh",
-            min_n_connections=min_n_connections,
-        )
-
-        assert selected_arcs.sizes["space"] == 0
-
+class TestNetworkEnsure:
     @pytest.mark.parametrize("thres, min_n_connections", [(0.5, 2), (0.5, 1)])
-    def test_select_arcs_discard_two(self, arcs_random, thres, min_n_connections):
+    def test_select_arcs_discard_two(self, arcs_random, stm_random, thres, min_n_connections):
         """Should only discard two arcs, with ens_coh < 0.5."""
         # Select arcs based on ens_coh threshold.
-        selected_arcs = arc_selection(
-            arcs_random,
-            threshold=thres,
-            selection_method="ens_coh",
-            min_n_connections=min_n_connections,
-        )
+        mask = np.abs(arcs_random["ens_coh"]) > thres  # mask as DataArray
+        arcs_selected = arcs_random.where(mask, drop=True)
+        arcs_results, _ = _ensure_network_min_connections(arcs_selected, stm_random, min_connections=min_n_connections)
 
         # Threshold is 0.5, so only the last two arcs are discarded
         # The min_n_connections should not affect the selection
-        assert selected_arcs.sizes["space"] == arcs_random.sizes["space"] - 2
-
-    def test_select_arcs_non_connected(self, arcs_random, caplog):
-        """Should keep the first five arcs which are disconnected."""
-        # this should raise a logger warning of disconnected arcs
-        with caplog.at_level("WARNING"):
-            _ = arc_selection(
-                arcs_random,
-                threshold=0.99,
-                selection_method="ens_coh",
-                min_n_connections=0,
-            )
+        assert arcs_results.sizes["space"] == arcs_random.sizes["space"] - 2
 
     def test_remove_network_points_min_connections_nconnection_zero(self, stm_random, arcs_random):
         """Raise error when min_connections <1."""

@@ -4,7 +4,6 @@ import logging
 import math
 from typing import Literal
 
-import networkx as nx
 import numpy as np
 import scipy
 import sparse
@@ -226,7 +225,7 @@ def _mht_network_adjustment(
 
         # Ensure all points in the network have at least 3 connections
         # This makes sure all points can be tested in case of disagreement between arcs
-        stm_updated, stm_arcs_updated = _ensure_network_min_connections(
+        stm_arcs_updated, stm_updated = _ensure_network_min_connections(
             stm_arcs_updated, stm_updated, min_connections=3
         )
 
@@ -438,7 +437,8 @@ def _ensure_network_min_connections(
         previous_size = stm_pnts.sizes["space"]
         # Remove points with <=2 connections
         stm_pnts, stm_arcs = remove_network_points_min_connections(stm_pnts, stm_arcs, min_connections)
-    return stm_pnts, stm_arcs
+
+    return stm_arcs, stm_pnts
 
 
 def _solve_float_ambiguities(A, y, invQy):
@@ -459,81 +459,6 @@ def _solve_float_ambiguities(A, y, invQy):
     echeck = y - A @ acheck  # residuals estimation
 
     return acheck, echeck
-
-
-def arc_selection(
-    arcs: xr.Dataset,
-    threshold: float,
-    selection_method: Literal["ens_coh"] = "ens_coh",
-    min_n_connections: int = 2,
-) -> xr.Dataset:
-    """Select arcs based on arc quality and connectivity.
-
-    This function selects arcs in two steps:
-    1. It selects arcs based on a threshold value (e.g., ens_coh).
-    2. It removes arcs connected to points which have less than a minimum number of connections.
-
-    Parameters
-    ----------
-    arcs : xr.Dataset
-        arcs to select from, in space-time matrix
-    threshold : float
-        threshold value for selection
-    selection_method : Literal["ens_coh"]
-        values to use for selection, by default "ens_coh". The available options are:
-        - "ens_coh": ensemble coherence, arcs with ens_coh > threshold are selected.
-          assumes that arcs have a variable "ens_coh" in the dataset.
-    min_n_connections : int, optional
-        minimum number of connections, by default 2
-
-    Returns
-    -------
-    xr.Dataset
-        selected arcs in space-time matrix
-    """
-    # Threshold selection
-    match selection_method:
-        case "ens_coh":
-            mask = np.abs(arcs["ens_coh"]) > threshold  # mask as DataArray
-            arcs_selected = arcs.where(mask, drop=True)
-        case _:
-            raise NotImplementedError
-
-    # Remove arcs which can not be tested
-    # These arcs are identified by the points which have <= min_n_connections arcs connected to them
-    # All arcs connected to such points are removed
-    # An iterative approach is used to remove all arcs connected to such points
-    point_ids_all = np.concat(
-        [arcs_selected["source"].data, arcs_selected["target"].data]
-    )  # all occurrances of point ids
-    point_ids_unique, counts = np.unique(point_ids_all, return_counts=True)  # unique point ids and their counts
-    while np.any(counts <= min_n_connections):
-        # Find points with <=3 arcs connected
-        point_ids_to_remove = point_ids_unique[counts <= min_n_connections]
-        # Create a mask for arcs to remove
-        mask_remove = np.isin(arcs_selected["source"].data, point_ids_to_remove) | np.isin(
-            arcs_selected["target"].data, point_ids_to_remove
-        )
-        idx_select = np.where(~mask_remove)[0]  # indices of arcs to remove
-        # Remove these arcs
-        arcs_selected = arcs_selected.isel(space=idx_select)
-
-        # Update point ids and counts
-        point_ids_all = np.concat([arcs_selected["source"].data, arcs_selected["target"].data])
-        point_ids_unique, counts = np.unique(point_ids_all, return_counts=True)
-
-    # Check if the network has more than one component
-    # NetworkX is used. It should have good performance on large datasets.
-    G = nx.Graph()
-    G.add_edges_from(np.stack((arcs_selected["source"].data, arcs_selected["target"].data)).T)
-    if nx.number_connected_components(G) > 1:
-        logger.warning(
-            "The network has more than one component. Currently, this is not supported by DePSI. "
-            "Please adjust the network formation parameters, or decrease the threshold, "
-            "to increase the connectivity of the network."
-        )
-
-    return arcs_selected
 
 
 def remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, min_connections: int) -> xr.Dataset:
