@@ -147,6 +147,34 @@ def _mht_network_adjustment(
     range_refpnt: int | float,
     Qyy_diag: np.ndarray,
 ) -> (xr.Dataset, xr.Dataset):
+    """Adjust the network by removing bad arcs/points by applying MHT.
+
+    This function implements the Multi-Hypothesis Tracking (MHT) approach iteratively to identify and remove
+    arcs and points to reduce the overall residual in ambiguity estimation.
+
+    Reference:
+    Van Leijen, Frederik Johannes. "Persistent scatterer interferometry based on geodetic estimation theory." (2014).
+
+    Parameters
+    ----------
+    stm_arcs : xr.Dataset
+        Space-Time Matrix of arcs.
+    stm_pnts : xr.Dataset
+        Space-Time Matrix of points.
+    idx_refpnt : int
+        Index of the reference point in stm_pnts.
+    azimuth_refpnt : int | float
+        Azimuth of the reference point.
+    range_refpnt : int | float
+        Range of the reference point.
+    Qyy_diag : np.ndarray
+        Diagonal array of the VCM of the observations.
+
+    Returns
+    -------
+    xr.Dataset, xr.Dataset
+        Updated Space-Time Matrix of arcs and points.
+    """
     # Setup functional and stochastic model
     A_sparse = _network_relation_matrix(
         stm_arcs["source"], stm_arcs["target"], stm_pnts.sizes["space"], idx_refpnt
@@ -164,12 +192,12 @@ def _mht_network_adjustment(
         _, k1, kb, _ = pretest(n_con, ALPHA0, GAMMA0)
         kb_dict[n_con] = kb
 
-    # Initial TT1_max to trigger the while loop
+    # Iteratively remove arcs/points until OMT and all arc statistics pass the test
     stm_updated = stm_pnts.copy()
     stm_arcs_updated = stm_arcs.copy()
-    TT1max = TT1_THRES + 1.0
+    TT1max = TT1_THRES + 1.0  # Initial TT1_max to trigger the while loop
     niter = 0
-    while (OMT > OMT_THRES) and (TT1max > TT1_THRES) and (niter < stm_arcs.sizes["space"]):
+    while (OMT >= OMT_THRES) and (TT1max >= TT1_THRES) and (niter <= stm_arcs.sizes["space"]):
         # The iteration stops when one of the following conditions is met:
         # 1) overall model test pass: OMT < OMT_THRES (very rare case)
         # 2) all arcs statistics smaller than threshold: max(TT1) < TT1_THRES (most common case)
@@ -196,15 +224,11 @@ def _mht_network_adjustment(
             # Remove all arcs connects to the point to remove
             stm_arcs_updated = stm_arcs_updated.isel(space=idx_arcs_selected)
 
-        # Ensure all points have at least 3 connections
-        previous_size = -1  # Initialize with an impossible value to trigger the while loop
-        # Keep iterating until no more points are removed
-        while stm_updated.sizes["space"] != previous_size:
-            previous_size = stm_updated.sizes["space"]
-            # Remove points with <=2 connections
-            stm_updated, stm_arcs_updated = remove_network_points_min_connections(
-                stm_updated, stm_arcs_updated, min_connections=3
-            )
+        # Ensure all points in the network have at least 3 connections
+        # This makes sure all points can be tested in case of disagreement between arcs
+        stm_updated, stm_arcs_updated = _ensure_network_min_connections(
+            stm_updated, stm_arcs_updated, min_connections=3
+        )
 
         # Make sure the reference point is still in stm_updated, by checking its azimuth and range
         mask_refpnt = (stm_updated["azimuth"].values == azimuth_refpnt) & (stm_updated["range"].values == range_refpnt)
@@ -299,6 +323,41 @@ def _mht_network_adjustment_reject_one(
         flag_removal = 1  # remove point
 
     return flag_removal, idx_removal, TT1max, TTqmax
+
+
+def _ensure_network_min_connections(
+    stm_arcs: xr.Dataset,
+    stm_pnts: xr.Dataset,
+    min_connections: int,
+) -> (xr.Dataset, xr.Dataset):
+    """Ensure that all points in the network have at least min_connections arcs.
+
+    This is achieved by an iterative process of removing points which have less than
+    min_connections arcs, and removing all arcs connected to these points.
+    The process is repeated until no more points are removed.
+
+    Parameters
+    ----------
+    stm_arcs : xr.Dataset
+        Space-Time Matrix of arcs.
+    stm_pnts : xr.Dataset
+        Space-Time Matrix of points.
+    min_connections : int
+        Minimum number of connections for each point.
+
+    Returns
+    -------
+    xr.Dataset, xr.Dataset
+        Updated Space-Time Matrix of arcs and points.
+    """
+    # Ensure all points have at least 3 connections
+    previous_size = -1  # Initialize with an impossible value to trigger the while loop
+    # Keep iterating until no more points are removed
+    while stm_pnts.sizes["space"] != previous_size:
+        previous_size = stm_pnts.sizes["space"]
+        # Remove points with <=2 connections
+        stm_pnts, stm_arcs = remove_network_points_min_connections(stm_pnts, stm_arcs, min_connections)
+    return stm_pnts, stm_arcs
 
 
 def _solve_float_ambiguities(A, y, invQy):
