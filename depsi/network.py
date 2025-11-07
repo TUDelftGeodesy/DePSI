@@ -10,6 +10,7 @@ import sparse
 import xarray as xr
 from scipy.spatial import Delaunay, KDTree
 
+from depsi.arc_estimation import periodogram
 from depsi.mht_utils import pretest
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,76 @@ OMT_THRES = 1e-7  # Overall Model Test threshold for accepting the network
 TT1_THRES = 1.0  # Threshold for arc rejection statistics TT1,
 # If for all arcs max(TT1) < TT1_THRES, stop rejection iteration
 # For most cases this threshold is triggered in rejection phase
+
+
+def network_unwrapping(
+    stm_pnts: xr.Dataset,
+    stm_arcs: xr.Dataset,
+    wavelength: float,
+    Qyy_diag: np.ndarray,
+    arc_estimation_method: str = "periodogram",
+    threshold_arc_quality: float = 0.5,
+    min_arc_connections: int = 3,
+    parallel: bool = False,
+) -> xr.Dataset:
+    """Perform network unwrapping on the given STM of arcs and points."""
+    if parallel:
+        raise NotImplementedError("Dask support is not implemented yet for network_unwrapping.")
+    else:
+        # Compute all data into memory
+        stm_pnts = stm_pnts.compute()
+        stm_arcs = stm_arcs.compute()
+
+    # Perform arc ambiguity estimation to extract arc ambiguities and arc quality
+    match arc_estimation_method:
+        # Periodogram
+        case "periodogram":
+            _, ambiguities, _, _, ens_coh = periodogram(
+                stm_arcs,
+                "d_phase",
+                "h2ph",
+                "Btemp",
+                wavelength,
+            )
+            stm_arcs["ambiguities"] = ambiguities
+            stm_arcs["quality"] = ens_coh
+        case _:
+            raise NotImplementedError(f"Unknown arc estimation method {arc_estimation_method}")
+
+    # Select arcs with quality > threshold_arc_quality
+    # Then ensure all points have at least min_arc_connections connections
+    mask = (np.abs(stm_arcs["quality"]) > threshold_arc_quality).compute()
+    stm_arcs = stm_arcs.where(mask, drop=True)
+    stm_arcs, stm_pnts = _ensure_network_min_connections(stm_arcs, stm_pnts, min_arc_connections)
+
+    # Select reference point as the source pnt of arcs with highest ens_coh
+    idx_arc_max_coh = stm_arcs["quality"].argmax().values
+    idx_refpnt = stm_arcs["source"].isel(space=idx_arc_max_coh).values
+    azimuth_refpnt = stm_pnts["azimuth"].isel(space=idx_refpnt).values
+    range_refpnt = stm_pnts["range"].isel(space=idx_refpnt).values
+
+    # Adjust the network by removing bad arcs/points using MHT
+    stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adjustment(
+        stm_arcs,
+        stm_pnts,
+        idx_refpnt,
+        azimuth_refpnt,
+        range_refpnt,
+        Qyy_diag=np.ones(stm_arcs.sizes["space"]),
+    )
+
+    # Get indices of selected arcs based on uid
+    idx_arcs_selected = np.where(stm_arcs_adjusted["uid"].isin(stm_arcs["uid"]))[0]
+
+    # Update Qyy_diag for selected arcs
+    Qyy_diag = Qyy_diag[idx_arcs_selected]
+
+    # Adjust ambiguities to fix unwrapping errors
+    stm_arcs_output, stm_pnts_output = _ambiguities_adjustment(
+        stm_arcs_adjusted, stm_pnts_adjusted, idx_refpnt, Qyy_diag
+    )
+
+    return stm_arcs_output, stm_pnts_output
 
 
 def form_network(
@@ -182,7 +253,7 @@ def _mht_network_adjustment(
         1 / Qyy_diag, 0, shape=(stm_arcs.sizes["space"], stm_arcs.sizes["space"])
     )  # Stochastic model assuming independent observations
     _, echeck = _solve_float_ambiguities(A_sparse, stm_arcs["ambiguities"].data, invQy)  # Estimate initial residual
-    OMT = (echeck.T @ invQy @ echeck).diagonal().sum()  # Test statistics for Overall Model Test
+    OMT = np.diag(echeck.T @ invQy @ echeck).sum()  # Test statistics for Overall Model Test
 
     # Setup test parameters
     kb_dict = {}
@@ -252,7 +323,7 @@ def _mht_network_adjustment(
         _, echeck = _solve_float_ambiguities(
             A_sparse, stm_arcs_updated["ambiguities"].data, invQy
         )  # Estimate residual again
-        OMT = (echeck.T @ invQy @ echeck).diagonal().sum()  # Update OMT statistic
+        OMT = np.diag(echeck.T @ invQy @ echeck).sum()  # Update OMT statistic
 
         niter += 1
 
@@ -293,7 +364,7 @@ def _mht_network_adjustment_reject_one(
     Qecheck = Qyy - (A @ Qxx @ A.T)  # TODO: check how to handle large Qecheck
 
     # Test statistics TT1 for removing one arc
-    Qecheck_diag = np.array(Qecheck.diagonal().flatten()).squeeze()
+    Qecheck_diag = np.array(np.diag(Qecheck).flatten()).squeeze()
     w = echeck**2 / np.tile(np.abs(Qecheck_diag), (N_epochs, 1)).T
     TT1 = np.sum(w, axis=1) / k1**2
     TT1max = max(TT1)
@@ -308,7 +379,7 @@ def _mht_network_adjustment_reject_one(
 
         # Compute the test statistic for this point
         Tq = np.sum(
-            (echeck_point.T @ np.linalg.inv(Qecheck_point) @ echeck_point).diagonal()
+            np.diag(echeck_point.T @ np.linalg.inv(Qecheck_point) @ echeck_point)
         )  # Before adjust for degree of freedom
         TTq[pnt_idx] = Tq / kb_dict[len(arcs_idx)]
     TTqmax = max(TTq)
