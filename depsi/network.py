@@ -328,6 +328,30 @@ def _mht_network_adjustment_reject_one(
 def _ambiguities_adjustment(
     stm_arcs: xr.Dataset, stm_pnts: xr.Dataset, idx_refpnt: int, Qyy_diag: np.ndarray
 ) -> (xr.Dataset, xr.Dataset):
+    """Fix unwrapping errors by adjusting ambiguities per epoch.
+
+    This function iterates over each epoch and adjusts the ambiguities to make sure the spatial
+    solutions of ambiguities gives almost zero residuals for each epoch.
+
+    Parameters
+    ----------
+    stm_arcs : xr.Dataset
+        Space-Time Matrix of arcs.
+    stm_pnts : xr.Dataset
+        Space-Time Matrix of points.
+    idx_refpnt : int
+        Index of the reference point.
+    Qyy_diag : np.ndarray
+        Diagonal elements of the VCM of observations.
+
+    Returns
+    -------
+    (xr.Dataset, xr.Dataset)
+        Updated Space-Time Matrices of arcs and points.
+        For arcs, the "ambiguities" variable contains the adjusted arc ambiguities.
+        For points, the "ambiguities" variable are estimated from the adjusted arc ambiguities.
+    """
+    # Setup functional and stochastic model
     A_sparse = _network_relation_matrix(stm_arcs["source"], stm_arcs["target"], stm_pnts.sizes["space"], idx_refpnt)
     invQy = scipy.sparse.diags(1 / Qyy_diag, 0, shape=(stm_arcs.sizes["space"], stm_arcs.sizes["space"]))
 
