@@ -147,35 +147,39 @@ def _mht_network_adjustment(
     range_refpnt: int | float,
     Qyy_diag: np.ndarray,
 ) -> (xr.Dataset, xr.Dataset):
-    # First estimation
+    # Setup functional and stochastic model
     A_sparse = _network_relation_matrix(
         stm_arcs["source"], stm_arcs["target"], stm_pnts.sizes["space"], idx_refpnt
     )  # Network relation matrix A
-    y = stm_arcs["ambigs"].data  # Observations y
     invQy = scipy.sparse.diags(
         1 / Qyy_diag, 0, shape=(stm_arcs.sizes["space"], stm_arcs.sizes["space"])
     )  # Stochastic model assuming independent observations
-    _, echeck = _solve_float_ambiguities(A_sparse, y, invQy)
+    _, echeck = _solve_float_ambiguities(A_sparse, stm_arcs["ambigs"].data, invQy)  # Estimate initial residual
+    OMT = (echeck.T @ invQy @ echeck).diagonal().sum()  # Test statistics for Overall Model Test
 
-    # Setup tests
+    # Setup test parameters
     kb_dict = {}
     max_con = np.abs(A_sparse).sum(axis=0).max()
     for n_con in range(1, max_con + 1):
         _, k1, kb, _ = pretest(n_con, ALPHA0, GAMMA0)
         kb_dict[n_con] = kb
 
-    # Compute test statistics for Overall Model Test
-    OMT = (echeck.T @ invQy @ echeck).diagonal().sum()
-
     # Initial TT1_max to trigger the while loop
     stm_updated = stm_pnts.copy()
     stm_arcs_updated = stm_arcs.copy()
     TT1max = TT1_THRES + 1.0
     niter = 0
-    while (TT1max > TT1_THRES) and (OMT > OMT_THRES) and (niter < stm_arcs.sizes["space"]):
-        # In the loop, OMT fail
-        # Choose from two Ha: 1) remove an arc; 2) remove a point
-        flag_rm, idx_rm, TT1max, TTqmax = _mht_network_adjustment_reject_one(A_sparse, y, Qyy_diag, k1, kb_dict)
+    while (OMT > OMT_THRES) and (TT1max > TT1_THRES) and (niter < stm_arcs.sizes["space"]):
+        # The iteration stops when one of the following conditions is met:
+        # 1) overall model test pass: OMT < OMT_THRES (very rare case)
+        # 2) all arcs statistics smaller than threshold: max(TT1) < TT1_THRES (most common case)
+        # 3) maximum number of iterations reached (fail case)
+
+        # Because OMT failed, choose from two Ha: 1) remove an arc; 2) remove a point
+        # Decision is made based on flag_rm
+        flag_rm, idx_rm, TT1max, TTqmax = _mht_network_adjustment_reject_one(
+            A_sparse, stm_arcs_updated["ambigs"].data, Qyy_diag, k1, kb_dict
+        )
 
         if flag_rm == 0:  # remove arcs
             stm_arcs_updated = stm_arcs_updated.drop_isel(space=idx_rm)  # Remove the arc
@@ -214,23 +218,26 @@ def _mht_network_adjustment(
         # Get indices of selected arcs based on uid
         idx_arcs_selected = np.where(stm_arcs_updated["uid"].isin(stm_arcs["uid"]))[0]
 
-        # Update the functional and stochastic model
-        Qyy_diag = Qyy_diag[idx_arcs_selected]
+        # Update the functional and stochastic model after arc/pnt removal
+        Qyy_diag = Qyy_diag[idx_arcs_selected]  # select relevant arcs in VCM
         invQy = scipy.sparse.diags(
             1 / Qyy_diag, 0, shape=(stm_arcs_updated.sizes["space"], stm_arcs_updated.sizes["space"])
         )
         A_sparse = _network_relation_matrix(
             stm_arcs_updated["source"], stm_arcs_updated["target"], stm_updated.sizes["space"], idx_refpnt
-        )
-
-        y = stm_arcs_updated["ambigs"].data
-
-        # Estimate residual again
-        _, echeck = _solve_float_ambiguities(A_sparse, y, invQy)
-
-        OMT = (echeck.T @ invQy @ echeck).diagonal().sum()
+        )  # Update A matrix
+        _, echeck = _solve_float_ambiguities(
+            A_sparse, stm_arcs_updated["ambigs"].data, invQy
+        )  # Estimate residual again
+        OMT = (echeck.T @ invQy @ echeck).diagonal().sum()  # Update OMT statistic
 
         niter += 1
+
+    if niter >= stm_arcs.sizes["space"]:
+        raise RuntimeError(
+            "Maximum number of iterations reached in MHT network adjustment. "
+            "The network may still contain bad arcs or points."
+        )
 
     return stm_arcs_updated, stm_updated
 
