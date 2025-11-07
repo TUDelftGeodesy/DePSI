@@ -227,7 +227,7 @@ def _mht_network_adjustment(
         # Ensure all points in the network have at least 3 connections
         # This makes sure all points can be tested in case of disagreement between arcs
         stm_updated, stm_arcs_updated = _ensure_network_min_connections(
-            stm_updated, stm_arcs_updated, min_connections=3
+            stm_arcs_updated, stm_updated, min_connections=3
         )
 
         # Make sure the reference point is still in stm_updated, by checking its azimuth and range
@@ -323,6 +323,63 @@ def _mht_network_adjustment_reject_one(
         flag_removal = 1  # remove point
 
     return flag_removal, idx_removal, TT1max, TTqmax
+
+
+def _ambiguities_adjustment(
+    stm_arcs: xr.Dataset, stm_pnts: xr.Dataset, idx_refpnt: int, Qyy_diag: np.ndarray
+) -> (xr.Dataset, xr.Dataset):
+    A_sparse = _network_relation_matrix(stm_arcs["source"], stm_arcs["target"], stm_pnts.sizes["space"], idx_refpnt)
+    invQy = scipy.sparse.diags(1 / Qyy_diag, 0, shape=(stm_arcs.sizes["space"], stm_arcs.sizes["space"]))
+
+    # Initialize adjusted ambiguities storage, shape: (n_points-1, n_epochs)
+    # Space dimension is n_points-1 because reference point is excluded
+    acheck = np.zeros((stm_pnts.sizes["space"] - 1, stm_pnts.sizes["time"]))
+
+    # Fix unwrapping ambiguities by looping over epochs
+    stm_arcs_updated = stm_arcs.copy()
+    stm_pnts_updated = stm_pnts.copy()
+    for epoch in range(stm_pnts.sizes["time"]):
+        y = stm_arcs["ambigs"].isel(time=epoch).data
+        acheck_ifg, echeck_ifg = _solve_float_ambiguities(A_sparse, y, invQy)
+        OMT = echeck_ifg.T @ invQy @ echeck_ifg
+        idx_previous_arc_fix = -1  # Avoid fixing the same arc again in the same epoch
+
+        while OMT >= OMT_THRES:  # While OMT fail, fix for this epoch
+            # Find arc index with largest abs echeck
+            # When OMT > kOMT, echeck_ifg[idx_max_echeck] is guaranteed to be non-zero
+            idx_sort = np.argsort(np.abs(echeck_ifg))[::-1]  # Indices of echeck sorted by abs value, descending
+            idx_max_echeck = idx_sort[0]  # Index of arc with largest abs echeck
+            if idx_max_echeck == idx_previous_arc_fix:
+                # If get same arc as previous fix, take the second largest
+                idx_max_echeck = idx_sort[1]
+
+            if np.round(abs(echeck_ifg[idx_max_echeck])) >= 1:  # If >= 1, minus closest integer
+                y[idx_max_echeck] -= np.round(echeck_ifg[idx_max_echeck])
+            elif echeck_ifg[idx_max_echeck] > 0:  # if (0, 1), minus 1
+                y[idx_max_echeck] -= 1.0
+            elif echeck_ifg[idx_max_echeck] < 0:  # if (-1, 0), plus 1
+                y[idx_max_echeck] += 1.0
+
+            idx_previous_arc_fix = idx_max_echeck  # record the fixed arc index
+
+            # Recalculate OMT
+            acheck_ifg, echeck_ifg = _solve_float_ambiguities(A_sparse, y, invQy)
+            OMT = echeck_ifg.T @ invQy @ echeck_ifg
+
+        stm_arcs_updated["ambigs"][:, epoch] = y  # Store adjusted arc ambiguities
+        acheck[:, epoch] = acheck_ifg  # Store adjusted point ambiguities
+
+    # Round acheck to closest integer
+    acheck = np.round(acheck).astype(np.int16)
+
+    # Assign reference point ambiguities as zero
+    acheck_full = np.zeros((stm_pnts.sizes["space"], stm_pnts.sizes["time"])).astype(np.int16)
+    acheck_full[np.arange(stm_pnts.sizes["space"]) != idx_refpnt, :] = acheck
+
+    # Assign acheck_full to stm_pnts_updated
+    stm_pnts_updated["ambiguities"] = (["space", "time"], acheck_full)
+
+    return stm_arcs_updated, stm_pnts_updated
 
 
 def _ensure_network_min_connections(
