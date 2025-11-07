@@ -448,7 +448,7 @@ def remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, min
     return stm_updated, arcs_updated
 
 
-def _generate_arcs_delaunay(coordinates, max_length=None):
+def _generate_arcs_delaunay(coordinates, max_length):
     """Create a network using Delaunay triangulation."""
     # Create network and collect neighbors.
     network = Delaunay(coordinates)
