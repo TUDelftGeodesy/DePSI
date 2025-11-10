@@ -10,7 +10,6 @@ import sparse
 import xarray as xr
 from scipy.spatial import Delaunay, KDTree
 
-from depsi.arc_estimation import periodogram
 from depsi.mht_utils import pretest
 
 logger = logging.getLogger(__name__)
@@ -27,10 +26,9 @@ TT1_THRES = 1.0  # Threshold for arc rejection statistics TT1,
 # For most cases this threshold is triggered in rejection phase
 
 
-def network_unwrapping(
+def spatial_unwrapping(
     stm_pnts: xr.Dataset,
     stm_arcs: xr.Dataset,
-    wavelength: float,
     Qyy_diag: np.ndarray,
     arc_estimation_method: str = "periodogram",
     threshold_arc_quality: float = 0.5,
@@ -44,22 +42,6 @@ def network_unwrapping(
         # Compute all data into memory
         stm_pnts = stm_pnts.compute()
         stm_arcs = stm_arcs.compute()
-
-    # Perform arc ambiguity estimation to extract arc ambiguities and arc quality
-    match arc_estimation_method:
-        # Periodogram
-        case "periodogram":
-            _, ambiguities, _, _, ens_coh = periodogram(
-                stm_arcs,
-                "d_phase",
-                "h2ph",
-                "Btemp",
-                wavelength,
-            )
-            stm_arcs["ambiguities"] = ambiguities
-            stm_arcs["quality"] = ens_coh
-        case _:
-            raise NotImplementedError(f"Unknown arc estimation method {arc_estimation_method}")
 
     # Select arcs with quality > threshold_arc_quality
     # Then ensure all points have at least min_arc_connections connections
