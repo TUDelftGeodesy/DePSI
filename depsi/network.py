@@ -88,12 +88,23 @@ def spatial_unwrapping(
     ----------
     Van Leijen, Frederik Johannes. "Persistent scatterer interferometry based on geodetic estimation theory." (2014).
     """
+    # Check parallelization behavior
     if parallel:
         raise NotImplementedError("Dask support is not implemented yet for spatial_unwrapping.")
     else:
         # Compute all data into memory
         stm_pnts = stm_pnts.compute()
         stm_arcs = stm_arcs.compute()
+
+    # Validate that stm_arcs are formed from stm_pnts
+    if (stm_arcs["source"].max().values >= stm_pnts.sizes["space"]) or (
+        stm_arcs["target"].max().values >= stm_pnts.sizes["space"]
+    ):
+        raise ValueError("stm_arcs contain source/target indices that exceed the number of points in stm_pnts.")
+    if "ambiguities" not in stm_arcs:
+        raise ValueError("stm_arcs do not contain 'ambiguities' variable. Please estimate arc ambiguities first.")
+    if key_arc_quality not in stm_arcs:
+        raise ValueError(f"stm_arcs do not contain '{key_arc_quality}' variable for arc quality assessment.")
 
     # Select arcs with quality > threshold_arc_quality
     # Then ensure all points have at least min_arc_connections connections
