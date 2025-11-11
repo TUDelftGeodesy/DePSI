@@ -1,6 +1,7 @@
 """Functions for the network adjustment in the CORG network."""
 
 from itertools import combinations, product
+from typing import Literal
 
 import networkx as nx
 import numpy as np
@@ -1496,18 +1497,22 @@ def _estimate_connection_point_outlier(y_corrected, A, Qyy_inv):
 
 
 def connect_point_to_control_network(
-    stm_1_point,
-    stm_control,
-    stm_ref_control_solved,
-    ref_pnt_idx,
-    dist_to_quality,
-    nr_conn,
-    sigma_post_over_sigma_prior,
-    alpha,
-    bounds,
-    m2ph,
-    n_max_iter,
-    correct_epochs_arc,
+    stm_1_point: xr.Dataset,
+    partition_quality_label: str,
+    x_crd_label: str,
+    y_crd_label: str,
+    coordinate_type: Literal["euclidean", "geometric"],
+    stm_control: xr.Dataset,
+    stm_ref_control_solved: xr.Dataset,
+    ref_pnt_idx: int,
+    dist_to_quality: float,
+    nr_conn: int,
+    sigma_post_over_sigma_prior: int | float,
+    alpha: float,
+    bounds: tuple,
+    m2ph: float,
+    n_max_iter: int,
+    correct_epochs_arc: int,
 ):
     """Estimate parameters for a new point relative to the control network points.
 
@@ -1527,6 +1532,14 @@ def connect_point_to_control_network(
     ----------
     stm_1_point : xarray.DataArray
         STM of the point to be estimated, containint SLC phase values and more.
+    partition_quality_label: str
+        Name of the STM layer containing the quality information
+    x_crd_label: str
+        Layer name of the X coordinates in the STM
+    y_crd_label: str
+        Layer name of the Y coordinates in the STM
+    coordinate_type: Literal["euclidean", "geographic"]
+        Type of coordinate provided. Euclidean has units meter (such as RD), geographic is latitude/longitude.
     stm_control : xarray.DataArray
         STM of the control network points (including the reference point), containing SLC phase values.
     stm_ref_control_solved : xarray.DataArray
@@ -1576,7 +1589,7 @@ def connect_point_to_control_network(
         Variance of phase values for the arcs.
     """
     # Make an empty dictionary where the estimation results for the point will be stored
-    point_add = int(stm_1_point["pnt_idx"].values)
+    point_add = int(stm_1_point.space.values)
     estimated_values_pnt_add = {}
     arc_results_pnt_add = {}
 
@@ -1584,15 +1597,16 @@ def connect_point_to_control_network(
 
     # Compute the ordered-arcs between the connection point and control points
     arcs, sorted_quality_values = dn.ordered_arcs_connection_point_and_control_network(
-        stm_1_point["rd_x"],
-        stm_1_point["rd_y"],
-        stm_1_point["slc_quality"],
-        stm_1_point["pnt_idx"].astype(int),
-        stm_control["rd_x"],
-        stm_control["rd_y"],
-        stm_control["slc_quality"],
-        stm_control["pnt_idx"].astype(int),
+        stm_1_point[x_crd_label],
+        stm_1_point[y_crd_label],
+        stm_1_point[partition_quality_label],
+        int(point_add),
+        stm_control[x_crd_label],
+        stm_control[y_crd_label],
+        stm_control[partition_quality_label],
+        stm_control["space"],
         dist_to_quality,
+        coordinate_type,
     )
 
     # To count how many 'succesfull' estimations of the connection points we have
@@ -1601,30 +1615,23 @@ def connect_point_to_control_network(
 
     for i, arc_add in enumerate(arcs):
         # STM of the control points still consists of all points, so only take out the control point that is in the arc
-        stm_control_1_point = stm_control.where(stm_control["pnt_idx"].isin(arc_add[0]), drop=True)
+        stm_control_1_point = stm_control.sel(space=arc_add[0])
         stm_control_1_point = stm_control_1_point.squeeze()
 
         # Estimate the unknown parameters for the arc.
         # This occurs within a wrapper that makes sure it does not take too much time
-        # arc_results_1_arc = _run_with_timeout(
-        #     #arc_est.arc_estimation_xarray_input,
-        #     arc_estimation_xarray_input_v2,
-        #     max_time_arc_estimation,  # The maximum allowed time in seconds for this function
-        #     stm_control_1_point,
-        #     stm_1_point,
-        #     bounds,
-        #     m2ph,
-        #     test_stochastics=0,
-        #     print_output=0,
-        # )
         arc_results_1_arc = arc_est.arc_estimation_xarray_input(
             stm_control_1_point,
             stm_1_point,
             bounds,
             m2ph,
             n_max_iter,
-            test_stochastics=0,
-            print_output=0,
+            partition_quality_label,
+            x_crd_label,
+            y_crd_label,
+            coordinate_type,
+            test_stochastics=False,
+            print_output=False,
         )
 
         if arc_results_1_arc is None:
@@ -1645,7 +1652,7 @@ def connect_point_to_control_network(
 
                 if sigma_post_arc < sigma_post_over_sigma_prior * mean_sigma_prior_arc:
                     succes_arcs[i] = True
-                    print(f"Computation succesfull for {arc_add}")
+                    print(f"Computation successful for {arc_add}")
                     # Add results for this arc to dictionary
                     for key, value in arc_results_1_arc.items():
                         if key in arc_results:
@@ -1898,6 +1905,10 @@ def connect_point_to_control_network(
 
 def connect_point_to_control_network_full_phase(
     stm_1_point,
+    partition_quality_label: str,
+    x_crd_label: str,
+    y_crd_label: str,
+    coordinate_type: Literal["euclidean", "geometric"],
     stm_control,
     stm_ref_control_solved,
     ref_pnt_idx,
@@ -1928,6 +1939,14 @@ def connect_point_to_control_network_full_phase(
     ----------
     stm_1_point : xarray.DataArray
         STM of the point to be estimated, containint SLC phase values and more.
+    partition_quality_label: str
+        Layer name of the SLC quality
+    x_crd_label: str
+        Layer name of the X coordinates
+    y_crd_label: str
+        Layer name of the Y coordinates
+    coordinate_type: Literal["euclidean", "geographic"]
+        Type of coordinate provided. Euclidean has units meter (such as RD), geographic is latitude/longitude.
     stm_control : xarray.DataArray
         STM of the control network points (including the reference point), containing SLC phase values.
     stm_ref_control_solved : xarray.DataArray
@@ -1977,36 +1996,36 @@ def connect_point_to_control_network_full_phase(
         Variance of phase values for the arcs.
     """
     # Make an empty dictionary where the estimation results for the point will be stored
-    point_add = int(stm_1_point["pnt_idx"].values)
-    solved_the_point = 0
+    point_add = int(stm_1_point["space"].values)
     estimated_values_pnt_add = {}
     arc_results_pnt_add = {}
-    cr2ph_arc = stm_1_point["cr2ph"].values
+    cr2ph_arc = stm_1_point["sd_cr2ph"].values
     temperature = stm_1_point["temperature"].values
-    years = stm_1_point["years"].values
+    years = stm_1_point["years_since_first_img"].values
 
     nr_epochs = len(stm_1_point["time"])
 
     # Compute the ordered-arcs between the connection point and control points
     arcs, sorted_quality_values = dn.ordered_arcs_connection_point_and_control_network(
-        stm_1_point["rd_x"],
-        stm_1_point["rd_y"],
-        stm_1_point["slc_quality"],
-        stm_1_point["pnt_idx"].astype(int),
-        stm_control["rd_x"],
-        stm_control["rd_y"],
-        stm_control["slc_quality"],
-        stm_control["pnt_idx"].astype(int),
+        stm_1_point[x_crd_label],
+        stm_1_point[y_crd_label],
+        stm_1_point[partition_quality_label],
+        int(point_add),
+        stm_control[x_crd_label],
+        stm_control[y_crd_label],
+        stm_control[partition_quality_label],
+        stm_control["space"],
         dist_to_quality,
+        coordinate_type,
     )
 
-    # To count how many 'succesfull' estimations of the connection points we have
+    # To count how many 'successful' estimations of the connection points we have
     succes_arcs = np.full(len(arcs), False)
     arc_results = {}
 
     for i, arc_add in enumerate(arcs):
         # STM of the control points still consists of all points, so only take out the control point that is in the arc
-        stm_control_1_point = stm_control.where(stm_control["pnt_idx"].isin(arc_add[0]), drop=True)
+        stm_control_1_point = stm_control.sel(space=arc_add[0])
         stm_control_1_point = stm_control_1_point.squeeze()
 
         # Estimate the unknown parameters for the arc.
@@ -2028,8 +2047,12 @@ def connect_point_to_control_network_full_phase(
             bounds,
             m2ph,
             n_max_iter,
-            test_stochastics=0,
-            print_output=0,
+            partition_quality_label,
+            x_crd_label,
+            y_crd_label,
+            coordinate_type,
+            test_stochastics=False,
+            print_output=False,
         )
 
         if arc_results_1_arc is None:
@@ -2050,7 +2073,7 @@ def connect_point_to_control_network_full_phase(
 
                 if sigma_post_arc < sigma_post_over_sigma_prior * mean_sigma_prior_arc:
                     succes_arcs[i] = True
-                    print(f"Computation succesfull for {arc_add}")
+                    print(f"Computation successful for {arc_add}")
                     # Add results for this arc to dictionary
                     for key, value in arc_results_1_arc.items():
                         if key in arc_results:
@@ -2103,54 +2126,6 @@ def connect_point_to_control_network_full_phase(
         # Define settings for the OMT
         m_omt = nr_conn  # The nr of observations is defined by the nr of arcs
         n_omt = 1  # value for OMT is always equal to 1
-
-        # # Compute the thermal component and cross range for the point
-        # (
-        #     cross_range_pnt,
-        #     Qx_cross_range,
-        #     _,
-        #     Qyy_cross_range_inv,
-        #     A,
-        #     _,
-        #     _,
-        #     e_cross_range,
-        # ) = _estimate_connection_point_stm(
-        #     "cross_range",
-        #     stm_ref_control_solved,
-        #     estimated_cross_range_arc,
-        #     estimated_cross_range_sigma_arc,
-        #     nr_conn,
-        #     control_conn_points,
-        # )
-        # thermal_pnt, Qx_thermal, _, Qyy_thermal_inv, A, _, _, e_thermal = _estimate_connection_point_stm(
-        #     "thermal_comp",
-        #     stm_ref_control_solved,
-        #     estimated_thermal_arc,
-        #     estimated_thermal_sigma_arc,
-        #     nr_conn,
-        #     control_conn_points,
-        # )
-
-        # # Apply OMT for cross_range and thermal component
-        # m_omt = nr_conn  # The nr of observations is defined by the nr of arcs
-        # n_omt = 1  # value for OMT is always equal to 1
-
-        # k, T_omt_cross_range = est.overall_model_test(alpha, e_cross_range, Qyy_cross_range_inv, m_omt - n_omt, 0)
-        # estimated_values_pnt_add["T_omt_cross_range"] = T_omt_cross_range
-
-        # k, T_omt_thermal = est.overall_model_test(alpha, e_thermal, Qyy_thermal_inv, m_omt - n_omt, 0)
-
-        # print ('Test results thermal component and cross range:')
-        # print (f'k value: {k}. T_omt_cross_range: {T_omt_cross_range}. and T_omt_thermal: {T_omt_thermal}')
-
-        # estimated_values_pnt_add["T_omt_thermal"] = T_omt_thermal
-        # estimated_values_pnt_add["k_omt"] = k
-
-        # estimated_values_pnt_add["cross_range"] = cross_range_pnt.flatten()[0]
-        # estimated_values_pnt_add["cross_range_sigma"] = np.sqrt(Qx_cross_range.flatten()[0])
-
-        # estimated_values_pnt_add["thermal_comp"] = thermal_pnt.flatten()[0]
-        # estimated_values_pnt_add["thermal_comp_sigma"] = np.sqrt(Qx_thermal.flatten()[0])
 
         # Estimate time series for the point
         point_time_series = np.zeros(nr_epochs)

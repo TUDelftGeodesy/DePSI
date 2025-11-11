@@ -545,6 +545,7 @@ def arc_estimation_xarray_input(
     bounds,
     m2ph,
     n_max_iter,
+    partition_quality_label: str,
     x_crd_label: str = "rd_x",
     y_crd_label: str = "rd_y",
     coordinate_type: Literal["euclidean", "geographic"] = "euclidean",
@@ -572,6 +573,8 @@ def arc_estimation_xarray_input(
         Conversion factor from meters to phase.
     n_max_iter : np.ndarray
         The maximum nr of iterations for non-linear lsq per arc
+    partition_quality_label: str
+        Layer name in the STM of the SLC quality
     x_crd_label: str, default "rd_x"
         Label of the x-coordinate in the STMs (for geographic, this is 'lon')
     y_crd_label: str, default "rd_y"
@@ -660,32 +663,32 @@ def arc_estimation_xarray_input(
         "succeeded_arcs": [],
     }
 
-    print(f"idx pnt i: {int(stm_pnt_i['pnt_idx'].values)}")
-    print(f"idx pnt j: {int(stm_pnt_j['pnt_idx'].values)}")
+    print(f"idx pnt i: {int(stm_pnt_i['space'].values)}")
+    print(f"idx pnt j: {int(stm_pnt_j['space'].values)}")
 
-    dates = stm_pnt_i["dates"].values
-    years = stm_pnt_i["years"].values
+    dates = stm_pnt_i["time"].values
+    years = stm_pnt_i["years_since_first_img"].values
     temp = stm_pnt_i["temperature"].values
 
     # Extract information of the two points of the arc
-    pnt_i_idx = int(stm_pnt_i["pnt_idx"].values)
+    pnt_i_idx = int(stm_pnt_i["space"].values)
     sd_complex_i = stm_pnt_i["sd_complex"].values
-    slc_quality_i = stm_pnt_i["slc_quality"].values
-    bkps_stm_i = stm_pnt_i["breakpoints_stm"].values
-    sigma_ampl_sd_i = stm_pnt_i["sigma_ampl_sd_stm"].values
-    mean_ampl_sd_i = stm_pnt_i["mean_ampl_sd_stm"].values
-    mad_ampl_sd_i = stm_pnt_i["mad_ampl_sd_stm"].values
-    median_ampl_sd_i = stm_pnt_i["median_ampl_sd_stm"].values
+    slc_quality_i = stm_pnt_i[partition_quality_label].values
+    bkps_stm_i = stm_pnt_i["breakpoints"].values
+    sigma_ampl_sd_i = stm_pnt_i["partition_sd_amplitude_sigma"].values
+    mean_ampl_sd_i = stm_pnt_i["partition_sd_amplitude_mean"].values
+    mad_ampl_sd_i = stm_pnt_i["partition_sd_mad"].values
+    median_ampl_sd_i = stm_pnt_i["partition_sd_amplitude_median"].values
 
-    pnt_j_idx = int(stm_pnt_j["pnt_idx"].values)
+    pnt_j_idx = int(stm_pnt_j["space"].values)
     sd_complex_j = stm_pnt_j["sd_complex"].values
-    slc_quality_j = stm_pnt_j["slc_quality"].values
-    cr2ph_j = stm_pnt_j["cr2ph"].values
-    bkps_stm_j = stm_pnt_j["breakpoints_stm"].values
-    sigma_ampl_sd_j = stm_pnt_j["sigma_ampl_sd_stm"].values
-    mean_ampl_sd_j = stm_pnt_j["mean_ampl_sd_stm"].values
-    mad_ampl_sd_j = stm_pnt_j["mad_ampl_sd_stm"].values
-    median_ampl_sd_j = stm_pnt_j["median_ampl_sd_stm"].values
+    slc_quality_j = stm_pnt_j[partition_quality_label].values
+    cr2ph_j = stm_pnt_j["sd_cr2ph"].values
+    bkps_stm_j = stm_pnt_j["breakpoints"].values
+    sigma_ampl_sd_j = stm_pnt_j["partition_sd_amplitude_sigma"].values
+    mean_ampl_sd_j = stm_pnt_j["partition_sd_amplitude_mean"].values
+    mad_ampl_sd_j = stm_pnt_j["partition_sd_mad"].values
+    median_ampl_sd_j = stm_pnt_j["partition_sd_amplitude_median"].values
 
     # Step 1: extract information on the arc
     # Compute the arc length

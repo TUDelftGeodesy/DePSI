@@ -769,6 +769,7 @@ def ordered_arcs_connection_point_and_control_network(
     slc_quality_control,
     control_idx,
     dist_to_quality,
+    coordinate_type: Literal["euclidean", "geometric"],
 ):
     """Generate a sorted array of unique arcs between a 'connection_point' and the control network.
 
@@ -788,12 +789,14 @@ def ordered_arcs_connection_point_and_control_network(
         rdx_connection_point (xarray.DataArray): x-coordinate of the connection point.
         rdy_connection_point (xarray.DataArray): y-coordinate of the connection point.
         slc_quality_connection_point (xarray.DataArray): Array of SLC quality time series for the connection point.
-        connection_point_idx (xarray.DataArray): Index of the connection point.
+        connection_point_idx (int): Index of the connection point.
         rdx_control (xarray.DataArray): x-coordinates of the control points.
         rdy_control (xarray.DataArray): y-coordinates of the control points.
         slc_quality_control (xarray.DataArray): Array of SLC quality time series for the control points.
         control_idx (xarray.DataArray): Indices of the control points.
         dist_to_quality (float): Conversion factor to scale distance relative to quality.
+        coordinate_type (Literal["euclidean", "geographic"]): whether the provided coordinates are Euclidean or
+            geographic
 
     Returns:
     -------
@@ -807,7 +810,13 @@ def ordered_arcs_connection_point_and_control_network(
     coords_control = np.vstack((rdx_control, rdy_control)).T
 
     # Distance matrix between the connection point and the control points
-    dist_matrix = distance_matrix(coords_connection_point, coords_control).squeeze()
+    if coordinate_type == "euclidean":
+        dist_matrix = distance_matrix(coords_connection_point, coords_control).squeeze()
+    else:
+        dist_matrix = np.zeros((coords_connection_point.shape[0], coords_control.shape[0]))
+        for m in range(coords_connection_point.shape[0]):
+            for n in range(coords_control.shape[0]):
+                dist_matrix[m, n] = get_distance(coords_connection_point[m], coords_control[n], mode=coordinate_type)
 
     # # Compute the quality matrix for connection point (pnt i) and all control points (point j)
     slc_quality_j = slc_quality_control.values  # Quality values of the control points
@@ -830,7 +839,7 @@ def ordered_arcs_connection_point_and_control_network(
     # Make sure that the control_points comes first
     arcs = np.zeros((len(sorted_control_idx), 2), dtype=int)
     arcs[:, 0] = sorted_control_idx  # control network points
-    arcs[:, 1] = connection_point_idx.values  # connection_point
+    arcs[:, 1] = connection_point_idx  # connection_point
 
     return arcs, sorted_quality_values
 
