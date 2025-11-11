@@ -8,6 +8,7 @@ import xarray as xr
 
 from depsi.io import read_weather_data
 from depsi.network import construct_control_network_test_arcs
+from depsi.network_adjustment import adjust_full_corg_control_network
 from depsi.utils import npdatetime64_to_datetime
 from depsi.viewing_geometry import add_local_viewing_geometry
 
@@ -20,7 +21,7 @@ stm_viewing_save_path = (
 )  # this one is there to speed up the testing
 stm_save_path = (
     "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_stm_CORG.zarr"
-)
+)  # This is where the control network will be saved
 knmi_file_path = "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/etmgeg_240.txt"
 
 orbit_cfg_file = Path(
@@ -66,7 +67,7 @@ bounds = (
 vcm_complex_method = 'mad_median'
 dist_to_quality = 0.1/1000  # Normal value , rad/m
 sigma_post_over_sigma_prior = 4
-partition_quality_label = "partition_nmad_quality"
+partition_quality_label = "partition_quality_nmad_2sigma"
 
 # Geolocation
 x_crd_label = "rd_x"
@@ -95,6 +96,25 @@ visualize_network = False
 # orbit settings
 orbit_mode = "IWS"
 orbit_resolution = 0.01
+
+# Adjustment thresholds
+criteria = {
+    'cross_range': True,  # Sigma of cross-range height
+    'thermal': False,     # Sigma of thermal components
+    'displacement': True  # Sigma of displacements
+}
+
+criteria_thresholds = {
+    'sigma_cross_range': 159, # radians
+    'sigma_thermal': 0.005, # m/y/K (ish)
+    'sigma_displacement': 0.5  # rad
+}
+
+min_points_control_network = 9
+min_points_before_estimate = 2
+min_degree = 1
+max_iter_adjustment = 30
+correct_network = True
 
 #
 # Calculations
@@ -169,6 +189,10 @@ results_control_network, ref_pnt, arcs_updated_network = construct_control_netwo
     coordinate_type,
 )
 
-import pdb;pdb.set_trace()
-# SAVE THE RESULTS AFTER THIS
+stm_control_network = adjust_full_corg_control_network(stm, partition_quality_label, results_control_network,
+                                                       max_iter_adjustment, alpha, criteria, criteria_thresholds,
+                                                       min_points_before_estimate, min_points_control_network,
+                                                       min_degree, ref_pnt, m2ph, correct_network)
+
+stm_control_network.to_zarr(stm_save_path)
 

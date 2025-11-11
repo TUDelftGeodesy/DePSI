@@ -2,6 +2,7 @@
 
 from itertools import combinations, product
 
+import networkx as nx
 import numpy as np
 import xarray as xr
 from scipy.sparse import csr_matrix
@@ -10,6 +11,503 @@ import depsi.arc_estimation as arc_est
 import depsi.deformation_models as dm
 import depsi.estimation as est
 import depsi.network as dn
+
+
+def adjust_full_corg_control_network(
+    stm: xr.Dataset,
+    partition_quality_label: str,
+    results_control_network: dict,
+    n_iter: int,
+    alpha: float,
+    criteria: dict,
+    thresholds: dict,
+    min_points_before_estimate: int,
+    min_points_full_network: int,
+    deg_threshold: int,
+    ref_pnt_idx: int,
+    m2ph: float,
+    correct_network: bool = True,
+) -> xr.Dataset:
+    """Perform the full network adjustment for the initial CORG network.
+
+    This function takes in the results of the control network function
+    `depsi.network.construct_control_network_test_arcs`, and adjusts the solutions based on the CORG methodology
+    as presented in the thesis of Wietske Brouwer.
+
+    Parameters
+    ----------
+    stm:
+        Full space-time matrix with at least coordinates `space` and `time`, variables `temperature`, `sd_cr2ph`,
+        `partition_quality_label`
+    partition_quality_label: str
+        Name of the layer in `stm` indication the quality of the observations per partition
+    results_control_network: dict
+        Output of `depsi.network.construct_control_network_test_arcs`, first field
+    n_iter: int
+        Maximum number of points to iterate over before rejecting the network via RuntimeError
+    alpha: float
+        Statistical significance level
+    criteria: dict
+        Dictionary with the keys "displacement", "thermal", "cross_range". The values are boolean True/False, whether
+        to consider this criterion or not
+    thresholds: dict
+        Dictionary with the keys "sigma_displacement", "sigma_thermal", "sigma_cross_range". The values are the
+        thresholds below which an arc is considered valid
+    min_points_before_estimate: int
+        Minimum number of points in the control network before arcwise estimation can take place
+    min_points_full_network: int
+        Minimum number of points in the final control network
+    deg_threshold: int
+        Minimum number of connections for a point to be a valid part of the network
+    ref_pnt_idx: int
+        The index of the reference point in the STM
+    m2ph: float
+        Conversion factor from meter to phase
+    correct_network: bool, default True
+        Whether to actually correct and adjust the network or not
+
+    Returns
+    -------
+    xr.Dataset
+        Dataset with the fully adjusted and solved control network.
+
+    Raises
+    ------
+    AssertionError
+        If:
+            - `partition_quality_label` is not a data layer in `stm`
+            - Any of the criteria "displacement", "thermal", "cross_range" is missing in `criteria`
+            - Any of the thresholds "sigma_displacement", "sigma_thermal", "sigma_cross_range" is missing in
+            `thresholds`
+    RuntimeError
+        If `n_iter` is exceeded
+
+    """
+    assert partition_quality_label in stm.variables.keys(), f"Cannot find {partition_quality_label} in STM!"
+    for criterion in ["displacement", "thermal", "cross_range"]:
+        assert criterion in criteria.keys(), f"Criterion {criterion} is missing from criteria dict ({criteria})!"
+        assert (
+            f"sigma_{criterion}" in thresholds.keys()
+        ), f"Criterion threshold sigma_{criterion} is missing from thresholds dict ({thresholds})!"
+
+    slc_quality = stm[partition_quality_label].values
+
+    n_epochs = stm.sizes["time"]
+    n_pnts = stm.sizes["space"]
+
+    # Save variables per iteration
+    succesfully_solved_points = []
+    solved_points_per_iteration = []
+    successful_iterations = 0
+
+    # Create dictionaries to save estimated variables (for the points)
+    estimated_values = {}
+    estimated_vcm = {}
+    estimated_time_series = {}
+    k_omt = np.zeros((n_epochs + 2, n_iter + 1))
+    t_omt = np.zeros((n_epochs + 2, n_iter + 1))
+
+    all_criteria_met = False
+    arc_add = 0
+
+    while not all_criteria_met:
+        arc_add += 1
+        if arc_add > n_iter:
+            raise RuntimeError(f"Maximum number of iterations {n_iter} exceeded.")
+
+        # Add information to the lists
+        unwrap_phases_arc = results_control_network["unwrap_phases_arc"][:arc_add, :]
+        sigma_phases_arc = results_control_network["sigma_phases_arc"][:arc_add, :]
+        estimated_cross_range_arc = results_control_network["estimated_cross_range"][:arc_add]
+        estimated_thermal_arc = results_control_network["estimated_thermal"][:arc_add]
+        estimated_cross_range_sigma_arc = results_control_network["estimated_cross_range_sigma"][:arc_add]
+        estimated_thermal_sigma_arc = results_control_network["estimated_thermal_sigma"][:arc_add]
+        arcs_closing_variable = (
+            unwrap_phases_arc
+            - results_control_network["estimated_cross_range_phase"][:arc_add, :]
+            - results_control_network["estimated_thermal_phase"][:arc_add, :]
+        )
+        arcs_closing_variable_rewrap = np.zeros_like(arcs_closing_variable)
+
+        adjustment_arcs = results_control_network["succeeded_arcs"][:arc_add].astype(int)
+        adjustment_points = np.unique(adjustment_arcs)
+        adjustment_points = adjustment_points[adjustment_points != ref_pnt_idx]
+
+        print(f"Points within the adjustment: {adjustment_points}")
+
+        # test whether there are single arcs in the network.
+        # The points in the control network at least need to have two connections.
+        # Compute the network
+        network = nx.Graph()
+        network.add_edges_from(adjustment_arcs)
+        degree_per_point = dict(network.degree())
+
+        print(f"Degree per point: {degree_per_point}")
+
+        num_valid_points = sum([1 for degree in degree_per_point.values() if degree > deg_threshold])
+
+        if num_valid_points < min_points_before_estimate:
+            print(
+                f"Not enough points in the network yet, we need to add arcs, there are {num_valid_points} point(s) "
+                f"with a degree higher than {deg_threshold}"
+            )
+            successful_iterations += 1
+            continue
+
+        # if we get here we do have enough points
+        solved_points_per_iteration.append(np.copy(adjustment_points))
+
+        # Only for the first arc we do not need to solve any equations because we cannot integrate anything
+        if np.size(adjustment_points) == 1:
+            for _, point in enumerate(adjustment_points):  # tracks iterations, might not be necessary
+                if point not in estimated_values:
+                    estimated_values[point] = {
+                        "cross_range": [None] * arc_add,
+                        "cross_range_variances": [None] * arc_add,
+                        "thermal_comp": [None] * arc_add,
+                        "thermal_comp_variances": [None] * arc_add,
+                    }
+                    estimated_time_series[point] = {
+                        "time_series": [None] * arc_add,
+                        "time_series_corrected": [None] * arc_add,
+                        "time_series_variances": [None] * arc_add,
+                    }
+                    # Initialize empty arrays for the time series for previous iterations
+                    for j in range(arc_add):
+                        estimated_time_series[point]["time_series"][j] = [None] * n_epochs
+                        estimated_time_series[point]["time_series_corrected"][j] = [None] * n_epochs
+                        estimated_time_series[point]["time_series_variances"][j] = [None] * n_epochs
+
+                # Add current iteration values (as floats to avoid arrays)
+                estimated_values[point]["cross_range"].append(float(estimated_cross_range_arc[0]))
+                estimated_values[point]["cross_range_variances"].append(float(estimated_cross_range_sigma_arc[0] ** 2))
+                estimated_values[point]["thermal_comp"].append(float(estimated_thermal_arc[0]))
+                estimated_values[point]["thermal_comp_variances"].append(float(estimated_thermal_sigma_arc[0] ** 2))
+
+                estimated_time_series[point]["time_series"].append(arcs_closing_variable[0, :])
+                estimated_time_series[point]["time_series_corrected"].append(arcs_closing_variable[0, :])
+                estimated_time_series[point]["time_series_variances"].append(sigma_phases_arc[0, :] ** 2)
+
+            # Update the VCM
+            estimated_vcm[arc_add] = {
+                "adjustment_points": adjustment_points.tolist(),
+                "Qx_hat_cross_range": estimated_cross_range_sigma_arc[0] ** 2,
+                "Qx_hat_thermal": estimated_thermal_sigma_arc[0] ** 2,
+                "Qx_hat_time_series": sigma_phases_arc[0, :] ** 2,
+            }
+
+        else:
+            # Get the A matrix
+
+            # Go from arcs to points (Ch 4 Wietskes thesis)
+            A_adjustment = adjustment_matrix_control_network(adjustment_arcs, n_pnts, adjustment_points)
+            m_omt, n_omt = np.shape(A_adjustment)
+
+            # Adjust the network for the cross_range and thermal components
+            (
+                point_cross_range,
+                Qx_cross_range,
+                Qyy_cross_range,
+                Qyy_inv_cross_range,
+                y_cross_range,
+                y_hat_cross_range,
+                e_hat_cross_range,
+            ) = network_adjustment_control_network(
+                A_adjustment, estimated_cross_range_arc[: arc_add + 1], estimated_cross_range_sigma_arc[: arc_add + 1]
+            )
+            point_thermal, Qx_thermal, Qyy_thermal, Qyy_inv_thermal, y_thermal, y_hat_thermal, e_hat_thermal = (
+                network_adjustment_control_network(
+                    A_adjustment, estimated_thermal_arc[: arc_add + 1], estimated_thermal_sigma_arc[: arc_add + 1]
+                )
+            )
+
+            # Compute OMT for crossrange and thermal
+            k_omt[0, arc_add], t_omt[0, arc_add] = est.overall_model_test(
+                alpha, e_hat_cross_range, Qyy_inv_cross_range, m_omt - n_omt, 0
+            )
+            k_omt[1, arc_add], t_omt[1, arc_add] = est.overall_model_test(
+                alpha, e_hat_thermal, Qyy_inv_thermal, m_omt - n_omt, 0
+            )
+
+            # Create empty time series arrays
+            point_time_series = np.zeros((len(adjustment_points), n_epochs))
+            point_time_series_corrected = np.zeros((len(adjustment_points), n_epochs))
+            point_time_series_vcm = np.zeros((len(adjustment_points), len(adjustment_points), n_epochs))
+
+            for t in range(n_epochs):  # essentially for estimating the displacement adjustment
+                # for t in range(2):
+
+                # compute the variances for the points
+                slc_quality_cp = slc_quality[adjustment_points, t]
+                sigma_points = {
+                    int(pnt): float(sig) for pnt, sig in zip(adjustment_points, slc_quality_cp, strict=False)
+                }
+
+                # Adjust the network per epoch
+                point_epoch, Qx_epoch, Qyy_epoch, Qyy_inv_epoch, y_epoch, y_hat_epoch, e_hat_epoch = (
+                    network_adjustment_control_network_displ(
+                        A_adjustment,
+                        arcs_closing_variable[: arc_add + 1, t],
+                        sigma_phases_arc[: arc_add + 1, t],
+                        sigma_points,
+                        adjustment_arcs,
+                        ref_pnt_idx,
+                    )
+                )
+
+                point_time_series[:, t] = point_epoch.flatten()
+                point_time_series_vcm[:, :, t] = Qx_epoch
+                point_time_series_corrected[:, t] = point_time_series[:, t]
+
+                # Compute OMT
+                k_omt[t + 2, arc_add], t_omt[t + 2, arc_add] = est.overall_model_test(
+                    alpha, e_hat_epoch, Qyy_inv_epoch, m_omt - n_omt, 0
+                )
+
+                if correct_network and t_omt[t + 2, arc_add] > k_omt[t + 2, arc_add]:
+                    # TODO: We only test for 1 unwrapping error, if it is not that specific error we remove it
+                    # We should also test for 2pi unwrapping errors
+
+                    # Apply the w-test
+                    corrected_y, idx_biggest_w, correct = apply_w_test_control_network(
+                        m_omt, A_adjustment, Qx_epoch, Qyy_epoch, Qyy_inv_epoch, y_epoch, e_hat_epoch
+                    )
+                    arcs_closing_variable_rewrap[idx_biggest_w, t] = correct
+
+                    # Adjust the new observations
+                    (
+                        point_epoch,
+                        Qx_epoch,
+                        Qyy_epoch,
+                        Qyy_inv_epoch,
+                        y_epoch_correct,
+                        y_hat_epoch,
+                        e_hat_epoch_correct,
+                    ) = network_adjustment_control_network_displ(
+                        A_adjustment,
+                        corrected_y,
+                        sigma_phases_arc[: arc_add + 1, t],
+                        sigma_points,
+                        adjustment_arcs,
+                        ref_pnt_idx,
+                    )
+                    point_time_series_corrected[:, t] = point_epoch.flatten()
+
+                    # # Compute the OMT for this particular epoch
+                    k_omt[t + 2, arc_add], t_omt[t + 2, arc_add] = est.overall_model_test(
+                        alpha, e_hat_epoch_correct, Qyy_inv_epoch, m_omt - n_omt, 0
+                    )
+
+                    if t_omt[t + 2, arc_add] < k_omt[t + 2, arc_add]:
+                        # If the OMT is accepted, then we save the corrected observation to the observation vector too
+                        arcs_closing_variable[: arc_add + 1, t] = y_epoch_correct.flatten()
+
+            # Save estimated variables
+            estimated_values, estimated_time_series = update_estimated_parameters(
+                estimated_values,
+                estimated_time_series,
+                adjustment_points,
+                arc_add,
+                n_epochs,
+                point_cross_range,
+                Qx_cross_range,
+                point_thermal,
+                Qx_thermal,
+                point_time_series,
+                point_time_series_corrected,
+                point_time_series_vcm,
+            )
+
+            # Update the VCM  variance covariance matrix
+            estimated_vcm[arc_add] = {
+                "adjustment_points": adjustment_points.tolist(),  # Zet numpy array om naar lijst
+                "Qx_hat_cross_range": Qx_cross_range,
+                "Qx_hat_thermal": Qx_thermal,
+                "Qx_hat_time_series": point_time_series_vcm,
+            }
+
+        successful_iterations += 1
+
+        # Initialize count for each criterion
+        count_below_threshold = {"cross_range": 0, "thermal": 0, "displacement": 0}
+
+        # Initialize point list of successful points per criterion
+        points_below_threshold = {"cross_range": [], "thermal": [], "displacement": []}
+
+        if len(adjustment_points) == 1:
+            # If there is only one point, we cannot fulfill the criteria yet, and we thus continue the loop
+            continue
+        else:
+            # Calculate the sigmas of the estimated crossranges, thermal components and displacmeents while
+            # not taking into account points that do not mee the necessary degree of connection
+            points_solved = np.array(estimated_vcm[arc_add]["adjustment_points"])
+            mask_low_deg_pnts = np.array([degree_per_point.get(np.int64(p), 0) > deg_threshold for p in points_solved])
+            points_that_meet_degree = points_solved[mask_low_deg_pnts]
+
+            succesfully_solved_points.append(points_that_meet_degree)
+
+            print(f"Points that meet degree: {points_that_meet_degree}")
+            print(f"Degree per point: {degree_per_point}")
+
+            if criteria["cross_range"]:
+                sigma_cross_range = np.sqrt(
+                    np.diagonal(estimated_vcm[arc_add]["Qx_hat_cross_range"])[mask_low_deg_pnts]
+                )
+                count_below_threshold["cross_range"] = np.sum(sigma_cross_range < thresholds["sigma_cross_range"])
+                points_below_threshold["cross_range"] = points_that_meet_degree[
+                    sigma_cross_range < thresholds["sigma_cross_range"]
+                ]
+
+            if criteria["thermal"]:
+                sigma_thermal = np.sqrt(np.diagonal(estimated_vcm[arc_add]["Qx_hat_thermal"])[mask_low_deg_pnts])
+                count_below_threshold["thermal"] = np.sum(sigma_thermal < thresholds["sigma_thermal"])
+                points_below_threshold["thermal"] = points_that_meet_degree[sigma_thermal < thresholds["sigma_thermal"]]
+
+            if criteria["displacement"]:
+                sigma_displacement = np.sqrt(
+                    np.diagonal(np.max(estimated_vcm[arc_add]["Qx_hat_time_series"], axis=2))[mask_low_deg_pnts]
+                )
+                count_below_threshold["displacement"] = np.sum(sigma_displacement < thresholds["sigma_displacement"])
+                points_below_threshold["displacement"] = points_that_meet_degree[
+                    sigma_displacement < thresholds["sigma_displacement"]
+                ]
+
+            # Compute the points that are below the threshold for all the criteria, this will be the control_points
+            points_per_criteria = [points_below_threshold[key] for key in criteria if criteria[key]]
+            if points_per_criteria:
+                control_points = points_per_criteria[0]
+                for arr in points_per_criteria[1:]:
+                    control_points = np.intersect1d(control_points, arr)
+            else:
+                control_points = np.array([])  # No selection criteria
+
+            # Check if all criteria have been met
+            total_criteria_met = 0
+            if criteria["cross_range"] and count_below_threshold["cross_range"] >= min_points_full_network:
+                total_criteria_met += 1
+            if criteria["thermal"] and count_below_threshold["thermal"] >= min_points_full_network:
+                total_criteria_met += 1
+            if criteria["displacement"] and count_below_threshold["displacement"] >= min_points_full_network:
+                total_criteria_met += 1
+
+            selected_criteria_count = sum(criteria.values())
+
+            # Stop loop if so
+            if total_criteria_met == selected_criteria_count:
+                print("")
+                print(f"Stop adding arcs: All {selected_criteria_count} selected criteria are fullfilled. ")
+
+                # Print number of points below thresholds
+                if criteria["cross_range"]:
+                    print(
+                        f"There are {count_below_threshold['cross_range']} points below a sigma cross_range "
+                        f"value of {thresholds['sigma_cross_range'] / (-1 * m2ph)} meter"
+                    )
+                if criteria["thermal"]:
+                    print(
+                        f"There are {count_below_threshold['thermal']} points below a sigma thermal "
+                        f"value of {thresholds['sigma_thermal']} meter"
+                    )
+                if criteria["displacement"]:
+                    print(
+                        f"There are {count_below_threshold['displacement']} points below a sigma displ. "
+                        f"value of {thresholds['sigma_displacement']} radians"
+                    )
+                all_criteria_met = True
+
+                # For the final values we need to remove the points that have only a degree of 1
+
+    stm_control_network_solved = xr.Dataset(coords={"space": control_points, "time": stm.time.values})
+
+    # Loop trough the control points to extract the values and save them to the stm
+    cross_range = np.zeros(len(control_points))
+    cross_range_variances = np.zeros(len(control_points))
+    thermal_comp = np.zeros(len(control_points))
+    thermal_comp_variances = np.zeros(len(control_points))
+    displ_time_series = np.zeros((len(control_points), n_epochs))
+    displ_time_series_corrected = np.zeros((len(control_points), n_epochs))
+    displ_time_series_variances = np.zeros((len(control_points), n_epochs))
+    thermal_phase_timeseries = np.zeros((len(control_points), n_epochs))
+    cross_range_phase_timeseries = np.zeros((len(control_points), n_epochs))
+
+    for i, idx in enumerate(control_points):
+        print(f"Adding point {idx}...")
+        cross_range[i] = estimated_values[idx]["cross_range"][-1]
+        cross_range_variances[i] = estimated_values[idx]["cross_range_variances"][-1]
+        thermal_comp[i] = estimated_values[idx]["thermal_comp"][-1]
+        thermal_comp_variances[i] = estimated_values[idx]["thermal_comp_variances"][-1]
+        displ_time_series[i, :] = estimated_time_series[idx]["time_series"][-1]
+        displ_time_series_corrected[i, :] = estimated_time_series[idx]["time_series_corrected"][-1]
+        displ_time_series_variances[i, :] = estimated_time_series[idx]["time_series_variances"][-1]
+        cross_range_phase_timeseries[i, :] = estimated_values[idx]["cross_range"][-1] * stm.sd_cr2ph.values[idx, :]
+        thermal_phase_timeseries[i, :] = (
+            estimated_values[idx]["thermal_comp"][-1] * stm.temperature.values * m2ph / 1000
+        )
+
+    # Add the values to the STM
+    stm_control_network_solved["ref_pnt"] = (["space"], np.ones(len(control_points)) * ref_pnt_idx)
+    stm_control_network_solved["control_or_not"] = (["space"], np.ones(len(control_points)))
+    stm_control_network_solved["conn_points"] = (["space"], np.zeros(len(control_points)))
+    stm_control_network_solved["pnt_idx"] = (["space"], control_points)
+
+    stm_control_network_solved["cross_range"] = (["space"], cross_range)
+    stm_control_network_solved["cross_range_variance"] = (["space"], cross_range_variances)
+    stm_control_network_solved["thermal_comp"] = (["space"], thermal_comp)
+    stm_control_network_solved["thermal_comp_variance"] = (["space"], thermal_comp_variances)
+
+    stm_control_network_solved["k_omt"] = (["space"], np.full((len(control_points)), np.nan))
+    stm_control_network_solved["omt_cross_range"] = (["space"], np.full((len(control_points)), np.nan))
+    stm_control_network_solved["omt_thermal"] = (["space"], np.full((len(control_points)), np.nan))
+    stm_control_network_solved["omt_reject"] = (["space"], np.full((len(control_points)), np.nan))
+    stm_control_network_solved["omt_displ"] = (["space", "time"], np.full((len(control_points), n_epochs), np.nan))
+    stm_control_network_solved["omt_displ_corrected"] = (
+        ["space", "time"],
+        np.full((len(control_points), n_epochs), np.nan),
+    )
+
+    stm_control_network_solved["displ_time_series"] = (["space", "time"], displ_time_series)
+    stm_control_network_solved["displ_time_series_corrected"] = (["space", "time"], displ_time_series_corrected)
+    stm_control_network_solved["displ_time_series_variances"] = (["space", "time"], displ_time_series_variances)
+
+    stm_control_network_solved["cross_range_phase_timeseries"] = (["space", "time"], cross_range_phase_timeseries)
+    stm_control_network_solved["thermal_phase_timeseries"] = (["space", "time"], thermal_phase_timeseries)
+
+    stm_ref_pnt = xr.Dataset(
+        coords={
+            "space": np.array([ref_pnt_idx]),  # Zorg dat dit een array met één element is
+            "time": stm.time.values,
+        }
+    )
+
+    # Add the values to the STM (hardcoded reference point since it is all 0s)
+    stm_ref_pnt["ref_pnt"] = (["space"], [ref_pnt_idx])  # Een lijst met één element
+    stm_ref_pnt["control_or_not"] = (["space"], [1])  # Lijst met één waarde
+    stm_ref_pnt["conn_points"] = (["space"], [0])
+    stm_ref_pnt["pnt_idx"] = (["space"], [ref_pnt_idx])
+
+    stm_ref_pnt["cross_range"] = (["space"], [0])
+    stm_ref_pnt["cross_range_variance"] = (["space"], [0])
+    stm_ref_pnt["thermal_comp"] = (["space"], [0])
+    stm_ref_pnt["thermal_comp_variance"] = (["space"], [0])
+
+    stm_ref_pnt["k_omt"] = (["space"], [0])
+    stm_ref_pnt["omt_cross_range"] = (["space"], [0])
+    stm_ref_pnt["omt_thermal"] = (["space"], [0])
+    stm_ref_pnt["omt_reject"] = (["space"], [0])
+
+    stm_ref_pnt["omt_displ"] = (["space", "time"], np.zeros((1, len(stm.time.values))))
+    stm_ref_pnt["omt_displ_corrected"] = (["space", "time"], np.zeros((1, len(stm.time.values))))
+
+    stm_ref_pnt["displ_time_series"] = (["space", "time"], np.zeros((1, n_epochs)))
+    stm_ref_pnt["displ_time_series_corrected"] = (["space", "time"], np.zeros((1, n_epochs)))
+    stm_ref_pnt["displ_time_series_variances"] = (["space", "time"], np.zeros((1, n_epochs)))
+
+    stm_ref_pnt["cross_range_phase_timeseries"] = (["space", "time"], np.zeros((1, n_epochs)))
+    stm_ref_pnt["thermal_phase_timeseries"] = (["space", "time"], np.zeros((1, n_epochs)))
+
+    # Merge the reference point into the stm
+    stm_ref_control_network_solved = xr.merge([stm_ref_pnt, stm_control_network_solved])
+    return stm_ref_control_network_solved
 
 
 def network_adjustment_control_network(A_adjustment, y_obs, sigma_obs, threshold_Qyy_change=0.005, epsilon=0):
