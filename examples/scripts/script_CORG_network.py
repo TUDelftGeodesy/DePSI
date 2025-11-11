@@ -189,10 +189,20 @@ results_control_network, ref_pnt, arcs_updated_network = construct_control_netwo
     coordinate_type,
 )
 
-stm_control_network = adjust_full_corg_control_network(stm, partition_quality_label, results_control_network,
-                                                       max_iter_adjustment, alpha, criteria, criteria_thresholds,
-                                                       min_points_before_estimate, min_points_control_network,
-                                                       min_degree, ref_pnt, m2ph, correct_network)
+stm_control_network = adjust_full_corg_control_network(
+    stm,
+    partition_quality_label,
+    results_control_network,
+    max_iter_adjustment,
+    alpha,
+    criteria,
+    criteria_thresholds,
+    min_points_before_estimate,
+    min_points_control_network,
+    min_degree,
+    ref_pnt,
+    m2ph,
+    correct_network
+)
 
 stm_control_network.to_zarr(stm_save_path)
-
