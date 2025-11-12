@@ -4,7 +4,7 @@ One can also choose to add mask_sidelobes as an additional layer in the STM."""
 import numpy as np
 import xarray as xr
 
-from depsi.classification import detect_side_lobes
+from depsi.point_quality import detect_side_lobes
 
 # The original STM is output from the script script_ps_point_selection.py
 stm_original = (
@@ -17,11 +17,13 @@ stm_save_path = (
 
 max_pixel_dist = 2
 min_correlation = 0.90
+complex_layer_name = "sd_complex"
+amplitude_layer_name = "sd_amplitude_unnormalized"
 
 # first read the STM
 stm = xr.open_zarr(stm_original)
 
-side_lobes_array, _ = detect_side_lobes(stm, max_pixel_dist, min_correlation)
+side_lobes_array, _ = detect_side_lobes(stm, max_pixel_dist, min_correlation, complex_layer_name, amplitude_layer_name)
 
 mask_sidelobes = np.ones(len(stm.space), dtype=bool)
 mask_sidelobes[side_lobes_array] = False
