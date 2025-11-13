@@ -11,7 +11,7 @@ dependencies = [
     "pydantic",
     "sarxarray",
     "stmtools",
-    "ruptures", 
+    "ruptures",
     "networkx",
     "drama",
     "asf_search",
