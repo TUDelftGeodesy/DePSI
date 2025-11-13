@@ -131,15 +131,17 @@ def _orbit_fit(orbit, verbose=0, der=True):
 
 
 def get_distance(
-    s: list | tuple | np.ndarray, t: list | tuple | np.ndarray, mode: Literal["euclidean", "geographic"] = "euclidean"
+    source: list | tuple | np.ndarray,
+    target: list | tuple | np.ndarray,
+    mode: Literal["euclidean", "geographic"] = "euclidean",
 ):
     """Calculate the distance between two points.
 
     Parameters
     ----------
-    s: list | tuple | np.ndarray
+    source: list | tuple | np.ndarray
         The source point, formatted as (x, y) / (lon, lat)
-    t: list | tuple | np.ndarray
+    target: list | tuple | np.ndarray
         The target point, formatted as (x, y) / (lon, lat)
     mode: Literal["euclidean", "geographic"], default "euclidean"
         Whether the source and target points are given in (x, y) (units meters) or (lon, lat) (units degrees)
@@ -149,13 +151,13 @@ def get_distance(
         The distance between the two points in meters.
     """
     if mode == "euclidean":
-        return math.dist(s, t)
+        return math.dist(source, target)
     elif mode == "geographic":
         # this is the Haversine formula
-        lat1 = s[1]
-        lat2 = t[1]
+        lat1 = source[1]
+        lat2 = target[1]
         dphi = np.radians(lat1 - lat2)
-        dlambda = np.radians(s[0] - t[0])
+        dlambda = np.radians(source[0] - target[0])
         dist = (
             2
             * EARTH_RADIUS
