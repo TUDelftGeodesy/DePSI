@@ -362,8 +362,6 @@ def _scipy_fit_partition_2nd_order_bounds_derivative(
         full_output=True,
         max_nfev=n_max_iter,
     )
-    # Printing the number of function evaluations
-    # print(f"Needed {infodict['nfev']} function evaluations.")
 
     return estimated_params, pcov
 
