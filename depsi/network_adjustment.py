@@ -2017,18 +2017,6 @@ def connect_point_to_control_network_full_phase(
         stm_control_1_point = stm_control_1_point.squeeze()
 
         # Estimate the unknown parameters for the arc.
-        # This occurs within a wrapper that makes sure it does not take too much time
-        # arc_results_1_arc = _run_with_timeout(
-        #     #arc_est.arc_estimation_xarray_input,
-        #     arc_estimation_xarray_input_v2,
-        #     max_time_arc_estimation,  # The maximum allowed time in seconds for this function
-        #     stm_control_1_point,
-        #     stm_1_point,
-        #     bounds,
-        #     m2ph,
-        #     test_stochastics=0,
-        #     print_output=0,
-        # )
         arc_results_1_arc = arc_est.arc_estimation_xarray_input(
             stm_control_1_point,
             stm_1_point,
