@@ -294,7 +294,7 @@ def adjust_full_corg_control_network(
                     )
                     point_time_series_corrected[:, t] = point_epoch.flatten()
 
-                    # # Compute the OMT for this particular epoch
+                    # Compute the OMT for this particular epoch
                     k_omt[t + 2, arc_add], t_omt[t + 2, arc_add] = est.overall_model_test(
                         alpha, e_hat_epoch_correct, Qyy_inv_epoch, m_omt - n_omt, 0
                     )
