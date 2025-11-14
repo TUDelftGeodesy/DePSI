@@ -283,9 +283,9 @@ def detect_side_lobes(
     stm: xr.Dataset,
     max_pixel_dist: float,
     min_correlation: float,
-    complex_variable_name: str = "complex",
-    amplitude_variable_name: str = "amplitude",
-) -> tuple[np.ndarray]:
+    complex_variable_name: str = "sd_complex",
+    amplitude_variable_name: str = "sd_amplitude_unnormalized",
+) -> tuple[np.ndarray, np.ndarray]:
     """Detect and mask side-lobe points based on the phase correlation between points.
 
     It first finds points on the same range and azimuth and only considers points close by. Then it
