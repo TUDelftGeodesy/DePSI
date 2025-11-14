@@ -10,8 +10,8 @@ from scipy.sparse import csr_matrix
 
 import depsi.arc_estimation as arc_est
 import depsi.deformation_models as dm
-import depsi.estimation as est
 import depsi.network as dn
+import depsi.stats as est
 
 
 def adjust_full_corg_control_network(

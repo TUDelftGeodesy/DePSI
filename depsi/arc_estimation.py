@@ -7,7 +7,7 @@ import xarray as xr
 from scipy.optimize import curve_fit
 
 import depsi.deformation_models as dm
-import depsi.estimation as est
+import depsi.stats as est
 from depsi.utils import get_distance, wrap_phase
 
 # Constants

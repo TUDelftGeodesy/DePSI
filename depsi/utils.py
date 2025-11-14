@@ -28,6 +28,8 @@ import numpy as np
 import pytz
 import xarray as xr
 
+EARTH_RADIUS = 6378136  # m
+
 
 def wrap_phase(phs_abs):
     """Wrap the absolute phase to the range [-pi, pi).
@@ -45,9 +47,6 @@ def wrap_phase(phs_abs):
     phs_wrapped = np.remainder(phs_abs + np.pi, 2 * np.pi) - np.pi
 
     return phs_wrapped
-
-
-EARTH_RADIUS = 6378136  # m
 
 
 def _orbit_fit(orbit, verbose=0, der=True):
@@ -136,6 +135,10 @@ def get_distance(
     mode: Literal["euclidean", "geographic"] = "euclidean",
 ):
     """Calculate the distance between two points.
+
+    The Euclidean mode calculates distance on a 2D XY-plane. The Geographic mode approximates the Earth as a sphere
+    with radius 6378136 meter (the polar radius). On long north-south oriented arcs, distance errors of up to 0.3% are
+    possible.
 
     Parameters
     ----------
