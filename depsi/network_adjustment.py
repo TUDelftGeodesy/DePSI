@@ -873,16 +873,6 @@ def fill_covariances_from_shared_points(q_yy, arcs, sigma_points, reference_poin
                 cov += sigma_points.get(b_i, 0.0) ** 2
             if b_i == b_j and b_i != reference_point:
                 cov += sigma_points.get(b_i, 0.0) ** 2
-
-            # if a_i == a_j and a_i != reference_point:
-            #     cov += sigma_points.get(a_i, 0.0)
-            # if a_i == b_j and a_i != reference_point:
-            #     cov -= sigma_points.get(a_i, 0.0)
-            # if b_i == a_j and b_i != reference_point:
-            #     cov -= sigma_points.get(b_i, 0.0)
-            # if b_i == b_j and b_i != reference_point:
-            #     cov += sigma_points.get(b_i, 0.0)
-
             q_yy[i, j] = cov
             q_yy[j, i] = cov  # Symmetric
 
