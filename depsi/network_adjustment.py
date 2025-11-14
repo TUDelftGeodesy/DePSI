@@ -642,12 +642,6 @@ def apply_w_test_control_network(m, A, Qx_hat, Qyy, Qyy_inv, y, e_hat):
     # the observation with the highest result, will be flaged as a potential outlier
     # Remark that we apply a simplification below since Qyy is often a diagonal matrix
     for w in range(m):
-        # c_i = np.zeros((m, 1))
-        # c_i[w, 0] = 1
-        # A = (c_i.transpose() @ Qyy_inv @ e_hat)[0, 0]
-        # B = np.sqrt((c_i.transpose() @ Qyy_inv @ Qee @ Qyy_inv @ c_i)[0, 0])
-        # w_result[w] = A / B
-
         w_result[w] = e_hat[w] / np.sqrt(
             Qee[w, w]
         )  # Simplification since Qyy is a diagonal matrix, see above for full equation
