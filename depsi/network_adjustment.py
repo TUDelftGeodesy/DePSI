@@ -236,8 +236,6 @@ def adjust_full_corg_control_network(
             point_time_series_vcm = np.zeros((len(adjustment_points), len(adjustment_points), n_epochs))
 
             for t in range(n_epochs):  # essentially for estimating the displacement adjustment
-                # for t in range(2):
-
                 # compute the variances for the points
                 slc_quality_cp = slc_quality[adjustment_points, t]
                 sigma_points = {
