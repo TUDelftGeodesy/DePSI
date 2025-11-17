@@ -31,8 +31,8 @@ def spatial_unwrapping(
     stm_arcs: xr.Dataset,
     Qyy_diag: np.ndarray,
     key_arc_quality: str = "ens_coh",
-    arc_estimation_method: str = "periodogram",
     threshold_arc_quality: float = 0.5,
+    idx_refpnt: int | None = None,
     min_arc_connections: int = 3,
     parallel: bool = False,
 ) -> xr.Dataset:
@@ -70,10 +70,10 @@ def spatial_unwrapping(
         Arcs ambiguities are assumed to be independent, hence only diagonal elements are needed.
     key_arc_quality : str, optional
         Key of the arc quality variable in stm_arcs, by default "ens_coh"
-    arc_estimation_method : str, optional
-        Method for arc estimation, by default "periodogram"
     threshold_arc_quality : float, optional
         Threshold for arc quality, by default 0.5
+    idx_refpnt : int | None, optional
+        Index of the reference point in stm_pnts. If None, the source point of the arc with highest quality
     min_arc_connections : int, optional
         Minimum number of connections for arcs, by default 3
     parallel : bool, optional
@@ -113,8 +113,9 @@ def spatial_unwrapping(
     stm_arcs, stm_pnts = _ensure_network_min_connections(stm_arcs, stm_pnts, min_arc_connections)
 
     # Select reference point as the source pnt of arcs with highest ens_coh
-    idx_arc_max_coh = stm_arcs[key_arc_quality].argmax().values
-    idx_refpnt = stm_arcs["source"].isel(space=idx_arc_max_coh).values
+    if idx_refpnt is None:
+        idx_arc_max_coh = stm_arcs[key_arc_quality].argmax().values
+        idx_refpnt = stm_arcs["source"].isel(space=idx_arc_max_coh).values
     azimuth_refpnt = stm_pnts["azimuth"].isel(space=idx_refpnt).values
     range_refpnt = stm_pnts["range"].isel(space=idx_refpnt).values
 
