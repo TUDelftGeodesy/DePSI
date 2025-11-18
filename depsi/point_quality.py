@@ -6,6 +6,7 @@ import ruptures as rpt
 import xarray as xr
 
 from depsi.classification import _nad_block, _nmad_block
+from depsi.network import find_points_within_buffer
 from depsi.utils import crop_slc_spacetime, npdatetime64_to_datetime
 
 # The partitioning requires a jump size when using pelt mode. This should always be 5.
@@ -799,3 +800,66 @@ def _compute_dd_for_correlation(complex_p1, complex_p2):
     dd_complex = complex_conj_p1 * complex_p2
 
     return dd_complex
+
+
+def compute_spatiotemporal_consistency(
+    stm: xr.Dataset,
+    min_dist: float | int,
+    max_dist: float | int,
+    x_crd_layer_name: str,
+    y_crd_layer_name: str,
+    coordinate_type: Literal["euclidean", "geographic"],
+) -> xr.Dataset:
+    """Calculate the spatio-temporal consistency of each point in the STM.
+
+    Equation used is specified in the thesis of Freek van Leijen, Sec. 6.2.6.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+        Space-Time matrix containing at least the coordinates `space` and `time`, and at least the layers `ts_los`
+        and the coordinate layers `x_crd_layer_name` and `y_crd_layer_name`
+    min_dist: float | int
+        Minimum distance for a point B to point A to be considered for the spatio-temporal consistency of point A
+    max_dist: float | int
+        Maximum distance for a point B to point A to be considered for the spatio-temporal consistency of point A
+    x_crd_layer_name: str
+        Name of the layer containing the X-coordinates
+    y_crd_layer_name: str
+        Name of the layer containing the Y-coordinates
+    coordinate_type: Literal["euclidean", "geographic"]
+        Whether the coordinates in the provided layers are Euclidean (e.g. RD) or Geographic (e.g. latitude/longitude)
+
+    Returns
+    -------
+    xr.Dataset
+        The same input STM with an extra layer named `stc` containing the spatio-temporal consistency in millimeters
+
+    """
+    x_crds = stm[x_crd_layer_name].values.flatten()
+    y_crds = stm[y_crd_layer_name].values.flatten()
+    stcs = []
+    for point in range(x_crds.shape[0]):
+        max_buffer_indices = find_points_within_buffer(
+            x_crds, y_crds, [x_crds[point]], [y_crds[point]], max_dist, coordinate_type
+        )
+        min_buffer_indices = find_points_within_buffer(
+            x_crds[max_buffer_indices],
+            y_crds[max_buffer_indices],
+            [x_crds[point]],
+            [y_crds[point]],
+            min_dist,
+            coordinate_type,
+        )
+        buffer_indices = [idx for idx in max_buffer_indices if idx not in min_buffer_indices and idx != point]
+        if len(buffer_indices) == 0:
+            stcs.append(np.nan)
+        else:
+            buffer_ts_sd = stm.ts_los.isel(space=buffer_indices) - stm.ts_los.isel(space=point)
+            buffer_ts_sd_comp = buffer_ts_sd.values
+            buffer_ts_dd = buffer_ts_sd_comp[:, :-1] - buffer_ts_sd_comp[:, 1:]
+            buffer_ts_stcs = np.std(buffer_ts_dd, axis=1).flatten()
+            stcs.append(min(buffer_ts_stcs) * 1000)  # * 1000 to convert from meters to millimeters
+
+    stm.assign({"stc": (["space"], stcs)})
+    return stm

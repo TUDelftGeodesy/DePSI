@@ -851,7 +851,6 @@ def export_to_shapefile(
     save_path: str,
     projection: Literal["RD", "WGS84"],
     model_parameter_layer_names: tuple,
-    ts_proj: Literal["los", "vertical"],
     point_annotation_label: str,
 ) -> None:
     """Export an STM to a shapefile.
@@ -867,8 +866,6 @@ def export_to_shapefile(
         only affects the coordinate system of the shapefile itself)
     model_parameter_layer_names: tuple
         Tuple with the layer names of the model parameters in the order that they will be stored in the csv
-    ts_proj: Literal["los", "vertical"]
-        Whether the saved time series is Line-of-Sight or projected onto the vertical
     point_annotation_label: str
         An extra annotation given to the point IDs in the CSV (`point_annotation_label`_az########r########)
 
