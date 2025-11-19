@@ -106,6 +106,12 @@ def spatial_unwrapping(
     if key_arc_quality not in stm_arcs:
         raise ValueError(f"stm_arcs do not contain '{key_arc_quality}' variable for arc quality assessment.")
 
+    # If idx_refpnt is specified
+    # Get radar coordinates of the reference point before any shape change
+    if idx_refpnt is not None:
+        azimuth_refpnt = stm_pnts["azimuth"].isel(space=idx_refpnt).values
+        range_refpnt = stm_pnts["range"].isel(space=idx_refpnt).values
+
     # Select arcs with quality > threshold_arc_quality
     # Then ensure all points have at least min_arc_connections connections
     mask = (np.abs(stm_arcs[key_arc_quality]) > threshold_arc_quality).compute()
@@ -116,8 +122,8 @@ def spatial_unwrapping(
     if idx_refpnt is None:
         idx_arc_max_coh = stm_arcs[key_arc_quality].argmax().values
         idx_refpnt = stm_arcs["source"].isel(space=idx_arc_max_coh).values
-    azimuth_refpnt = stm_pnts["azimuth"].isel(space=idx_refpnt).values
-    range_refpnt = stm_pnts["range"].isel(space=idx_refpnt).values
+        azimuth_refpnt = stm_pnts["azimuth"].isel(space=idx_refpnt).values
+        range_refpnt = stm_pnts["range"].isel(space=idx_refpnt).values
 
     # Adjust the network by removing bad arcs/points using MHT
     stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adjustment(
