@@ -29,13 +29,13 @@ TT1_THRES = 1.0  # Threshold for arc rejection statistics TT1,
 def spatial_unwrapping(
     stm_pnts: xr.Dataset,
     stm_arcs: xr.Dataset,
-    Qyy_diag: np.ndarray,
     key_arc_quality: str = "ens_coh",
     threshold_arc_quality: float = 0.5,
     idx_refpnt: int | None = None,
     min_arc_connections: int = 3,
     parallel: bool = False,
     ensure_network_while_mht: bool = False,
+    arc_estimation_method: Literal["periodogram"] = "periodogram",
 ) -> xr.Dataset:
     """Perform spatial unwrapping on the given STM of arcs and points.
 
@@ -81,6 +81,9 @@ def spatial_unwrapping(
         Whether to use parallel processing, by default False
     ensure_network_while_mht : bool, optional
         Whether to ensure minimum connections in MHT network adjustment, by default False
+    arc_estimation_method : Literal["periodogram"], optional
+        Method used for arc estimation, by default "periodogram".
+        This constrains the method used for VCM computation.
 
     Returns
     -------
@@ -109,6 +112,10 @@ def spatial_unwrapping(
     if key_arc_quality not in stm_arcs:
         raise ValueError(f"stm_arcs do not contain '{key_arc_quality}' variable for arc quality assessment.")
 
+    # Check arc estimation method, this constrains VCM computation method
+    if arc_estimation_method not in ["periodogram"]:
+        raise NotImplementedError(f"Unknown arc estimation method {arc_estimation_method}.")
+
     # If idx_refpnt is specified
     # Get radar coordinates of the reference point before any shape change
     if idx_refpnt is not None:
@@ -130,24 +137,15 @@ def spatial_unwrapping(
 
     # Adjust the network by removing bad arcs/points using MHT
     stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adjustment(
-        stm_arcs,
-        stm_pnts,
-        idx_refpnt,
-        azimuth_refpnt,
-        range_refpnt,
-        Qyy_diag=np.ones(stm_arcs.sizes["space"]),
-        ensure_network_while_mht=ensure_network_while_mht,
+        stm_arcs, stm_pnts, idx_refpnt, azimuth_refpnt, range_refpnt, ensure_network_while_mht, arc_estimation_method
     )
-
-    # Get indices of selected arcs based on uid
-    idx_arcs_selected = np.where(stm_arcs_adjusted["uid"].isin(stm_arcs["uid"]))[0]
-
-    # Update Qyy_diag for selected arcs
-    Qyy_diag = Qyy_diag[idx_arcs_selected]
 
     # Adjust ambiguities to fix unwrapping errors
     stm_arcs_output, stm_pnts_output = _ambiguities_adjustment(
-        stm_arcs_adjusted, stm_pnts_adjusted, idx_refpnt, Qyy_diag
+        stm_arcs_adjusted,
+        stm_pnts_adjusted,
+        idx_refpnt,
+        arc_estimation_method,
     )
 
     return stm_arcs_output, stm_pnts_output
@@ -271,8 +269,8 @@ def _mht_network_adjustment(
     idx_refpnt: int,
     azimuth_refpnt: int | float,
     range_refpnt: int | float,
-    Qyy_diag: np.ndarray,
     ensure_network_while_mht: bool,
+    arc_estimation_method: str,
 ) -> (xr.Dataset, xr.Dataset):
     """Adjust the network by removing bad arcs/points by applying MHT.
 
@@ -291,10 +289,10 @@ def _mht_network_adjustment(
         Azimuth of the reference point.
     range_refpnt : int | float
         Range of the reference point.
-    Qyy_diag : np.ndarray
-        Diagonal array of the VCM of the observations.
     ensure_network_while_mht : bool
         Whether to ensure minimum connections in MHT network adjustment.
+    arc_estimation_method : str
+        Method used for arc estimation.
 
     Returns
     -------
@@ -305,6 +303,10 @@ def _mht_network_adjustment(
     A_sparse = _network_relation_matrix(
         stm_arcs["source"], stm_arcs["target"], stm_pnts.sizes["space"], idx_refpnt
     )  # Network relation matrix A
+
+    if arc_estimation_method == "periodogram":
+        Qyy_diag = 1 - stm_arcs["ens_coh"].values
+
     invQy = scipy.sparse.diags(
         1 / Qyy_diag, 0, shape=(stm_arcs.sizes["space"], stm_arcs.sizes["space"])
     )  # Stochastic model assuming independent observations
@@ -329,6 +331,8 @@ def _mht_network_adjustment(
         # 2) all arcs statistics smaller than threshold: max(TT1) < TT1_THRES (most common case)
         # 3) maximum number of iterations reached (fail case)
 
+        logger.info(f"MHT iteration {niter}: OMT={OMT:.2e}")
+
         # Because OMT failed, choose from two Ha: 1) remove an arc; 2) remove a point
         # Decision is made based on flag_rm
         flag_rm, idx_rm, TT1max, TTqmax = _mht_network_adjustment_reject_one(
@@ -336,10 +340,13 @@ def _mht_network_adjustment(
         )
 
         if flag_rm == 0:  # remove arcs
+            logger.info(f"MHT iteration {niter}: removing arc index {idx_rm} with TT1={TT1max:.2f}")
             stm_arcs_updated = stm_arcs_updated.drop_isel(space=idx_rm)  # Remove the arc
         elif flag_rm == 1:  # remove points
             if idx_rm >= idx_refpnt:
                 idx_rm += 1  # Adjust index due to removed reference point column in A_sparse
+
+            logger.info(f"MHT iteration {niter}: removing point index {idx_rm} with TT1={TT1max:.2f}")
 
             # Removing points is achieved by removing all arcs connects to the point
             # Later the points will be actually removed when ensuring minimum connections
@@ -456,7 +463,7 @@ def _mht_network_adjustment_reject_one(
 
 
 def _ambiguities_adjustment(
-    stm_arcs: xr.Dataset, stm_pnts: xr.Dataset, idx_refpnt: int, Qyy_diag: np.ndarray
+    stm_arcs: xr.Dataset, stm_pnts: xr.Dataset, idx_refpnt: int, arc_estimation_method: str
 ) -> (xr.Dataset, xr.Dataset):
     """Fix unwrapping errors by adjusting ambiguities per epoch.
 
@@ -471,8 +478,8 @@ def _ambiguities_adjustment(
         Space-Time Matrix of points.
     idx_refpnt : int
         Index of the reference point.
-    Qyy_diag : np.ndarray
-        Diagonal elements of the VCM of observations.
+    arc_estimation_method : str
+        Method used for arc estimation.
 
     Returns
     -------
@@ -483,6 +490,8 @@ def _ambiguities_adjustment(
     """
     # Setup functional and stochastic model
     A_sparse = _network_relation_matrix(stm_arcs["source"], stm_arcs["target"], stm_pnts.sizes["space"], idx_refpnt)
+    if arc_estimation_method == "periodogram":
+        Qyy_diag = 1 - stm_arcs["ens_coh"].values  # VCM diagonal from ensemble coherence
     invQy = scipy.sparse.diags(1 / Qyy_diag, 0, shape=(stm_arcs.sizes["space"], stm_arcs.sizes["space"]))
 
     # Initialize adjusted ambiguities storage, shape: (n_points-1, n_epochs)
@@ -493,6 +502,7 @@ def _ambiguities_adjustment(
     stm_arcs_updated = stm_arcs.copy()
     stm_pnts_updated = stm_pnts.copy()
     for epoch in range(stm_pnts.sizes["time"]):
+        logger.info(f"Adjusting ambiguities for epoch {epoch}")
         y = stm_arcs["ambiguities"].isel(time=epoch).data
         acheck_ifg, echeck_ifg = _solve_float_ambiguities(A_sparse, y, invQy)
         OMT = echeck_ifg.T @ invQy @ echeck_ifg
@@ -519,6 +529,8 @@ def _ambiguities_adjustment(
             # Recalculate OMT
             acheck_ifg, echeck_ifg = _solve_float_ambiguities(A_sparse, y, invQy)
             OMT = echeck_ifg.T @ invQy @ echeck_ifg
+
+            logger.info(f"Fixing arc index {idx_max_echeck}, new OMT={OMT:.2e}")
 
         stm_arcs_updated["ambiguities"][:, epoch] = y  # Store adjusted arc ambiguities
         acheck[:, epoch] = acheck_ifg  # Store adjusted point ambiguities
@@ -583,7 +595,7 @@ def _solve_float_ambiguities(A, y, invQy):
     @np.vectorize(signature="(i)->(j)")
     def lsmr(y):
         """Least square iterative solver for sparse data."""
-        x, *_ = scipy.sparse.linalg.lsmr(invQyA, y)
+        x, *_ = scipy.sparse.linalg.lsmr(invQyA, invQy @ y)
         return x
 
     acheck = lsmr(y.T).T  # float ambiguity estimation
