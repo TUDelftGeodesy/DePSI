@@ -34,6 +34,7 @@ def spatial_unwrapping(
     idx_refpnt: int | None = None,
     min_arc_connections: int = 3,
     parallel: bool = False,
+    sparse_mode: bool = False,
     ensure_network_while_mht: bool = False,
     arc_estimation_method: Literal["periodogram"] = "periodogram",
 ) -> xr.Dataset:
@@ -79,6 +80,8 @@ def spatial_unwrapping(
         Minimum number of connections for arcs, by default 3
     parallel : bool, optional
         Whether to use parallel processing, by default False
+    sparse_mode : bool, optional
+        Whether to use sparse matrix format for large networks, by default False
     ensure_network_while_mht : bool, optional
         Whether to ensure minimum connections in MHT network adjustment, by default False
     arc_estimation_method : Literal["periodogram"], optional
@@ -116,6 +119,9 @@ def spatial_unwrapping(
     if arc_estimation_method not in ["periodogram"]:
         raise NotImplementedError(f"Unknown arc estimation method {arc_estimation_method}.")
 
+    if sparse_mode:
+        raise NotImplementedError("Sparse mode is not implemented yet for spatial_unwrapping.")
+
     # If idx_refpnt is specified
     # Get radar coordinates of the reference point before any shape change
     if idx_refpnt is not None:
@@ -137,7 +143,14 @@ def spatial_unwrapping(
 
     # Adjust the network by removing bad arcs/points using MHT
     stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adjustment(
-        stm_arcs, stm_pnts, idx_refpnt, azimuth_refpnt, range_refpnt, ensure_network_while_mht, arc_estimation_method
+        stm_arcs,
+        stm_pnts,
+        idx_refpnt,
+        azimuth_refpnt,
+        range_refpnt,
+        ensure_network_while_mht,
+        sparse_mode,
+        arc_estimation_method,
     )
 
     # Adjust ambiguities to fix unwrapping errors
@@ -145,6 +158,7 @@ def spatial_unwrapping(
         stm_arcs_adjusted,
         stm_pnts_adjusted,
         idx_refpnt,
+        sparse_mode,
         arc_estimation_method,
     )
 
@@ -270,6 +284,7 @@ def _mht_network_adjustment(
     azimuth_refpnt: int | float,
     range_refpnt: int | float,
     ensure_network_while_mht: bool,
+    sparse_mode: bool,
     arc_estimation_method: str,
 ) -> (xr.Dataset, xr.Dataset):
     """Adjust the network by removing bad arcs/points by applying MHT.
@@ -291,6 +306,8 @@ def _mht_network_adjustment(
         Range of the reference point.
     ensure_network_while_mht : bool
         Whether to ensure minimum connections in MHT network adjustment.
+    sparse_mode : bool
+        Whether to use sparse matrix format for large networks.
     arc_estimation_method : str
         Method used for arc estimation.
 
@@ -300,22 +317,20 @@ def _mht_network_adjustment(
         Updated Space-Time Matrix of arcs and points.
     """
     # Setup functional and stochastic model
-    A_sparse = _network_relation_matrix(
-        stm_arcs["source"], stm_arcs["target"], stm_pnts.sizes["space"], idx_refpnt
+    A = _network_relation_matrix(
+        stm_arcs["source"], stm_arcs["target"], stm_pnts.sizes["space"], idx_refpnt, sparse_mode
     )  # Network relation matrix A
 
     if arc_estimation_method == "periodogram":
         Qyy_diag = 1 - stm_arcs["ens_coh"].values
+    invQy = np.diag(1 / Qyy_diag)
 
-    invQy = scipy.sparse.diags(
-        1 / Qyy_diag, 0, shape=(stm_arcs.sizes["space"], stm_arcs.sizes["space"])
-    )  # Stochastic model assuming independent observations
-    _, echeck = _solve_float_ambiguities(A_sparse, stm_arcs["ambiguities"].data, invQy)  # Estimate initial residual
+    _, echeck = _solve_float_ambiguities(A, stm_arcs["ambiguities"].data, invQy)  # Estimate initial residual
     OMT = np.diag(echeck.T @ invQy @ echeck).sum()  # Test statistics for Overall Model Test
 
     # Setup test parameters
     kb_dict = {}
-    max_con = np.abs(A_sparse).sum(axis=0).max()
+    max_con = np.abs(A).sum(axis=0).max()
     for n_con in range(1, max_con + 1):
         _, k1, kb, _ = pretest(n_con, ALPHA0, GAMMA0)
         kb_dict[n_con] = kb
@@ -336,7 +351,7 @@ def _mht_network_adjustment(
         # Because OMT failed, choose from two Ha: 1) remove an arc; 2) remove a point
         # Decision is made based on flag_rm
         flag_rm, idx_rm, TT1max, TTqmax = _mht_network_adjustment_reject_one(
-            A_sparse, stm_arcs_updated["ambiguities"].data, Qyy_diag, k1, kb_dict
+            A, stm_arcs_updated["ambiguities"].data, Qyy_diag, k1, kb_dict
         )
 
         if flag_rm == 0:  # remove arcs
@@ -344,7 +359,7 @@ def _mht_network_adjustment(
             stm_arcs_updated = stm_arcs_updated.drop_isel(space=idx_rm)  # Remove the arc
         elif flag_rm == 1:  # remove points
             if idx_rm >= idx_refpnt:
-                idx_rm += 1  # Adjust index due to removed reference point column in A_sparse
+                idx_rm += 1  # Adjust index due to removed reference point column in A
 
             logger.info(f"MHT iteration {niter}: removing point index {idx_rm} with TT1={TT1max:.2f}")
 
@@ -381,15 +396,12 @@ def _mht_network_adjustment(
 
         # Update the functional and stochastic model after arc/pnt removal
         Qyy_diag = Qyy_diag[idx_arcs_selected]  # select relevant arcs in VCM
-        invQy = scipy.sparse.diags(
-            1 / Qyy_diag, 0, shape=(stm_arcs_updated.sizes["space"], stm_arcs_updated.sizes["space"])
-        )
-        A_sparse = _network_relation_matrix(
-            stm_arcs_updated["source"], stm_arcs_updated["target"], stm_updated.sizes["space"], idx_refpnt
+        invQy = np.diag(1 / Qyy_diag)
+
+        A = _network_relation_matrix(
+            stm_arcs_updated["source"], stm_arcs_updated["target"], stm_updated.sizes["space"], idx_refpnt, sparse_mode
         )  # Update A matrix
-        _, echeck = _solve_float_ambiguities(
-            A_sparse, stm_arcs_updated["ambiguities"].data, invQy
-        )  # Estimate residual again
+        _, echeck = _solve_float_ambiguities(A, stm_arcs_updated["ambiguities"].data, invQy)  # Estimate residual again
         OMT = np.diag(echeck.T @ invQy @ echeck).sum()  # Update OMT statistic
 
         niter += 1
@@ -417,8 +429,8 @@ def _mht_network_adjustment_reject_one(
 
     # Inverse of VCM of observations
     if Qyy_diag.ndim == 1:  # Diagonal VCM
-        invQy = scipy.sparse.diags(1 / Qyy_diag, 0, shape=(N_arcs, N_arcs))
-        Qyy = scipy.sparse.diags(Qyy_diag, 0, shape=(N_arcs, N_arcs))
+        invQy = np.diag(1 / Qyy_diag)
+        Qyy = np.diag(Qyy_diag)
     else:
         raise NotImplementedError("Currently only diagonal VCM is supported. Qyy_diag should be an 1d array.")
 
@@ -426,8 +438,7 @@ def _mht_network_adjustment_reject_one(
     _, echeck = _solve_float_ambiguities(A, y, invQy)
 
     # Post-priori VCM of residuals
-    # Qecheck = Qyy - Qycheck = Qyy - A Qxx A'
-    Qxx = np.linalg.inv((A.T @ invQy @ A).todense())
+    Qxx = np.linalg.inv(A.T @ invQy @ A)
     Qecheck = Qyy - (A @ Qxx @ A.T)  # TODO: check how to handle large Qecheck
 
     # Test statistics TT1 for removing one arc
@@ -439,7 +450,7 @@ def _mht_network_adjustment_reject_one(
     # Test statistics for removing one point
     TTq = np.zeros(N_points)
     for pnt_idx in range(N_points):
-        arcs_idx = np.where(A[:, pnt_idx].todense() != 0)[0]  # Arcs connected to this point
+        arcs_idx = np.where(A[:, pnt_idx] != 0)[0]  # Arcs connected to this point
         arcs_idx = arcs_idx[1:]  # Drop one arc to create basis, see e.g. verhoef97
         echeck_point = echeck[arcs_idx, :]  # Relevant echeck of this point
         Qecheck_point = Qecheck[arcs_idx, :][:, arcs_idx]  # Relevant Qecheck of this point
@@ -463,7 +474,11 @@ def _mht_network_adjustment_reject_one(
 
 
 def _ambiguities_adjustment(
-    stm_arcs: xr.Dataset, stm_pnts: xr.Dataset, idx_refpnt: int, arc_estimation_method: str
+    stm_arcs: xr.Dataset,
+    stm_pnts: xr.Dataset,
+    idx_refpnt: int,
+    sparse_mode: bool,
+    arc_estimation_method: str,
 ) -> (xr.Dataset, xr.Dataset):
     """Fix unwrapping errors by adjusting ambiguities per epoch.
 
@@ -478,6 +493,8 @@ def _ambiguities_adjustment(
         Space-Time Matrix of points.
     idx_refpnt : int
         Index of the reference point.
+    sparse_mode : bool
+        Whether to use sparse matrix format for large networks.
     arc_estimation_method : str
         Method used for arc estimation.
 
@@ -489,10 +506,12 @@ def _ambiguities_adjustment(
         For points, the "ambiguities" variable are estimated from the adjusted arc ambiguities.
     """
     # Setup functional and stochastic model
-    A_sparse = _network_relation_matrix(stm_arcs["source"], stm_arcs["target"], stm_pnts.sizes["space"], idx_refpnt)
+    A = _network_relation_matrix(
+        stm_arcs["source"], stm_arcs["target"], stm_pnts.sizes["space"], idx_refpnt, sparse_mode
+    )
     if arc_estimation_method == "periodogram":
         Qyy_diag = 1 - stm_arcs["ens_coh"].values  # VCM diagonal from ensemble coherence
-    invQy = scipy.sparse.diags(1 / Qyy_diag, 0, shape=(stm_arcs.sizes["space"], stm_arcs.sizes["space"]))
+    invQy = np.diag(1 / Qyy_diag)
 
     # Initialize adjusted ambiguities storage, shape: (n_points-1, n_epochs)
     # Space dimension is n_points-1 because reference point is excluded
@@ -504,7 +523,7 @@ def _ambiguities_adjustment(
     for epoch in range(stm_pnts.sizes["time"]):
         logger.info(f"Adjusting ambiguities for epoch {epoch}")
         y = stm_arcs["ambiguities"].isel(time=epoch).data
-        acheck_ifg, echeck_ifg = _solve_float_ambiguities(A_sparse, y, invQy)
+        acheck_ifg, echeck_ifg = _solve_float_ambiguities(A, y, invQy)
         OMT = echeck_ifg.T @ invQy @ echeck_ifg
         idx_previous_arc_fix = -1  # Avoid fixing the same arc again in the same epoch
 
@@ -527,7 +546,7 @@ def _ambiguities_adjustment(
             idx_previous_arc_fix = idx_max_echeck  # record the fixed arc index
 
             # Recalculate OMT
-            acheck_ifg, echeck_ifg = _solve_float_ambiguities(A_sparse, y, invQy)
+            acheck_ifg, echeck_ifg = _solve_float_ambiguities(A, y, invQy)
             OMT = echeck_ifg.T @ invQy @ echeck_ifg
 
             logger.info(f"Fixing arc index {idx_max_echeck}, new OMT={OMT:.2e}")
@@ -584,7 +603,7 @@ def _ensure_network_min_connections(
     return stm_arcs, stm_pnts
 
 
-def _solve_float_ambiguities(A, y, invQy):
+def _solve_float_ambiguities(A, y, invQy, sparse_mode: bool = False):
     """Solve ambiguities as a float based on Least-Squares."""
     # Solve ambiguities as they are float numbers
     # This solves the equation Ax = y in least square sense
@@ -592,13 +611,17 @@ def _solve_float_ambiguities(A, y, invQy):
     # And stochastic model Qyy taken into account
     invQyA = invQy @ A  # Avoid repeated computation in vectorized lsmr
 
-    @np.vectorize(signature="(i)->(j)")
-    def lsmr(y):
-        """Least square iterative solver for sparse data."""
-        x, *_ = scipy.sparse.linalg.lsmr(invQyA, invQy @ y)
-        return x
+    if sparse_mode:
 
-    acheck = lsmr(y.T).T  # float ambiguity estimation
+        @np.vectorize(signature="(i)->(j)")
+        def lsmr(y):
+            """Least square iterative solver for sparse data."""
+            x, *_ = scipy.sparse.linalg.lsmr(invQyA, invQy @ y)
+            return x
+
+        acheck = lsmr(y.T).T  # float ambiguity estimation
+    else:
+        acheck = np.linalg.inv(A.T @ invQy @ A) @ (A.T @ invQy @ y)
     echeck = y - A @ acheck  # residuals estimation
 
     return acheck, echeck
@@ -789,7 +812,7 @@ def _compute_phase_difference(
     return d_phase
 
 
-def _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt):
+def _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt, sparse_mode: bool = False):
     """Create the network relation matrix A as a sparse matrix.
 
     A network relation matrix has shape (n_arcs, n_points - 1).
@@ -810,6 +833,8 @@ def _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt):
         Total number of points in the network.
     idx_refpnt : int
         Index of the reference point to be excluded from the matrix. This index assumes 0-based indexing of the points.
+    sparse_mode : bool
+        Whether to return the matrix in sparse format. If False, returns a dense numpy array.
 
     References
     ----------
@@ -817,22 +842,25 @@ def _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt):
     DOI: 10.1007/978-1-4020-4723-7
     """
     n_arcs = len(idx_source)
-    A_sparse_start = sparse.COO(
+    A_start = sparse.COO(
         (np.arange(n_arcs), idx_source),
         np.full_like(np.arange(n_arcs), -1, dtype=np.int8),
         shape=(n_arcs, n_points),
     )
-    A_sparse_end = sparse.COO(
+    A_end = sparse.COO(
         (np.arange(n_arcs), idx_target),
         np.full_like(np.arange(n_arcs), 1, dtype=np.int8),
         shape=(n_arcs, n_points),
     )
-    A_sparse = A_sparse_start + A_sparse_end
+    A = A_start + A_end
 
     # Convert to Compressed Sparse Row (CSR) matrix for efficient arithmetic and matrix vector operations
-    A_sparse = A_sparse.tocsr()
+    A = A.tocsr()
 
     # Remove reference point column
-    A_sparse = scipy.sparse.hstack([A_sparse[:, :idx_refpnt], A_sparse[:, idx_refpnt + 1 :]])
+    A = scipy.sparse.hstack([A[:, :idx_refpnt], A[:, idx_refpnt + 1 :]])
 
-    return A_sparse
+    if not sparse_mode:
+        A = np.array(A.todense())
+
+    return A
