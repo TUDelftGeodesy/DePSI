@@ -35,6 +35,7 @@ def spatial_unwrapping(
     idx_refpnt: int | None = None,
     min_arc_connections: int = 3,
     parallel: bool = False,
+    ensure_network_while_mht: bool = False,
 ) -> xr.Dataset:
     """Perform spatial unwrapping on the given STM of arcs and points.
 
@@ -78,6 +79,8 @@ def spatial_unwrapping(
         Minimum number of connections for arcs, by default 3
     parallel : bool, optional
         Whether to use parallel processing, by default False
+    ensure_network_while_mht : bool, optional
+        Whether to ensure minimum connections in MHT network adjustment, by default False
 
     Returns
     -------
@@ -133,6 +136,7 @@ def spatial_unwrapping(
         azimuth_refpnt,
         range_refpnt,
         Qyy_diag=np.ones(stm_arcs.sizes["space"]),
+        ensure_network_while_mht=ensure_network_while_mht,
     )
 
     # Get indices of selected arcs based on uid
@@ -268,6 +272,7 @@ def _mht_network_adjustment(
     azimuth_refpnt: int | float,
     range_refpnt: int | float,
     Qyy_diag: np.ndarray,
+    ensure_network_while_mht: bool,
 ) -> (xr.Dataset, xr.Dataset):
     """Adjust the network by removing bad arcs/points by applying MHT.
 
@@ -288,6 +293,8 @@ def _mht_network_adjustment(
         Range of the reference point.
     Qyy_diag : np.ndarray
         Diagonal array of the VCM of the observations.
+    ensure_network_while_mht : bool
+        Whether to ensure minimum connections in MHT network adjustment.
 
     Returns
     -------
@@ -343,10 +350,14 @@ def _mht_network_adjustment(
             # Remove all arcs connects to the point to remove
             stm_arcs_updated = stm_arcs_updated.isel(space=idx_arcs_selected)
 
-        # Ensure all points in the network have at least 3 connections
+        if ensure_network_while_mht:
+            min_connections_to_ensure = 3  # Ensure all points in the network have at least 3 connections
+        else:
+            min_connections_to_ensure = 1  # Just ensure all points are connected in the network
+
         # This makes sure all points can be tested in case of disagreement between arcs
         stm_arcs_updated, stm_updated = _ensure_network_min_connections(
-            stm_arcs_updated, stm_updated, min_connections=3
+            stm_arcs_updated, stm_updated, min_connections=min_connections_to_ensure
         )
 
         # Make sure the reference point is still in stm_updated, by checking its azimuth and range
