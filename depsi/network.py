@@ -468,6 +468,8 @@ def _mht_network_adjustment_reject_one(
                 np.diag(echeck_point.T @ np.linalg.inv(Qecheck_point) @ echeck_point)
             )  # Before adjust for degree of freedom
         except np.linalg.LinAlgError:
+            # In case Qecheck_point is singular
+            # Assign a very small value to avoid selecting this point for removal
             Tq = -np.inf
         TTq[pnt_idx] = Tq / kb_dict[len(arcs_idx)]
     TTqmax = max(TTq)
