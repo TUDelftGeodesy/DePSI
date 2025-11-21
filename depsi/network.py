@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # Constants for MHT in network integration
 ALPHA0 = 0.1  # Significance level for 1-dimensional test
 GAMMA0 = 0.5  # Power of the test
-OMT_THRES = 1e-7  # Overall Model Test threshold for accepting the network
+OMT_THRES = 1e-10  # Overall Model Test threshold for accepting the network
 # In arc/point rejection phase, if OMT < OMT_THRES, stop rejection iteration
 # In ambiguity fixing phase, if OMT < OMT_THRES, stop fixing iteration
 # In arc/point rejection phase this is hardly triggered
@@ -157,6 +157,11 @@ def spatial_unwrapping(
         sparse_mode,
         arc_estimation_method,
     )
+
+    # Update idx_refpnt after MHT adjustment
+    idx_refpnt = np.where(
+        (stm_pnts_adjusted["azimuth"].values == azimuth_refpnt) & (stm_pnts_adjusted["range"].values == range_refpnt)
+    )[0][0]
 
     # Adjust ambiguities to fix unwrapping errors
     stm_arcs_output, stm_pnts_output = _ambiguities_adjustment(
@@ -350,7 +355,6 @@ def _mht_network_adjustment(
         # 1) overall model test pass: OMT < OMT_THRES (very rare case)
         # 2) all arcs statistics smaller than threshold: max(TT1) < TT1_THRES (most common case)
         # 3) maximum number of iterations reached (fail case)
-
         logger.info(f"MHT iteration {niter}: OMT={OMT:.2e}")
 
         # Because OMT failed, choose from two Ha: 1) remove an arc; 2) remove a point
@@ -380,7 +384,7 @@ def _mht_network_adjustment(
         if ensure_network_while_mht:
             min_connections_to_ensure = 3  # Ensure all points in the network have at least 3 connections
         else:
-            min_connections_to_ensure = 1  # Just ensure all points are connected in the network
+            min_connections_to_ensure = 2  # Just ensure all points are connected in the network
 
         # This makes sure all points can be tested in case of disagreement between arcs
         stm_arcs_updated, stm_updated = _ensure_network_min_connections(
@@ -398,7 +402,7 @@ def _mht_network_adjustment(
 
         # Get indices of selected arcs based on uid
         if arc_estimation_method == "periodogram":
-            Qyy_diag = 1 - stm_arcs["ens_coh"].values  # VCM diagonal from ensemble coherence
+            Qyy_diag = 1 - stm_arcs_updated["ens_coh"].values  # VCM diagonal from ensemble coherence
         invQy = np.diag(1 / Qyy_diag)
 
         A = _network_relation_matrix(
@@ -459,9 +463,12 @@ def _mht_network_adjustment_reject_one(
         Qecheck_point = Qecheck[arcs_idx, :][:, arcs_idx]  # Relevant Qecheck of this point
 
         # Compute the test statistic for this point
-        Tq = np.sum(
-            np.diag(echeck_point.T @ np.linalg.inv(Qecheck_point) @ echeck_point)
-        )  # Before adjust for degree of freedom
+        try:
+            Tq = np.sum(
+                np.diag(echeck_point.T @ np.linalg.inv(Qecheck_point) @ echeck_point)
+            )  # Before adjust for degree of freedom
+        except np.linalg.LinAlgError:
+            Tq = -np.inf
         TTq[pnt_idx] = Tq / kb_dict[len(arcs_idx)]
     TTqmax = max(TTq)
 
