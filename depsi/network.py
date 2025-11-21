@@ -140,6 +140,11 @@ def spatial_unwrapping(
         idx_refpnt = stm_arcs["source"].isel(space=idx_arc_max_coh).values
         azimuth_refpnt = stm_pnts["azimuth"].isel(space=idx_refpnt).values
         range_refpnt = stm_pnts["range"].isel(space=idx_refpnt).values
+    else:
+        # Get reference point from radar coordinates
+        idx_refpnt = np.where(
+            (stm_pnts["azimuth"].values == azimuth_refpnt) & (stm_pnts["range"].values == range_refpnt)
+        )[0][0]
 
     # Adjust the network by removing bad arcs/points using MHT
     stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adjustment(
@@ -392,10 +397,8 @@ def _mht_network_adjustment(
         idx_refpnt = np.where(mask_refpnt)[0][0]  # Update idx_refpnt
 
         # Get indices of selected arcs based on uid
-        idx_arcs_selected = np.where(stm_arcs_updated["uid"].isin(stm_arcs["uid"]))[0]
-
-        # Update the functional and stochastic model after arc/pnt removal
-        Qyy_diag = Qyy_diag[idx_arcs_selected]  # select relevant arcs in VCM
+        if arc_estimation_method == "periodogram":
+            Qyy_diag = 1 - stm_arcs["ens_coh"].values  # VCM diagonal from ensemble coherence
         invQy = np.diag(1 / Qyy_diag)
 
         A = _network_relation_matrix(
