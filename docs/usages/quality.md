@@ -8,3 +8,4 @@ To add from point_quality.py:
 - Outlier detection
 - Partitioning
 - stm_add_incremental_recal_nad_nmad
+- Spatio-temporal consistency

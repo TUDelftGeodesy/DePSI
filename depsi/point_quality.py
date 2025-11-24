@@ -861,5 +861,5 @@ def compute_spatiotemporal_consistency(
             buffer_ts_stcs = np.std(buffer_ts_dd, axis=1).flatten()
             stcs.append(min(buffer_ts_stcs) * 1000)  # * 1000 to convert from meters to millimeters
 
-    stm.assign({"stc": (["space"], stcs)})
+    stm = stm.assign({"stc": (["space"], stcs)})
     return stm
