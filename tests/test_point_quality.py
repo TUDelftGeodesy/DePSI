@@ -4,10 +4,10 @@ import xarray as xr
 
 from depsi.point_quality import compute_spatiotemporal_consistency
 
-nr.seed(42)
-
 
 def test_stc():
+    nr.seed(42)
+
     stm = xr.Dataset(
         data_vars={
             "amplitude": (("space", "time"), np.ones((5, 10))),
