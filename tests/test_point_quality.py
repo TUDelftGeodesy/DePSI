@@ -6,7 +6,7 @@ from depsi.point_quality import compute_spatiotemporal_consistency
 
 
 def test_stc():
-    nr.seed(42)
+    rng = nr.default_rng(42)
 
     stm = xr.Dataset(
         data_vars={
