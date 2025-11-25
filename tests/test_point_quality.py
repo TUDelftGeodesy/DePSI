@@ -11,7 +11,7 @@ def test_stc():
     stm = xr.Dataset(
         data_vars={
             "amplitude": (("space", "time"), np.ones((5, 10))),
-            "ts_los": (("space", "time"), nr.random((5, 10))),
+            "ts_los": (("space", "time"), rng.random((5, 10))),
             "rd_x": (("space"), np.array([150000, 150010, 150100, 150200, 150300])),
             "rd_y": (("space"), np.array([450000, 450010, 450100, 450200, 450300])),
         },
