@@ -11,11 +11,14 @@ import scipy
 import sparse
 import xarray as xr
 from scipy.spatial import Delaunay, KDTree, distance_matrix
+from sklearn.neighbors import BallTree
 
 from depsi.arc_estimation import arc_estimation_control_network
 from depsi.utils import get_distance
 
 logger = logging.getLogger(__name__)
+
+EARTH_RADIUS = 6378136  # m
 
 
 def form_network(
@@ -434,18 +437,29 @@ def find_points_within_buffer(
     x_pnts = np.atleast_1d(x_pnts)
     y_pnts = np.atleast_1d(y_pnts)
 
-    within_buffer = np.zeros(len(x_coords), dtype=bool)
-
-    # Check for every point, which other points fall within the buffer around it
-    for tx, ty in zip(x_pnts, y_pnts, strict=True):
-        distances = np.array(
-            [get_distance([tx, ty], [px, py], coordinate_type) for px, py in zip(x_coords, y_coords, strict=True)]
+    if coordinate_type == "euclidean":
+        # could possibly also be a KDTree but for consistency inside the function the minkowski metric does Euclidean
+        tree = BallTree([[x, y] for x, y in zip(x_coords, y_coords, strict=True)], metric="minkowski")
+        search_radius = buffer_radius
+        search_points = [[x, y] for x, y in zip(x_pnts, y_pnts, strict=True)]
+    elif coordinate_type == "geographic":
+        # the geographic tree assumes an Earth radius of 1, so we need to divide the search radius by the radius of
+        # the Earth
+        # It also expects input in radians instead of degrees, and first latitude (y), then longitude (x)
+        tree = BallTree(
+            [[np.radians(y), np.radians(x)] for x, y in zip(x_coords, y_coords, strict=True)], metric="haversine"
         )
+        search_radius = buffer_radius / EARTH_RADIUS
+        search_points = [[np.radians(y), np.radians(x)] for x, y in zip(x_pnts, y_pnts, strict=True)]
+    else:
+        raise ValueError(f"Unknown coordinate type {coordinate_type}! Known are euclidean and geographic.")
 
-        within_buffer |= distances <= buffer_radius  # 'OR' operation
-
-    # Find the indices of the points that are within the buffer
-    indices = np.where(within_buffer)[0]
+    res_indices = tree.query_radius(search_points, search_radius)
+    all_indices = []
+    for i in res_indices:  # flatten won't work since res_indices is an irregularly shaped numpy array
+        for j in i:
+            all_indices.append(j)
+    indices = np.array(list(sorted(list(set(all_indices)))))
 
     return indices
 
