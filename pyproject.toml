@@ -12,6 +12,9 @@ dependencies = [
     "sarxarray",
     "stmtools",
     "ruptures",
+    "networkx",
+    "drama",
+    "asf_search",
     "sparse"
 ]
 description = "Python package for interferometric synthetic aperture radar (InSAR) time series processing."
@@ -49,6 +52,7 @@ docs = [
 ]
 demo = [
     "jupyterlab",
+    "contextily",
 ]
 
 [tool.setuptools]

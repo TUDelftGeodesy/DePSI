@@ -1,5 +1,8 @@
+import math
 import os
+from typing import Literal
 
+import asf_search as asf
 import dask.array as da
 import pyproj
 
@@ -24,6 +27,8 @@ import geopandas
 import numpy as np
 import pytz
 import xarray as xr
+
+EARTH_RADIUS = 6378136  # m
 
 
 def wrap_phase(phs_abs):
@@ -124,7 +129,52 @@ def _orbit_fit(orbit, verbose=0, der=True):
     return orbit_fit
 
 
-def npdatetime64_to_datetime(date: np.datetime64) -> datetime:
+def get_distance(
+    source: list | tuple | np.ndarray,
+    target: list | tuple | np.ndarray,
+    mode: Literal["euclidean", "geographic"] = "euclidean",
+):
+    """Calculate the distance between two points.
+
+    The Euclidean mode calculates distance on a 2D XY-plane. The Geographic mode approximates the Earth as a sphere
+    with radius 6378136 meter (the polar radius). On long north-south oriented arcs, distance errors of up to 0.3% are
+    possible.
+
+    Parameters
+    ----------
+    source: list | tuple | np.ndarray
+        The source point, formatted as (x, y) / (lon, lat)
+    target: list | tuple | np.ndarray
+        The target point, formatted as (x, y) / (lon, lat)
+    mode: Literal["euclidean", "geographic"], default "euclidean"
+        Whether the source and target points are given in (x, y) (units meters) or (lon, lat) (units degrees)
+
+    Returns
+    -------
+        The distance between the two points in meters.
+    """
+    if mode == "euclidean":
+        return math.dist(source, target)
+    elif mode == "geographic":
+        # this is the Haversine formula
+        lat1 = source[1]
+        lat2 = target[1]
+        dphi = np.radians(lat1 - lat2)
+        dlambda = np.radians(source[0] - target[0])
+        dist = (
+            2
+            * EARTH_RADIUS
+            * np.arcsin(
+                np.sqrt(
+                    (1 - np.cos(dphi) + np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * (1 - np.cos(dlambda))) / 2
+                )
+            )
+        )
+        return dist
+    raise ValueError(f"Unknown mode {mode}, only know euclidean and geographic!")
+
+
+def npdatetime64_to_datetime(date: np.datetime64, tz_aware: bool = True) -> datetime:
     """Convert a numpy datetime64 object to a python datetime object.
 
     Parses the np.datetime64 object into a datetime object.
@@ -133,6 +183,8 @@ def npdatetime64_to_datetime(date: np.datetime64) -> datetime:
     ----------
     date : np.datetime64
       the date to be converted
+    tz_aware: bool, default True
+      whether the returned datetime object should be timezone-aware or not
 
     Returns
     -------
@@ -140,7 +192,10 @@ def npdatetime64_to_datetime(date: np.datetime64) -> datetime:
       The same date converted to a datetime object
     """
     timestamp = (date - np.datetime64("1970-01-01T00:00:00")) / np.timedelta64(1, "s")
-    return datetime.fromtimestamp(timestamp, UTC)
+    dt_obj = datetime.fromtimestamp(timestamp, UTC)
+    if not tz_aware:
+        dt_obj = datetime.strptime(dt_obj.strftime("%Y%m%d:%H%M%S"), "%Y%m%d:%H%M%S")
+    return dt_obj
 
 
 def _get_aoi_shapefile_bounding_box(aoi_filename: str) -> tuple:
@@ -306,7 +361,22 @@ def crop_slc_spacetime(
             & (slcs["lon"] >= min(bounding_box[0]))
             & (slcs["lon"] <= max(bounding_box[0]))
         )
-        slcs = slcs.where(space_mask.compute(), drop=True)
+
+        comp_space_mask = space_mask.compute()
+        az_sum = comp_space_mask.sum(dim="azimuth")
+        rg_sum = comp_space_mask.sum(dim="range")
+
+        # first and last non zero
+        min_range, max_range = (
+            az_sum.where(az_sum > 0, drop=True)["range"].min().values,
+            az_sum.where(az_sum > 0, drop=True)["range"].max().values,
+        )
+        min_azimuth, max_azimuth = (
+            rg_sum.where(rg_sum > 0, drop=True)["azimuth"].min().values,
+            rg_sum.where(rg_sum > 0, drop=True)["azimuth"].max().values,
+        )
+        # data at original locations not nan
+        slcs = slcs.sel(azimuth=range(min_azimuth, max_azimuth), range=range(min_range, max_range))
 
     return slcs
 
@@ -478,3 +548,62 @@ def stm_compute_single_time_differences(
     stm = stm.assign({"sd_phase": (["space", "time"], sd_phase.data)})
 
     return stm
+
+
+def identify_s1_orbits_in_aoi(lon: list | np.ndarray, lat: list | np.ndarray) -> tuple[list[str], dict]:
+    """Identify the Sentinel-1 orbit numbers and directions crossing a AoI.
+
+    Parameters
+    ----------
+    lon: list | np.ndarray
+        List of all the longitudes of all the points of interest in the AoI
+    lat: list | np.ndarray
+        List of all the latitudes of all the points of interest in the AoI
+
+    Returns
+    -------
+    list
+        The orbits overlapping with the AoI
+    dict
+        The footprints of the overlapping SLCs per track
+    """
+    bbox = [[np.min(lon), np.max(lon)], [np.min(lat), np.max(lat)]]
+    wkt = (
+        f"POLYGON(("
+        f"{bbox[0][0]} {bbox[1][0]}, "
+        f"{bbox[0][1]} {bbox[1][0]}, "
+        f"{bbox[0][1]} {bbox[1][1]}, "
+        f"{bbox[0][0]} {bbox[1][1]}, "
+        f"{bbox[0][0]} {bbox[1][0]}))"
+    )
+    slcs = None
+    counter = 0
+    while slcs is None:
+        try:
+            slcs = asf.geo_search(
+                intersectsWith=wkt,
+                platform=asf.PLATFORM.SENTINEL1,
+                beamMode="IW",
+                processingLevel="SLC",
+                start="one month ago",
+                end="now",
+            )
+        except (asf.exceptions.ASFSearch5xxError, asf.exceptions.ASFSearchError, TimeoutError):
+            counter += 1
+            print(f"ASF encountered an internal error. Retrying... (#{counter})")
+
+    orbits = [
+        f"s1_{slc.properties['flightDirection'].lower().replace('e', '')[:3]}_t{slc.properties['pathNumber']:0>3d}"
+        for slc in slcs
+    ]
+    filtered_orbits = list(sorted(list(set(orbits))))
+
+    extents = [slc.geojson()["geometry"]["coordinates"][0] for slc in slcs]
+    footprints = {}
+    for orbit in filtered_orbits:
+        footprints[orbit] = []
+
+    for extent in range(len(extents)):
+        footprints[orbits[extent]].append(extents[extent])
+
+    return filtered_orbits, footprints
