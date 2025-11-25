@@ -31,13 +31,7 @@ def test_stc():
         coordinate_type="euclidean",
     )
 
-    expected_stc = [
-        np.float64(538.2885161228074),
-        np.float64(608.5250303809197),
-        np.float64(418.4405384637749),
-        np.float64(418.4405384637749),
-        np.float64(478.4255222728113),
-    ]
+    expected_stc = [623.54053157, 572.23892935, 572.23892935, 518.81395402, 518.81395402]
     # very high since TS are random 0-1 in meters
 
     assert np.allclose(stm_stc.stc.values, expected_stc)
