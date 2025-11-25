@@ -614,7 +614,7 @@ def _ensure_network_min_connections(
     while stm_pnts.sizes["space"] != previous_size:
         previous_size = stm_pnts.sizes["space"]
         # Remove points with <=2 connections
-        stm_pnts, stm_arcs = remove_network_points_min_connections(stm_pnts, stm_arcs, min_connections)
+        stm_pnts, stm_arcs = _remove_network_points_min_connections(stm_pnts, stm_arcs, min_connections)
 
     return stm_arcs, stm_pnts
 
@@ -643,7 +643,7 @@ def _solve_float_ambiguities(A, y, invQy, sparse_mode: bool = False):
     return acheck, echeck
 
 
-def remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, min_connections: int) -> xr.Dataset:
+def _remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, min_connections: int) -> xr.Dataset:
     """Remove points which have less than min_connections arc connections.
 
     The following steps are performed:
