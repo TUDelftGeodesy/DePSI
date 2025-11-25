@@ -246,4 +246,32 @@ class TestNetworkUnwrap:
         A_exp = np.delete(A_exp, idx_refpnt, axis=1)  # Remove reference point column
 
         assert A.shape == A_exp.shape
+        assert np.all(A == A_exp)
+
+    @pytest.mark.parametrize(
+        ["idx_source", "idx_target", "n_points", "idx_refpnt"],
+        [
+            (np.array([0, 1, 2]), np.array([1, 2, 3]), 4, 0),  # 4 points, 3 arcs
+            (np.array([0, 1, 2]), np.array([1, 2, 3]), 7, 0),  # 7 points, 3 arcs
+            (np.array([1, 1, 2, 2]), np.array([0, 2, 1, 3]), 4, 2),  # 4 points, 4 arcs, unsorted
+            (np.array([0, 0, 0, 1, 1, 2, 2]), np.array([1, 2, 3, 3, 4, 3, 4]), 5, 3),  # 5 points, 6 arcs
+        ],
+    )
+    def test_init_network_relation_matrix_sparse(
+        self,
+        idx_source,
+        idx_target,
+        n_points,
+        idx_refpnt,
+    ):
+        A = _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt, sparse_mode=True)
+
+        # Create expected matrix in a for loop
+        A_exp = np.zeros((idx_source.shape[0], n_points), dtype=int)
+        for i, (src, tgt) in enumerate(zip(idx_source, idx_target, strict=False)):
+            A_exp[i, src] = -1
+            A_exp[i, tgt] = 1
+        A_exp = np.delete(A_exp, idx_refpnt, axis=1)  # Remove reference point column
+
+        assert A.shape == A_exp.shape
         assert np.all(A.todense() == A_exp)
