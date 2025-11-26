@@ -76,7 +76,8 @@ def spatial_unwrapping(
     threshold_arc_quality : float, optional
         Threshold for arc quality, by default 0.5
     idx_refpnt : int | None, optional
-        Index of the reference point in stm_pnts. If None, the source point of the arc with highest quality is selected as the reference point.
+        Index of the reference point in stm_pnts. If None, the source point of the arc with highest quality is selected
+        as the reference point.
     min_arc_connections : int, optional
         Minimum number of connections for arcs, by default 3
     parallel : bool, optional
@@ -335,9 +336,7 @@ def _mht_network_adjustment(
     if arc_estimation_method == "periodogram":
         Qyy_diag = 1 - stm_arcs["ens_coh"].values
     else:
-        raise NotImplementedError(
-            f"arc_estimation_method '{arc_estimation_method}' is not supported."
-        )
+        raise NotImplementedError(f"arc_estimation_method '{arc_estimation_method}' is not supported.")
     invQy = np.diag(1 / Qyy_diag)
 
     _, echeck = _solve_float_ambiguities(A, stm_arcs["ambiguities"].data, invQy)  # Estimate initial residual
@@ -428,7 +427,7 @@ def _mht_network_adjustment(
 
 
 def _mht_network_adjustment_reject_one(
-    A: np.array | scipy.sparse.spmatrix,
+    A: np.ndarray | scipy.sparse.spmatrix,
     y: np.ndarray,
     Qyy_diag: np.ndarray,
     k1: float,
@@ -646,7 +645,9 @@ def _solve_float_ambiguities(A, y, invQy, sparse_mode: bool = False):
     return acheck, echeck
 
 
-def _remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, min_connections: int) -> tuple[xr.Dataset, xr.Dataset]:
+def _remove_network_points_min_connections(
+    stm: xr.Dataset, arcs: xr.Dataset, min_connections: int
+) -> tuple[xr.Dataset, xr.Dataset]:
     """Remove points which have less than min_connections arc connections.
 
     The following steps are performed:
