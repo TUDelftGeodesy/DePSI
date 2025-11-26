@@ -10,6 +10,7 @@ from depsi.network import (
     _network_relation_matrix,
     _remove_network_points_min_connections,
     form_network,
+    spatial_unwrapping,
 )
 
 
@@ -220,6 +221,93 @@ class TestNetworkEnsure:
 
 
 class TestNetworkUnwrap:
+    @pytest.mark.parametrize(
+        ["id_ref", "idx_err_space", "idx_err_time", "error_values"],
+        [
+            (3, [], [], []),  # No error
+            (3, [2, 11], [7, 13], [-1, 1]),  # Two errors
+            (9, [0, 4, 8], [5, 10, 15], [1, -1, 1]),  # Three errors
+        ],
+    )
+    def test_spatial_unwrap(self, id_ref, idx_err_space, idx_err_time, error_values):
+        """Test spatial unwrapping based on arc ambiguities.
+
+        Build points with true value of ambiguities.
+        Construct arcs with arc ambiguities derived from true ambiguities.
+        Add tiny errors to arc ambiguities.
+
+        Then perform spatial unwrapping with a specified reference point.
+
+        The spatial unwrapping should be able to solve the point ambiguities correctly.
+        The solved ambiguities should w.r.t. the reference point.
+        """
+        # Set up test parameters
+        rng = np.random.default_rng(42)
+        Npoints = 17  # Number of points
+        Ntimes = 29  # Number of epochs
+        time = np.arange(Ntimes)
+        complex = rng.uniform(-1, 1, (Npoints, Ntimes)) + 1j * rng.uniform(-1, 1, (Npoints, Ntimes))
+        phase = np.angle(complex)
+        h2ph = rng.uniform(1e3, 1e4, (Npoints, Ntimes))
+
+        # Create the points
+        stm_pnts = xr.Dataset(
+            data_vars={
+                "phase": (("space", "time"), phase),
+                "h2ph": (("space", "time"), h2ph),
+                "complex": (("space", "time"), complex),
+                "ambiguities_true": (
+                    ("space", "time"),
+                    np.round(rng.normal(0, 0.5, (Npoints, Ntimes))).astype(int).clip(-1, 1),
+                ),
+            },
+            coords={
+                "space": ("space", np.arange(Npoints)),
+                "time": ("time", time),
+                "azimuth": ("space", np.round(rng.normal(0, 10, (Npoints))).astype(int)),
+                "range": ("space", np.round(rng.normal(0, 10, (Npoints))).astype(int)),
+            },
+        )
+
+        # Construct arcs based on true ambiguities
+        # All arcs by default have 0.99 ens_coh
+        stm_arcs = form_network(
+            stm_pnts,
+            key_xcrds="azimuth",
+            key_ycrds="range",
+            key_phase="phase",
+            key_h2ph="h2ph",
+            key_Btemp="time",
+            network_method="redundant",
+            max_length=30,
+        )
+        ens_coh = np.zeros((stm_arcs.sizes["space"],)) + 0.99
+        stm_arcs["ens_coh"] = (("space"), ens_coh)
+
+        # Compute arc ambiguities from true point ambiguities
+        ambigs = (
+            stm_pnts["ambiguities_true"].values[stm_arcs["target"].values, :]
+            - stm_pnts["ambiguities_true"].values[stm_arcs["source"].values, :]
+        )
+        # Introduce some errors in ambiguities
+        ambigs_errors = np.zeros_like(ambigs)
+        for idx_s, idx_t, err in zip(idx_err_space, idx_err_time, error_values, strict=False):
+            ambigs_errors[idx_s, idx_t] += err
+        stm_arcs["ambiguities"] = (("space", "time"), ambigs + ambigs_errors)
+
+        stm_arcs_output, stm_pnts_output = spatial_unwrapping(stm_pnts, stm_arcs, idx_refpnt=id_ref)
+
+        # Verify output dimensions, no points should be rejected
+        assert stm_pnts_output.sizes["space"] == stm_pnts.sizes["space"]
+
+        # Check that the solved ambiguities match the true ambiguities w.r.t. the reference point
+        assert np.allclose(
+            stm_pnts_output["ambiguities"].values
+            - stm_pnts["ambiguities_true"].values
+            + np.tile(stm_pnts["ambiguities_true"].isel(space=id_ref).values, (stm_pnts.sizes["space"], 1)),
+            0,
+        )
+
     @pytest.mark.parametrize(
         ["idx_source", "idx_target", "n_points", "idx_refpnt"],
         [
