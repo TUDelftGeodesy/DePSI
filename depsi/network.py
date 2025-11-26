@@ -359,7 +359,7 @@ def _mht_network_adjustment(
         # 1) overall model test pass: OMT < OMT_THRES (very rare case)
         # 2) all arcs statistics smaller than threshold: max(TT1) < TT1_THRES (most common case)
         # 3) maximum number of iterations reached (fail case)
-        logger.info(f"MHT iteration {niter}: OMT={OMT:.2e}")
+        logger.debug(f"MHT iteration {niter}: OMT={OMT:.2e}")
 
         # Because OMT failed, choose from two Ha: 1) remove an arc; 2) remove a point
         # Decision is made based on flag_rm
@@ -368,13 +368,13 @@ def _mht_network_adjustment(
         )
 
         if flag_rm == 0:  # remove arcs
-            logger.info(f"MHT iteration {niter}: removing arc index {idx_rm} with TT1={TT1max:.2f}")
+            logger.debug(f"MHT iteration {niter}: removing arc index {idx_rm} with TT1={TT1max:.2f}")
             stm_arcs_updated = stm_arcs_updated.drop_isel(space=idx_rm)  # Remove the arc
         elif flag_rm == 1:  # remove points
             if idx_rm >= idx_refpnt:
                 idx_rm += 1  # Adjust index due to removed reference point column in A
 
-            logger.info(f"MHT iteration {niter}: removing point index {idx_rm} with TT1={TT1max:.2f}")
+            logger.debug(f"MHT iteration {niter}: removing point index {idx_rm} with TT1={TT1max:.2f}")
 
             # Removing points is achieved by removing all arcs connects to the point
             # Later the points will be actually removed when ensuring minimum connections
@@ -537,7 +537,7 @@ def _ambiguities_adjustment(
     stm_arcs_updated = stm_arcs.copy()
     stm_pnts_updated = stm_pnts.copy()
     for epoch in range(stm_pnts.sizes["time"]):
-        logger.info(f"Adjusting ambiguities for epoch {epoch}")
+        logger.debug(f"Adjusting ambiguities for epoch {epoch}")
         y = stm_arcs["ambiguities"].isel(time=epoch).data
         acheck_ifg, echeck_ifg = _solve_float_ambiguities(A, y, invQy)
         OMT = echeck_ifg.T @ invQy @ echeck_ifg
@@ -565,7 +565,7 @@ def _ambiguities_adjustment(
             acheck_ifg, echeck_ifg = _solve_float_ambiguities(A, y, invQy)
             OMT = echeck_ifg.T @ invQy @ echeck_ifg
 
-            logger.info(f"Fixing arc index {idx_max_echeck}, new OMT={OMT:.2e}")
+            logger.debug(f"Fixing arc index {idx_max_echeck}, new OMT={OMT:.2e}")
 
         stm_arcs_updated["ambiguities"][:, epoch] = y  # Store adjusted arc ambiguities
         acheck[:, epoch] = acheck_ifg  # Store adjusted point ambiguities
