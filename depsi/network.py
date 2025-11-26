@@ -273,6 +273,9 @@ def form_network(
     # Generate a unique identifier of arcs based on source and target for easy indexing
     # This is because when updating network, points can be removed and reindexed
     # Therefore we cannot use 2d index (source, target) as uid
+    # NOTE: This encoding is safe for typical networks (<10,000 points, <100,000 arcs).
+    # For 10,000 points, max UID ≈ 1e9, well within int64 max (2^63-1 ≈ 9.22e18), providing
+    # a safety margin of >9 billion times. Even for 1M points, safety margin is >900,000x.
     scale = 10 ** (math.floor(math.log10(stm.sizes["space"])) + 1)  # Scale to ensure no overlap
     uid = scale * (np.array(source_idx) + 1) + (np.array(target_idx) + 1)  # Plus one to avoid zero uid
     uid = uid.astype(np.int64)
