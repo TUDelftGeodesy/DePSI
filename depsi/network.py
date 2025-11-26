@@ -13,7 +13,7 @@ import xarray as xr
 from scipy.spatial import Delaunay, KDTree, distance_matrix
 
 from depsi.arc_estimation import arc_estimation_control_network
-from depsi.mht_utils import pretest
+from depsi.stats import pretest
 from depsi.utils import get_distance
 
 logger = logging.getLogger(__name__)

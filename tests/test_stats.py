@@ -1,6 +1,6 @@
 import pytest
 
-from depsi.mht_utils import lambda0, pretest
+from depsi.stats import lambda0, pretest
 
 
 @pytest.mark.parametrize(
