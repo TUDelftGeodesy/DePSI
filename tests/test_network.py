@@ -225,8 +225,8 @@ class TestNetworkUnwrap:
         ["id_ref", "idx_err_space", "idx_err_time", "error_values"],
         [
             (3, [], [], []),  # No error
-            (3, [2, 11], [7, 13], [-1, 1]),  # Two errors
-            (9, [0, 4, 8], [5, 10, 15], [1, -1, 1]),  # Three errors
+            (3, [2, 11], [7, 13], [-1, 1]),  # Two errors in arc ambiguities
+            (9, [0, 4, 8], [5, 10, 15], [1, -100, 1]),  # Three errors, one large, but should be corrected
         ],
     )
     def test_spatial_unwrap(self, id_ref, idx_err_space, idx_err_time, error_values):
@@ -234,7 +234,7 @@ class TestNetworkUnwrap:
 
         Build points with true value of ambiguities.
         Construct arcs with arc ambiguities derived from true ambiguities.
-        Add tiny errors to arc ambiguities.
+        Add tiny errors to arc ambiguities at certain space/time indices.
 
         Then perform spatial unwrapping with a specified reference point.
 
@@ -295,7 +295,7 @@ class TestNetworkUnwrap:
             ambigs_errors[idx_s, idx_t] += err
         stm_arcs["ambiguities"] = (("space", "time"), ambigs + ambigs_errors)
 
-        stm_arcs_output, stm_pnts_output = spatial_unwrapping(stm_pnts, stm_arcs, idx_refpnt=id_ref)
+        stm_arcs_output, stm_pnts_output, id_ref_output = spatial_unwrapping(stm_pnts, stm_arcs, idx_refpnt=id_ref)
 
         # Verify output dimensions, no points should be rejected
         assert stm_pnts_output.sizes["space"] == stm_pnts.sizes["space"]
@@ -307,6 +307,9 @@ class TestNetworkUnwrap:
             + np.tile(stm_pnts["ambiguities_true"].isel(space=id_ref).values, (stm_pnts.sizes["space"], 1)),
             0,
         )
+
+        # Check that the reference point index remains the same
+        assert id_ref_output == id_ref
 
     @pytest.mark.parametrize(
         ["idx_source", "idx_target", "n_points", "idx_refpnt"],

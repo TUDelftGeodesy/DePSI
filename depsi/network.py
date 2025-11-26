@@ -41,7 +41,7 @@ def spatial_unwrapping(
     sparse_mode: bool = False,
     ensure_network_while_mht: bool = False,
     arc_estimation_method: Literal["periodogram"] = "periodogram",
-) -> xr.Dataset:
+) -> (xr.Dataset, xr.Dataset, int):
     """Perform spatial unwrapping on the given STM of arcs and points.
 
     This function estimates the integer ambiguities of the points from arc ambiguities. It assumes a network
@@ -94,8 +94,8 @@ def spatial_unwrapping(
 
     Returns
     -------
-    xr.Dataset, xr.Dataset
-        Updated Space-Time Matrix of arcs and points after spatial unwrapping.
+    xr.Dataset, xr.Dataset, int
+        Updated Space-Time Matrix of arcs, points, and index of the reference point in updated points.
 
     References
     ----------
@@ -168,7 +168,7 @@ def spatial_unwrapping(
     )[0][0]
 
     # Adjust ambiguities to fix unwrapping errors
-    stm_arcs_output, stm_pnts_output = _ambiguities_adjustment(
+    stm_arcs_output, stm_pnts_output, idx_refpnt = _ambiguities_adjustment(
         stm_arcs_adjusted,
         stm_pnts_adjusted,
         idx_refpnt,
@@ -176,7 +176,7 @@ def spatial_unwrapping(
         arc_estimation_method,
     )
 
-    return stm_arcs_output, stm_pnts_output
+    return stm_arcs_output, stm_pnts_output, idx_refpnt
 
 
 def form_network(
@@ -580,7 +580,7 @@ def _ambiguities_adjustment(
     # Assign acheck_full to stm_pnts_updated
     stm_pnts_updated["ambiguities"] = (["space", "time"], acheck_full)
 
-    return stm_arcs_updated, stm_pnts_updated
+    return stm_arcs_updated, stm_pnts_updated, idx_refpnt
 
 
 def _ensure_network_min_connections(
