@@ -6,7 +6,6 @@ import numpy as np
 from scipy.optimize import fsolve
 from scipy.stats import chi2, ncx2, norm
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -220,8 +219,8 @@ def _lambda_approx(lambda_init, df, gam0, cv):
     if xn == 0.0:
         qn = 0.5
     else:
-        XX = 0.5 * xn * xn
-        qn = (1.0 - norm.cdf(XX)) / 2.0
+        x_squared_half = 0.5 * xn * xn
+        qn = (1.0 - norm.cdf(x_squared_half)) / 2.0
 
     if xn <= 0.0:
         qn = 1.0 - qn
@@ -266,6 +265,8 @@ def _lam0_accurate(lambda_init, df, gam0, cv):
     - Script based on `_lam0_accurate.m` function written in Matlab by Marcel Martens.
     - Translated to Python by Wietske Brouwer on 21-03-2024.
     """
+    # If the input `lambda_init` is negative, reset to 0 to maintain validity.
+    lambda_init = max(lambda_init, 0.0)
     return (1.0 - ncx2.cdf(cv, df, lambda_init)) - gam0
 
 
@@ -363,6 +364,6 @@ def lambda0(gam0, df, cv):
 
         # If multiple solutions are found, raise an error
         if lam0.size > 1:
-            raise ValueError("LAMBDA0: multiple solutions found for lambda!")
+            raise ValueError("lambda0: multiple solutions found for lambda!")
 
-    return lam0[0]
+    return lam0 if np.isscalar(lam0) else lam0[0]

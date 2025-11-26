@@ -41,7 +41,7 @@ def spatial_unwrapping(
     sparse_mode: bool = False,
     ensure_network_while_mht: bool = False,
     arc_estimation_method: Literal["periodogram"] = "periodogram",
-) -> (xr.Dataset, xr.Dataset, int):
+) -> tuple[xr.Dataset, xr.Dataset, int]:
     """Perform spatial unwrapping on the given STM of arcs and points.
 
     This function estimates the integer ambiguities of the points from arc ambiguities. It assumes a network
@@ -71,15 +71,12 @@ def spatial_unwrapping(
         functions in "depsi.arc_estimation" module for this purpose. Arc estimation adds the variable "ambiguities" to
         stm_arcs, which are the estimated arc ambiguities. It also adds quality variables such as "ens_coh" (ensemble
         coherence), which are used to select arcs for spatial unwrapping.
-    Qyy_diag : np.ndarray
-        Diagonal elements of the VCM of arc ambiguities.
-        Arcs ambiguities are assumed to be independent, hence only diagonal elements are needed.
     key_arc_quality : str, optional
         Key of the arc quality variable in stm_arcs, by default "ens_coh"
     threshold_arc_quality : float, optional
         Threshold for arc quality, by default 0.5
     idx_refpnt : int | None, optional
-        Index of the reference point in stm_pnts. If None, the source point of the arc with highest quality
+        Index of the reference point in stm_pnts. If None, the source point of the arc with highest quality is selected as the reference point.
     min_arc_connections : int, optional
         Minimum number of connections for arcs, by default 3
     parallel : bool, optional
@@ -300,7 +297,7 @@ def _mht_network_adjustment(
     ensure_network_while_mht: bool,
     sparse_mode: bool,
     arc_estimation_method: str,
-) -> (xr.Dataset, xr.Dataset):
+) -> tuple[xr.Dataset, xr.Dataset]:
     """Adjust the network by removing bad arcs/points by applying MHT.
 
     This function implements the Multi-Hypothesis Tracking (MHT) approach iteratively to identify and remove
@@ -337,6 +334,10 @@ def _mht_network_adjustment(
 
     if arc_estimation_method == "periodogram":
         Qyy_diag = 1 - stm_arcs["ens_coh"].values
+    else:
+        raise NotImplementedError(
+            f"arc_estimation_method '{arc_estimation_method}' is not supported."
+        )
     invQy = np.diag(1 / Qyy_diag)
 
     _, echeck = _solve_float_ambiguities(A, stm_arcs["ambiguities"].data, invQy)  # Estimate initial residual
@@ -427,14 +428,14 @@ def _mht_network_adjustment(
 
 
 def _mht_network_adjustment_reject_one(
-    A: scipy.sparse._csr.csr_matrix,
+    A: np.array | scipy.sparse.spmatrix,
     y: np.ndarray,
     Qyy_diag: np.ndarray,
     k1: float,
     kb_dict: dict,
-) -> (int, int):
+) -> tuple[int, int, float, float]:
     """Remove one point/arc from the network to reduce the residual in ambiguity estimation."""
-    # Retrive shapes
+    # Retrieve shapes
     N_arcs, N_epochs = y.shape
     N_points = A.shape[1]
 
@@ -495,7 +496,7 @@ def _ambiguities_adjustment(
     idx_refpnt: int,
     sparse_mode: bool,
     arc_estimation_method: str,
-) -> (xr.Dataset, xr.Dataset):
+) -> tuple[xr.Dataset, xr.Dataset, int]:
     """Fix unwrapping errors by adjusting ambiguities per epoch.
 
     This function iterates over each epoch and adjusts the ambiguities to make sure the spatial
@@ -527,6 +528,8 @@ def _ambiguities_adjustment(
     )
     if arc_estimation_method == "periodogram":
         Qyy_diag = 1 - stm_arcs["ens_coh"].values  # VCM diagonal from ensemble coherence
+    else:
+        raise NotImplementedError(f"arc_estimation_method '{arc_estimation_method}' is not supported in form_network.")
     invQy = np.diag(1 / Qyy_diag)
 
     # Initialize adjusted ambiguities storage, shape: (n_points-1, n_epochs)
@@ -587,7 +590,7 @@ def _ensure_network_min_connections(
     stm_arcs: xr.Dataset,
     stm_pnts: xr.Dataset,
     min_connections: int,
-) -> (xr.Dataset, xr.Dataset):
+) -> tuple[xr.Dataset, xr.Dataset]:
     """Ensure that all points in the network have at least min_connections arcs.
 
     This is achieved by an iterative process of removing points which have less than
@@ -608,12 +611,12 @@ def _ensure_network_min_connections(
     xr.Dataset, xr.Dataset
         Updated Space-Time Matrix of arcs and points.
     """
-    # Ensure all points have at least 3 connections
+    # Ensure all points have at least min_connections connections
     previous_size = -1  # Initialize with an impossible value to trigger the while loop
     # Keep iterating until no more points are removed
     while stm_pnts.sizes["space"] != previous_size:
         previous_size = stm_pnts.sizes["space"]
-        # Remove points with <=2 connections
+        # Remove points with < min_connections connections
         stm_pnts, stm_arcs = _remove_network_points_min_connections(stm_pnts, stm_arcs, min_connections)
 
     return stm_arcs, stm_pnts
@@ -643,7 +646,7 @@ def _solve_float_ambiguities(A, y, invQy, sparse_mode: bool = False):
     return acheck, echeck
 
 
-def _remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, min_connections: int) -> xr.Dataset:
+def _remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, min_connections: int) -> tuple[xr.Dataset, xr.Dataset]:
     """Remove points which have less than min_connections arc connections.
 
     The following steps are performed:
@@ -653,7 +656,7 @@ def _remove_network_points_min_connections(stm: xr.Dataset, arcs: xr.Dataset, mi
     3. Update the space indices in points/arcs STM accordingly.
        The point indices is always a 0-based continuous array.
 
-    Note that this function does not perform interative removal to assure that all points have
+    Note that this function does not perform iterative removal to assure that all points have
     at least min_connections connections, but only performs one round of removal.
     """
     if min_connections < 1:

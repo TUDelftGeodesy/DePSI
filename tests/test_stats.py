@@ -22,7 +22,7 @@ def test_pretest(b, alpha0, gamma0, expected):
 def test_pretest_zero_redundancy(caplog):
     # Expect a warning in logger output
     with caplog.at_level("WARNING"):
-        lam0, k1, kb, alphab = pretest(0, 0.01, 0.95)
+        _ = pretest(0, 0.01, 0.95)
         assert "zero redundancy" in caplog.text
 
 
