@@ -20,7 +20,7 @@ def _get_signal_window_with_zero_padding(
 ) -> np.ndarray:
 
     # Determine window of size to cover the full range of time differences
-    window_size = int(timespan) + 1  # Ensure window size is an odd integer
+    window_size = int(timespan) | 1  # Ensure window size is an odd integer
 
     # Determine the core window size based on the filter length and sampling rate
     core_window_size = int(filter_length * sampling_rate) + 1
@@ -83,7 +83,7 @@ def estimate_unmodeled_displacement(
             "Adjust the filter_length or sampling_rate."
         )
 
-    window_size = int(timespan) + 1 # Ensure window size is an odd integer
+    window_size = int(timespan) | 1 # Ensure window size is an odd integer
 
     if filter_type == 'block':
         window = _get_signal_window_with_zero_padding(
