@@ -450,7 +450,7 @@ def find_points_within_buffer(
             np.vstack([x_coords, y_coords]).T, metric="haversine"
         )
         search_radius = buffer_radius / EARTH_RADIUS
-        search_points = [[np.radians(y), np.radians(x)] for x, y in zip(x_pnts, y_pnts, strict=True)]
+        search_points = np.vstack([np.radians(y_pnts), np.radians(x_pnts)]).T
     else:
         raise ValueError(f"Unknown coordinate type {coordinate_type}! Known are euclidean and geographic.")
 
