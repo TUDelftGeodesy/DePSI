@@ -443,6 +443,8 @@ def find_points_within_buffer(
     # Make sure x_pnts and y_pnts are arrays
     x_pnts = np.atleast_1d(x_pnts)
     y_pnts = np.atleast_1d(y_pnts)
+    assert len(x_pnts.shape) == 1, f"Received more than 1 dimension in x_pnts (shape {x_pnts.shape})!"
+    assert len(y_pnts.shape) == 1, f"Received more than 1 dimension in y_pnts (shape {y_pnts.shape})!"
 
     if coordinate_type == "euclidean":
         # could possibly also be a KDTree but for consistency inside the function the minkowski metric does Euclidean
