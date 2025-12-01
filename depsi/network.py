@@ -439,7 +439,7 @@ def find_points_within_buffer(
 
     if coordinate_type == "euclidean":
         # could possibly also be a KDTree but for consistency inside the function the minkowski metric does Euclidean
-        tree = BallTree([[x, y] for x, y in zip(x_coords, y_coords, strict=True)], metric="minkowski")
+        tree = BallTree(np.vstack([x_coords, y_coords]).T, metric="minkowski")
         search_radius = buffer_radius
         search_points = [[x, y] for x, y in zip(x_pnts, y_pnts, strict=True)]
     elif coordinate_type == "geographic":
