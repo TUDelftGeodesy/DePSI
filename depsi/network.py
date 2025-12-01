@@ -447,7 +447,7 @@ def find_points_within_buffer(
         # the Earth
         # It also expects input in radians instead of degrees, and first latitude (y), then longitude (x)
         tree = BallTree(
-            [[np.radians(y), np.radians(x)] for x, y in zip(x_coords, y_coords, strict=True)], metric="haversine"
+            np.vstack([x_coords, y_coords]).T, metric="haversine"
         )
         search_radius = buffer_radius / EARTH_RADIUS
         search_points = [[np.radians(y), np.radians(x)] for x, y in zip(x_pnts, y_pnts, strict=True)]
