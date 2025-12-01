@@ -6,10 +6,11 @@ import xarray as xr
 
 from depsi.network import (
     _compute_phase_difference,
+    _ensure_network_min_connections,
     _network_relation_matrix,
-    arc_selection,
+    _remove_network_points_min_connections,
     form_network,
-    remove_isolated_points,
+    spatial_unwrapping,
 )
 
 
@@ -112,6 +113,7 @@ class TestNetworkFormation:
         assert (
             np.unique(np.column_stack((source, target)), axis=0).shape[0] == source.shape[0]
         )  # check if all (source, target) pairs are unique
+        assert np.unique(arcs["uid"].values).shape[0] == arcs.sizes["space"]
 
     @pytest.mark.parametrize("method", ["subtract", "conjmult"])
     def test_compute_phase_difference(self, stm_random, method):
@@ -179,66 +181,136 @@ class TestNetworkFormation:
             )
 
 
-class TestArcSelection:
-    @pytest.mark.parametrize("thres, min_n_connections", [(0.99, 0), (0.5, 999)])
-    def test_select_arcs_return_zero(self, arcs_random, thres, min_n_connections):
-        """Should return zero arcs, two high threshold or too high min_n_connections."""
-        # Select arcs based on ens_coh threshold.
-        selected_arcs = arc_selection(
-            arcs_random,
-            threshold=thres,
-            selection_method="ens_coh",
-            min_n_connections=min_n_connections,
-        )
-
-        assert selected_arcs.sizes["space"] == 0
-
+class TestNetworkEnsure:
     @pytest.mark.parametrize("thres, min_n_connections", [(0.5, 2), (0.5, 1)])
-    def test_select_arcs_discard_two(self, arcs_random, thres, min_n_connections):
+    def test_select_arcs_discard_two(self, arcs_random, stm_random, thres, min_n_connections):
         """Should only discard two arcs, with ens_coh < 0.5."""
         # Select arcs based on ens_coh threshold.
-        selected_arcs = arc_selection(
-            arcs_random,
-            threshold=thres,
-            selection_method="ens_coh",
-            min_n_connections=min_n_connections,
-        )
+        mask = np.abs(arcs_random["ens_coh"]) > thres  # mask as DataArray
+        arcs_selected = arcs_random.where(mask, drop=True)
+        arcs_results, _ = _ensure_network_min_connections(arcs_selected, stm_random, min_connections=min_n_connections)
 
         # Threshold is 0.5, so only the last two arcs are discarded
         # The min_n_connections should not affect the selection
-        assert selected_arcs.sizes["space"] == arcs_random.sizes["space"] - 2
+        assert arcs_results.sizes["space"] == arcs_random.sizes["space"] - 2
 
-    def test_select_arcs_non_connected(self, arcs_random, caplog):
-        """Should keep the first five arcs which are disconnected."""
-        # this should raise a logger warning of disconnected arcs
-        with caplog.at_level("WARNING"):
-            _ = arc_selection(
-                arcs_random,
-                threshold=0.99,
-                selection_method="ens_coh",
-                min_n_connections=0,
-            )
+    def test__remove_network_points_min_connections_nconnection_zero(self, stm_random, arcs_random):
+        """Raise error when min_connections <1."""
+        with pytest.raises(ValueError):
+            _remove_network_points_min_connections(stm_random, arcs_random, min_connections=-1)
+        with pytest.raises(ValueError):
+            _remove_network_points_min_connections(stm_random, arcs_random, min_connections=0)
 
-    def test_remove_isolated_points_keep_all_pnts(self, stm_random, arcs_random):
+    def test__remove_network_points_min_connections_keep_all_pnts(self, stm_random, arcs_random):
         """No STM points removed since no arc is discarded."""
-        stm_updated, arcs_updated = remove_isolated_points(stm_random, arcs_random)
+        stm_updated, arcs_updated = _remove_network_points_min_connections(stm_random, arcs_random, min_connections=1)
 
         assert stm_updated.sizes["space"] == stm_random.sizes["space"]
         assert arcs_updated.sizes["space"] == arcs_random.sizes["space"]
 
-    def test_remove_isolated_points_discard_one(self, stm_random, arcs_random):
+    def test__remove_network_points_min_connections_discard_one(self, stm_random, arcs_random):
         """Remove one STM point."""
         # remove arcs with source or target == 1
         arcs = arcs_random.copy(deep=True)
         arcs = arcs.where((arcs["source"] != 1) & (arcs["target"] != 1), drop=True)
 
-        stm_updated, arcs_updated = remove_isolated_points(stm_random, arcs)
+        stm_updated, arcs_updated = _remove_network_points_min_connections(stm_random, arcs, min_connections=1)
 
         # Should remove the point with index 1
         assert stm_updated.sizes["space"] == stm_random.sizes["space"] - 1
 
 
 class TestNetworkUnwrap:
+    @pytest.mark.parametrize(
+        ["id_ref", "idx_err_space", "idx_err_time", "error_values"],
+        [
+            (3, [], [], []),  # No error
+            (3, [2, 11], [7, 13], [-1, 1]),  # Two errors in arc ambiguities
+            (9, [0, 4, 8], [5, 10, 15], [1, -100, 1]),  # Three errors, one large, but should be corrected
+        ],
+    )
+    def test_spatial_unwrap(self, id_ref, idx_err_space, idx_err_time, error_values):
+        """Test spatial unwrapping based on arc ambiguities.
+
+        Build points with true value of ambiguities.
+        Construct arcs with arc ambiguities derived from true ambiguities.
+        Add tiny errors to arc ambiguities at certain space/time indices.
+
+        Then perform spatial unwrapping with a specified reference point.
+
+        The spatial unwrapping should be able to solve the point ambiguities correctly.
+        The solved ambiguities should w.r.t. the reference point.
+        """
+        # Set up test parameters
+        rng = np.random.default_rng(42)
+        Npoints = 17  # Number of points
+        Ntimes = 29  # Number of epochs
+        time = np.arange(Ntimes)
+        complex = rng.uniform(-1, 1, (Npoints, Ntimes)) + 1j * rng.uniform(-1, 1, (Npoints, Ntimes))
+        phase = np.angle(complex)
+        h2ph = rng.uniform(1e3, 1e4, (Npoints, Ntimes))
+
+        # Create the points
+        stm_pnts = xr.Dataset(
+            data_vars={
+                "phase": (("space", "time"), phase),
+                "h2ph": (("space", "time"), h2ph),
+                "complex": (("space", "time"), complex),
+                "ambiguities_true": (
+                    ("space", "time"),
+                    np.round(rng.normal(0, 0.5, (Npoints, Ntimes))).astype(int).clip(-1, 1),
+                ),
+            },
+            coords={
+                "space": ("space", np.arange(Npoints)),
+                "time": ("time", time),
+                "azimuth": ("space", np.round(rng.normal(0, 10, (Npoints))).astype(int)),
+                "range": ("space", np.round(rng.normal(0, 10, (Npoints))).astype(int)),
+            },
+        )
+
+        # Construct arcs based on true ambiguities
+        # All arcs by default have 0.99 ens_coh
+        stm_arcs = form_network(
+            stm_pnts,
+            key_xcrds="azimuth",
+            key_ycrds="range",
+            key_phase="phase",
+            key_h2ph="h2ph",
+            key_Btemp="time",
+            network_method="redundant",
+            max_length=30,
+        )
+        ens_coh = np.zeros((stm_arcs.sizes["space"],)) + 0.99
+        stm_arcs["ens_coh"] = (("space"), ens_coh)
+
+        # Compute arc ambiguities from true point ambiguities
+        ambigs = (
+            stm_pnts["ambiguities_true"].values[stm_arcs["target"].values, :]
+            - stm_pnts["ambiguities_true"].values[stm_arcs["source"].values, :]
+        )
+        # Introduce some errors in ambiguities
+        ambigs_errors = np.zeros_like(ambigs)
+        for idx_s, idx_t, err in zip(idx_err_space, idx_err_time, error_values, strict=False):
+            ambigs_errors[idx_s, idx_t] += err
+        stm_arcs["ambiguities"] = (("space", "time"), ambigs + ambigs_errors)
+
+        stm_arcs_output, stm_pnts_output, id_ref_output = spatial_unwrapping(stm_pnts, stm_arcs, idx_refpnt=id_ref)
+
+        # Verify output dimensions, no points should be rejected
+        assert stm_pnts_output.sizes["space"] == stm_pnts.sizes["space"]
+
+        # Check that the solved ambiguities match the true ambiguities w.r.t. the reference point
+        assert np.allclose(
+            stm_pnts_output["ambiguities"].values
+            - stm_pnts["ambiguities_true"].values
+            + np.tile(stm_pnts["ambiguities_true"].isel(space=id_ref).values, (stm_pnts.sizes["space"], 1)),
+            0,
+        )
+
+        # Check that the reference point index remains the same
+        assert id_ref_output == id_ref
+
     @pytest.mark.parametrize(
         ["idx_source", "idx_target", "n_points", "idx_refpnt"],
         [
@@ -256,6 +328,34 @@ class TestNetworkUnwrap:
         idx_refpnt,
     ):
         A = _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt)
+
+        # Create expected matrix in a for loop
+        A_exp = np.zeros((idx_source.shape[0], n_points), dtype=int)
+        for i, (src, tgt) in enumerate(zip(idx_source, idx_target, strict=False)):
+            A_exp[i, src] = -1
+            A_exp[i, tgt] = 1
+        A_exp = np.delete(A_exp, idx_refpnt, axis=1)  # Remove reference point column
+
+        assert A.shape == A_exp.shape
+        assert np.all(A == A_exp)
+
+    @pytest.mark.parametrize(
+        ["idx_source", "idx_target", "n_points", "idx_refpnt"],
+        [
+            (np.array([0, 1, 2]), np.array([1, 2, 3]), 4, 0),  # 4 points, 3 arcs
+            (np.array([0, 1, 2]), np.array([1, 2, 3]), 7, 0),  # 7 points, 3 arcs
+            (np.array([1, 1, 2, 2]), np.array([0, 2, 1, 3]), 4, 2),  # 4 points, 4 arcs, unsorted
+            (np.array([0, 0, 0, 1, 1, 2, 2]), np.array([1, 2, 3, 3, 4, 3, 4]), 5, 3),  # 5 points, 6 arcs
+        ],
+    )
+    def test_init_network_relation_matrix_sparse(
+        self,
+        idx_source,
+        idx_target,
+        n_points,
+        idx_refpnt,
+    ):
+        A = _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt, sparse_mode=True)
 
         # Create expected matrix in a for loop
         A_exp = np.zeros((idx_source.shape[0], n_points), dtype=int)
