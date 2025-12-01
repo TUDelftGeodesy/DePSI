@@ -838,20 +838,16 @@ def compute_spatiotemporal_consistency(
     """
     x_crds = stm[x_crd_layer_name].values.flatten()
     y_crds = stm[y_crd_layer_name].values.flatten()
+    max_indices = find_points_within_buffer(
+        x_crds, y_crds, x_crds, y_crds, max_dist, coordinate_type, return_aggregate_point_buffer=False
+    )
+    min_indices = find_points_within_buffer(
+        x_crds, y_crds, x_crds, y_crds, min_dist, coordinate_type, return_aggregate_point_buffer=False
+    )
     stcs = []
+
     for point in range(x_crds.shape[0]):
-        max_buffer_indices = find_points_within_buffer(
-            x_crds, y_crds, [x_crds[point]], [y_crds[point]], max_dist, coordinate_type
-        )
-        min_buffer_indices = find_points_within_buffer(
-            x_crds[max_buffer_indices],
-            y_crds[max_buffer_indices],
-            [x_crds[point]],
-            [y_crds[point]],
-            min_dist,
-            coordinate_type,
-        )
-        buffer_indices = [idx for idx in max_buffer_indices if idx not in min_buffer_indices and idx != point]
+        buffer_indices = [idx for idx in max_indices[point] if idx not in min_indices[point] and idx != point]
         if len(buffer_indices) == 0:
             stcs.append(np.nan)
         else:

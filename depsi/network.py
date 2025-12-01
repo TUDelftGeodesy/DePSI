@@ -405,6 +405,7 @@ def find_points_within_buffer(
     y_pnts,
     buffer_radius,
     coordinate_type: Literal["euclidean", "geographic"] = "euclidean",
+    return_aggregate_point_buffer: bool = True,
 ):
     """Find all points located within a specified buffer radius around a given location.
 
@@ -425,13 +426,19 @@ def find_points_within_buffer(
         buffer_radius (float): The radius of the buffer zone around the reference points, specified in meters.
         coordinate_type (Literal["euclidean", "geographic"]): whether the coordinates provided are Euclidean (such as
             RD) or geographic (such as lon / lat)
+        return_aggregate_point_buffer (bool): if True, a list of indices of the points within the buffer of any of the
+            points in x_pnts/y_pnts is returned. If False, the list of indices within the buffer of each point in
+            x_pnts/y_pnts is returned individually. Default True
 
     Returns:
     -------
-        indices (numpy.ndarray): Array of indices of the points located within the buffer zone.
+        indices (numpy.ndarray): Array of indices of the points located within the buffer zone, either the aggregate
+            buffer zone (`return_aggregate_point_buffer`=True) or per point in `x_pnts`/`y_pnts`
+             (`return_aggregate_point_buffer`=False)
 
     Example:
         indices = find_points_within_buffer(x_coords, y_coords, x_pnts=10.5, y_pnts=20.3, buffer_radius=5.0)
+        (with Euclidean coordinates and an aggregate buffer output)
     """
     # Make sure x_pnts and y_pnts are arrays
     x_pnts = np.atleast_1d(x_pnts)
@@ -446,15 +453,17 @@ def find_points_within_buffer(
         # the geographic tree assumes an Earth radius of 1, so we need to divide the search radius by the radius of
         # the Earth
         # It also expects input in radians instead of degrees, and first latitude (y), then longitude (x)
-        tree = BallTree(
-            np.vstack([x_coords, y_coords]).T, metric="haversine"
-        )
+        tree = BallTree(np.vstack([np.radians(y_coords), np.radians(x_coords)]).T, metric="haversine")
         search_radius = buffer_radius / EARTH_RADIUS
         search_points = np.vstack([np.radians(y_pnts), np.radians(x_pnts)]).T
     else:
         raise ValueError(f"Unknown coordinate type {coordinate_type}! Known are euclidean and geographic.")
 
     res_indices = tree.query_radius(search_points, search_radius)
+
+    if not return_aggregate_point_buffer:
+        return res_indices
+
     all_indices = []
     for i in res_indices:  # flatten won't work since res_indices is an irregularly shaped numpy array
         for j in i:
