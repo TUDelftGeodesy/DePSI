@@ -641,3 +641,33 @@ def radar_to_xyz(
         return xyz.squeeze(), sat_xyz.squeeze()
 
     return xyz.squeeze()
+
+
+def radar_to_latlonh(
+    azimuth_coords: numpy.ndarray,
+    range_coords: numpy.ndarray,
+    elevation: numpy.ndarray,
+    metadata: dict,
+) -> numpy.ndarray:
+    """Convert radar coordinates (azimuth, range) to WGS84 Lat/lon/h coordinates.
+
+    Parameters
+    ----------
+    azimuth_coords: numpy.ndarray
+        Azimuth pixel radar coordinates.
+    range_coords: numpy.ndarray
+        Range pixel radar coordinates.
+    elevation: numpy.ndarray
+        Ellipsoidal elevation.
+    metadata: dict
+        Image metadata
+
+    Returns
+    -------
+    numpy.ndarray, tuple
+        Return latitude/longitude/height coordinates
+
+    """
+    xyz = radar_to_xyz(azimuth_coords, range_coords, elevation, metadata, return_satellite_vector=False)
+    latlonh = xyz_to_latlonh(xyz)
+    return latlonh
