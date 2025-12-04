@@ -3,15 +3,17 @@ import os
 import dask.array as da
 import numpy as np
 import pandas as pd
+import pytest
 import xarray as xr
 
 from depsi import io
 
 
 def test_read_metadata_lines_pixels():
-    metadata = io.read_metadata("tests/data/example.res")
-    assert metadata["n_lines"] == 14065
-    assert metadata["n_pixels"] == 49843
+    with pytest.warns(DeprecationWarning):
+        metadata = io.read_metadata("tests/data/example.res")
+        assert metadata["n_lines"] == 14065
+        assert metadata["n_pixels"] == 49843
 
 
 def test_get_targets_from_slc():
