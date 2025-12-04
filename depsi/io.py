@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import warnings
 from datetime import datetime
 from glob import glob
 from io import StringIO
@@ -92,6 +93,14 @@ def read_metadata(resfile, mode="raw", **kwargs):
     Modified from the original functions in:
     https://github.com/Pbaz98/Caroline-Radar-Coding-Toolbox/blob/main/gecoris/dorisUtils.py.
     """
+    # Deprecation warning for this function
+    warning_msg = (
+        "The depsi.io.read_metadata function is deprecated and will be removed in a "
+        "future release. For reading metadata of coregistered SLC stacks, "
+        "please use the sarxarray.read_metadata function instead."
+    )
+    warnings.warn(warning_msg, DeprecationWarning, stacklevel=2)
+
     # check crop_flag
     if mode == "coreg" and "crop" in kwargs:
         crop_flag = kwargs["crop"]
