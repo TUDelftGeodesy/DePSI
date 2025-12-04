@@ -104,7 +104,7 @@ def xyz_to_latlonh(xyz: numpy.ndarray) -> numpy.ndarray:
     return numpy.array([phi, numpy.arctan2(xyz[1, :], xyz[0, :]), r / numpy.cos(phi) - n]).squeeze()
 
 
-def orbit_fit(orbit_time: numpy.ndarray, xyz_pos: numpy.ndarray, xyz_vel: numpy.ndarray) -> OrbitFit:
+def orbit_fit(orbit_time: numpy.ndarray, xyz_pos: numpy.ndarray, xyz_vel: numpy.ndarray | None) -> OrbitFit:
     """Fit orbit based on state vector using Chebyshev polynomials.
 
     Satellite state vector interpolation using Chebyshev polynomials of
@@ -117,8 +117,8 @@ def orbit_fit(orbit_time: numpy.ndarray, xyz_pos: numpy.ndarray, xyz_vel: numpy.
         Time vector of satellite state data extracted from image metadata
     xyz_pos: numpy.ndarray
         Position vector of satellite state data
-    xyz_vel: numpy.ndarray
-        Velocity vector of satellite state data
+    xyz_vel: numpy.ndarray | None
+        Velocity vector of satellite state data. If `None`, it is estimated from `xyz_pos`
 
     Returns
     -------
@@ -134,6 +134,12 @@ def orbit_fit(orbit_time: numpy.ndarray, xyz_pos: numpy.ndarray, xyz_vel: numpy.
     cx = numpy.polynomial.chebyshev.chebfit(px, xyz_pos[:, 0], 7)
     cy = numpy.polynomial.chebyshev.chebfit(px, xyz_pos[:, 1], 7)
     cz = numpy.polynomial.chebyshev.chebfit(px, xyz_pos[:, 2], 7)
+
+    if xyz_vel is None:  # Doris does not return velocity state data --> we calculate it instead
+        xyz_vel = numpy.zeros(xyz_pos.shape)
+        xyz_vel[:, 0] = numpy.polynomial.chebyshev.chebder(cx)
+        xyz_vel[:, 1] = numpy.polynomial.chebyshev.chebder(cy)
+        xyz_vel[:, 2] = numpy.polynomial.chebyshev.chebder(cz)
 
     # fit velocity
     cvx = numpy.polynomial.chebyshev.chebfit(px, xyz_vel[:, 0], 7)
