@@ -96,7 +96,7 @@ def read_metadata(resfile, mode="raw", **kwargs):
     # Deprecation warning for this function
     warning_msg = (
         "The depsi.io.read_metadata function is deprecated and will be removed in a "
-        "future release. For reading metadata of corregistered SLC stacks, "
+        "future release. For reading metadata of coregistered SLC stacks, "
         "please use the sarxarray.read_metadata function instead."
     )
     warnings.warn(warning_msg, DeprecationWarning, stacklevel=2)
