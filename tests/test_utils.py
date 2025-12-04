@@ -29,7 +29,7 @@ class TestGeneratePntUids:
         stm_with_uids = generate_pnt_uids(stm)
 
         # Expected unique identifiers
-        # 10**5 is determined based on the maximum range coordinate scale which is 1e4
+        # scale is determined dynamically based on the maximum value in range_coords to ensure unique identifiers
         expected_uids = (azimuth_coords.astype(np.uint64) + 1) * scale + (
             range_coords.astype(np.uint64) + 1
         )
