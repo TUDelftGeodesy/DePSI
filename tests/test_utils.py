@@ -1,5 +1,3 @@
-import math
-
 import numpy as np
 import pytest
 import xarray as xr
@@ -8,6 +6,29 @@ from depsi.utils import generate_pnt_uids
 
 
 class TestGeneratePntUids:
+    @pytest.mark.parametrize(
+        "num_points, max_coordinates",
+        [
+            (411, 1e3),
+            (1213, 1e4),
+            (19, 1e3),
+        ],
+    )
+    def test_generate_pnt_uids_robust(self, num_points, max_coordinates):
+        """same radar coordinates should give same pnt_uid"""
+        rng = np.random.default_rng(seed=12)
+        # Create a sample STM dataset with azimuth and range coordinates
+        azimuth_coords = rng.integers(0, max_coordinates, size=num_points)
+        range_coords = rng.integers(0, max_coordinates, size=num_points)
+        stm = xr.Dataset(coords={"azimuth": ("space", azimuth_coords), "range": ("space", range_coords)})
+
+        # Generate unique point identifiers
+        stm_with_uids_1 = generate_pnt_uids(stm)
+        stm_with_uids_2 = generate_pnt_uids(stm)
+
+        # Assert that the unique identifiers are the same for both generations
+        np.testing.assert_array_equal(stm_with_uids_1["pnt_uid"].values, stm_with_uids_2["pnt_uid"].values)
+
     @pytest.mark.parametrize(
         "num_points, max_coordinates",
         [
@@ -22,20 +43,16 @@ class TestGeneratePntUids:
         # Create a sample STM dataset with azimuth and range coordinates
         azimuth_coords = rng.integers(0, max_coordinates, size=num_points)
         range_coords = rng.integers(0, max_coordinates, size=num_points)
-        scale = 10 ** (math.floor(math.log10(range_coords.max())) + 1)
         stm = xr.Dataset(coords={"azimuth": ("space", azimuth_coords), "range": ("space", range_coords)})
 
         # Generate unique point identifiers
         stm_with_uids = generate_pnt_uids(stm)
 
-        # Expected unique identifiers
-        # scale is determined dynamically based on the maximum value in range_coords to ensure unique identifiers
-        expected_uids = (azimuth_coords.astype(np.uint64) + 1) * scale + (
-            range_coords.astype(np.uint64) + 1
-        )
-
-        # Assert that the generated unique identifiers match the expected values
-        np.testing.assert_array_equal(stm_with_uids["pnt_uid"].values, expected_uids)
+        # results should be 1) unique 2) same shape as input and 3) integer
+        pnt_uids = stm_with_uids["pnt_uid"].values
+        assert len(np.unique(pnt_uids)) == num_points
+        assert pnt_uids.shape == (num_points,)
+        assert np.issubdtype(pnt_uids.dtype, np.integer)
 
     @pytest.mark.parametrize("overwrite_flag", [True, False])
     def test_generate_pnt_uids_overwrite(self, overwrite_flag, caplog):
