@@ -11,6 +11,7 @@ import scipy
 import sparse
 import xarray as xr
 from scipy.spatial import Delaunay, KDTree, distance_matrix
+from sklearn.neighbors import BallTree
 
 from depsi.arc_estimation import arc_estimation_control_network
 from depsi.stats import pretest
@@ -18,16 +19,22 @@ from depsi.utils import get_distance
 
 logger = logging.getLogger(__name__)
 
+
 # Constants for MHT in network integration
 ALPHA0 = 0.1  # Significance level for 1-dimensional test
 GAMMA0 = 0.5  # Power of the test
-OMT_THRES = 1e-10  # Overall Model Test threshold for accepting the network
+# Overall Model Test threshold for accepting the network
 # In arc/point rejection phase, if OMT < OMT_THRES, stop rejection iteration
 # In ambiguity fixing phase, if OMT < OMT_THRES, stop fixing iteration
 # In arc/point rejection phase this is hardly triggered
-TT1_THRES = 1.0  # Threshold for arc rejection statistics TT1,
+OMT_THRES = 1e-10
+# Threshold for arc rejection statistics TT1
 # If for all arcs max(TT1) < TT1_THRES, stop rejection iteration
 # For most cases this threshold is triggered in rejection phase
+TT1_THRES = 1.0
+
+# Used for approximate distance calculation. Unit in meters.
+EARTH_RADIUS = 6378136
 
 
 def spatial_unwrapping(
@@ -884,6 +891,7 @@ def find_points_within_buffer(
     y_pnts,
     buffer_radius,
     coordinate_type: Literal["euclidean", "geographic"] = "euclidean",
+    return_aggregate_point_buffer: bool = True,
 ):
     """Find all points located within a specified buffer radius around a given location.
 
@@ -904,30 +912,51 @@ def find_points_within_buffer(
         buffer_radius (float): The radius of the buffer zone around the reference points, specified in meters.
         coordinate_type (Literal["euclidean", "geographic"]): whether the coordinates provided are Euclidean (such as
             RD) or geographic (such as lon / lat)
+        return_aggregate_point_buffer (bool): if True, a list of indices of the points within the buffer of any of the
+            points in x_pnts/y_pnts is returned. If False, the list of indices within the buffer of each point in
+            x_pnts/y_pnts is returned individually. Default True
 
     Returns:
     -------
-        indices (numpy.ndarray): Array of indices of the points located within the buffer zone.
+        indices (numpy.ndarray): Array of indices of the points located within the buffer zone, either the aggregate
+            buffer zone (`return_aggregate_point_buffer`=True) or per point in `x_pnts`/`y_pnts`
+             (`return_aggregate_point_buffer`=False)
 
     Example:
         indices = find_points_within_buffer(x_coords, y_coords, x_pnts=10.5, y_pnts=20.3, buffer_radius=5.0)
+        (with Euclidean coordinates and an aggregate buffer output)
     """
     # Make sure x_pnts and y_pnts are arrays
     x_pnts = np.atleast_1d(x_pnts)
     y_pnts = np.atleast_1d(y_pnts)
+    assert len(x_pnts.shape) == 1, f"Received more than 1 dimension in x_pnts (shape {x_pnts.shape})!"
+    assert len(y_pnts.shape) == 1, f"Received more than 1 dimension in y_pnts (shape {y_pnts.shape})!"
 
-    within_buffer = np.zeros(len(x_coords), dtype=bool)
+    if coordinate_type == "euclidean":
+        # could possibly also be a KDTree but for consistency inside the function the minkowski metric does Euclidean
+        tree = BallTree(np.vstack([x_coords, y_coords]).T, metric="minkowski")
+        search_radius = buffer_radius
+        search_points = np.vstack([x_pnts, y_pnts]).T
+    elif coordinate_type == "geographic":
+        # the geographic tree assumes an Earth radius of 1, so we need to divide the search radius by the radius of
+        # the Earth
+        # It also expects input in radians instead of degrees, and first latitude (y), then longitude (x)
+        tree = BallTree(np.vstack([np.radians(y_coords), np.radians(x_coords)]).T, metric="haversine")
+        search_radius = buffer_radius / EARTH_RADIUS
+        search_points = np.vstack([np.radians(y_pnts), np.radians(x_pnts)]).T
+    else:
+        raise ValueError(f"Unknown coordinate type {coordinate_type}! Known are euclidean and geographic.")
 
-    # Check for every point, which other points fall within the buffer around it
-    for tx, ty in zip(x_pnts, y_pnts, strict=True):
-        distances = np.array(
-            [get_distance([tx, ty], [px, py], coordinate_type) for px, py in zip(x_coords, y_coords, strict=True)]
-        )
+    res_indices = tree.query_radius(search_points, search_radius)
 
-        within_buffer |= distances <= buffer_radius  # 'OR' operation
+    if not return_aggregate_point_buffer:
+        return res_indices
 
-    # Find the indices of the points that are within the buffer
-    indices = np.where(within_buffer)[0]
+    all_indices = []
+    for i in res_indices:  # flatten won't work since res_indices is an irregularly shaped numpy array
+        for j in i:
+            all_indices.append(j)
+    indices = np.array(list(sorted(list(set(all_indices)))))
 
     return indices
 

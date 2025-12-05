@@ -10,12 +10,14 @@ dependencies = [
     "matplotlib",
     "pydantic",
     "sarxarray",
+    "scipy",
     "stmtools",
     "ruptures",
     "networkx",
     "drama",
     "asf_search",
-    "sparse"
+    "sparse",
+    "scikit-learn"
 ]
 description = "Python package for interferometric synthetic aperture radar (InSAR) time series processing."
 readme = "README.md"
