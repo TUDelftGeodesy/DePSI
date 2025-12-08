@@ -637,7 +637,7 @@ def radar_to_xyz(
                     i += 1
                     continue
                 else:
-                    logger.warning("radar_to_xyz did not converge after 10 iterations!")
+                    logger.warning(f"radar_to_xyz did not converge after {maxiter} iterations!")
             else:
                 break
         xyz[:, idx] = numpy.array([x, y, z])
@@ -674,6 +674,53 @@ def radar_to_latlonh(
         Return latitude/longitude/height coordinates
 
     """
+    metadata = validate_geocoding_metadata(metadata)
     xyz = radar_to_xyz(azimuth_coords, range_coords, elevation, metadata, return_satellite_vector=False)
     latlonh = xyz_to_latlonh(xyz)
     return latlonh
+
+
+def validate_geocoding_metadata(metadata: dict) -> dict:
+    """Validate that all fields necessary for the geocoding are present, and regulate the orbit metadata.
+
+    Since DORIS v5 outputs `orbit_txyz` instead of orbit_time, orbit_position, and orbit_velocity, this function will
+    assign the correct columns of `orbit_txyz` to the correct expected fields.
+
+    Parameters
+    ----------
+    metadata: dict
+        Metadata readout as per `sarxarray.read_metadata` (>v1.1.1)
+
+    Returns
+    -------
+    dict
+        The validated and corrected metadata dictionary
+
+    """
+    for key in [
+        "scene_centre_longitude",
+        "scene_centre_latitude",
+        "first_azimuth_time",
+        "pulse_repetition_frequency",
+        "first_range_time",
+        "range_sampling_rate",
+    ]:
+        assert key in metadata.keys(), f"Key {key} is missing from metadata, cannot proceed!"
+
+    # Orbit info from DORIS5 is read in in orbit_txyz instead of orbit_time and orbit_position --> needs to be split up
+    if "orbit_time" not in metadata.keys():
+        if "orbit_txyz" in metadata.keys():
+            metadata["orbit_time"] = metadata["orbit_txyz"][:, 0]
+        else:
+            raise ValueError("Key orbit_time is missing and cannot be reconstructed from orbit_txyz!")
+
+    if "orbit_position" not in metadata.keys():
+        if "orbit_txyz" in metadata.keys():
+            metadata["orbit_position"] = metadata["orbit_txyz"][:, 1:]
+        else:
+            raise ValueError("Key orbit_position is missing and cannot be reconstructed from orbit_txyz!")
+
+    if "orbit_velocity" not in metadata.keys():
+        metadata["orbit_velocity"] = None  # this one can be reconstructed when necessary
+
+    return metadata
