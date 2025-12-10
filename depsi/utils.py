@@ -4,6 +4,7 @@ from typing import Literal
 
 import asf_search as asf
 import dask.array as da
+import pandas as pd
 import pyproj
 
 try:
@@ -23,10 +24,14 @@ except ImportError:  # UTC can only be imported from Python 3.11 onwards
         stacklevel=1,  # necessary to start the call stack here.
     )
 
+import logging
+
 import geopandas
 import numpy as np
 import pytz
 import xarray as xr
+
+logger = logging.getLogger(__name__)
 
 EARTH_RADIUS = 6378136  # m
 
@@ -607,3 +612,86 @@ def identify_s1_orbits_in_aoi(lon: list | np.ndarray, lat: list | np.ndarray) ->
         footprints[orbits[extent]].append(extents[extent])
 
     return filtered_orbits, footprints
+
+
+def generate_pnt_uids(
+    stm: xr.Dataset, ensure_unique: bool = True, overwrite: bool = False
+) -> xr.Dataset:
+    """Generate unique identifiers based on radar coordinates and assign them to the STM.
+
+    The unique identifiers are assigned as a new coordinate "pnt_uid" in the STM.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+        The space-time matrix with coordinate "azimuth" and "range".
+    ensure_unique: bool, optional
+        Whether to ensure that the generated unique identifiers are unique. Default is True.
+        When True, numpy.unique is used to check for uniqueness and raise an error if duplicates are found.
+        For very large STMs, this can be computationally expensive. Consider setting to False if the radar
+        coordinates are known to be unique.
+    overwrite: bool, optional
+        Whether to overwrite existing "pnt_uid" coordinate in the STM. Default is False.
+        If False and "pnt_uid" already exists in coordinates or data variables, a warning
+        is logged and the STM is returned unchanged.
+        If True and "pnt_uid" exists in data variables, it is dropped before generating new identifiers.
+
+    Returns
+    -------
+    xr.Dataset
+        The space-time matrix with an added unique identifier coordinate "pnt_uid"
+    """
+    # Copy the input STM to avoid modifying it directly
+    stm_output = stm.copy()
+
+    # Check if pnt_uid already exists
+    if "pnt_uid" in stm.coords and not overwrite:
+        warning_msg = (
+            "No pnt_uid has been generated. "
+            "STM already contains 'pnt_uid' coordinate. "
+            "Set 'overwrite=True' to regenerate unique identifiers."
+        )
+        logger.warning(warning_msg)
+        return stm_output
+
+    # Check if pnt_uid is in data variables
+    if "pnt_uid" in stm.data_vars:
+        if not overwrite:
+            warning_msg = (
+                "No pnt_uid has been generated. "
+                "STM already contains 'pnt_uid' data variable. "
+                "Setting 'overwrite=True' will drop this data variable "
+                "and regenerate unique identifiers as coordinates."
+            )
+            logger.warning(warning_msg)
+            return stm_output
+        else:
+            stm_output = stm_output.drop_vars("pnt_uid")
+
+    # Check input:
+    # stm should have coordinates "azimuth" and "range"
+    # they should only have space dimension
+    # there should be no nan values in these coordinates
+    for key_dim in ["azimuth", "range"]:
+        assert key_dim in stm.coords, f"Expected STM to have coordinate '{key_dim}'."
+        assert stm[key_dim].dims == ("space",), f"Coordinate '{key_dim}' should have and only have 'space' dimension."
+        assert not np.any(np.isnan(stm[key_dim].values)), f"Coordinate '{key_dim}' contains NaN values."
+
+    # Generate unique identifiers
+    # This is done by pandas hashing the azimuth and range coordinates together
+    # Index is set to False to avoid including the index in the hash
+    # reset coords to avoid involving other coords in the hash
+    df = stm.reset_coords()[["azimuth", "range"]].to_dataframe()
+    uid = pd.util.hash_pandas_object(df, index=False).values
+
+    # Ensure uniqueness if requested
+    if ensure_unique:
+        unique_uids = np.unique(uid)
+        if unique_uids.shape[0] != uid.shape[0]:
+            logger.error("Duplicate unique identifiers detected in STM!")
+            raise ValueError("Generated unique identifiers are not unique. Check radar coordinates for duplicates.")
+
+    # Assign unique identifiers to the STM
+    stm_output = stm_output.assign_coords({"pnt_uid": (["space"], uid)})
+
+    return stm_output
