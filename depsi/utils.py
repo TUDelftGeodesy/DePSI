@@ -615,7 +615,7 @@ def identify_s1_orbits_in_aoi(lon: list | np.ndarray, lat: list | np.ndarray) ->
 
 
 def generate_pnt_uids(
-    stm: xr.Dataset, dtype: np.dtype = np.uint64, ensure_unique: bool = True, overwrite: bool = False
+    stm: xr.Dataset, ensure_unique: bool = True, overwrite: bool = False
 ) -> xr.Dataset:
     """Generate unique identifiers based on radar coordinates and assign them to the STM.
 
@@ -625,10 +625,6 @@ def generate_pnt_uids(
     ----------
     stm: xr.Dataset
         The space-time matrix with coordinate "azimuth" and "range".
-    dtype: data-type, optional
-        The desired data-type for the unique identifiers. Default is np.uint64.
-        The unsigned integer type is used because the unique identifiers are always positive.
-        For large STMs, consider using np.uint128 to double the maximum value.
     ensure_unique: bool, optional
         Whether to ensure that the generated unique identifiers are unique. Default is True.
         When True, numpy.unique is used to check for uniqueness and raise an error if duplicates are found.
