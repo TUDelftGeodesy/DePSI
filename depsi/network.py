@@ -15,7 +15,7 @@ from sklearn.neighbors import BallTree
 
 from depsi.arc_estimation import arc_estimation_control_network
 from depsi.stats import pretest
-from depsi.utils import get_distance
+from depsi.utils import compute_phase_difference, get_distance
 
 logger = logging.getLogger(__name__)
 
@@ -269,7 +269,22 @@ def form_network(
     arcs_unzipped = list(zip(*arcs, strict=False))
     source_idx = list(arcs_unzipped[0])
     target_idx = list(arcs_unzipped[1])
-    d_phase = _compute_phase_difference(stm, source_idx, target_idx, key_phase, key_complex, method=dphase_method)
+
+    match dphase_method:
+        case "conjmult":
+            d_phase = compute_phase_difference(
+                stm.isel(space=source_idx)[key_complex].data,
+                stm.isel(space=target_idx)[key_complex].data,
+                method=dphase_method,
+            )
+        case "subtract":
+            d_phase = compute_phase_difference(
+                stm.isel(space=source_idx)[key_phase].data,
+                stm.isel(space=target_idx)[key_phase].data,
+                method=dphase_method,
+            )
+        case _:
+            raise NotImplementedError(f"Unknown dphase_method '{dphase_method}'.")
 
     # Temporal base line
     Btemp = stm[key_Btemp].data
@@ -1784,30 +1799,6 @@ def construct_control_network_test_arcs(
             print("Network does not meet the requirements. Recomputing the network with updated failed_arcs...")
 
     return results_control_network, ref_pnt, arcs_updated_network
-
-
-def _compute_phase_difference(
-    stm,
-    source_idx,
-    target_idx,
-    key_phase: str,
-    key_complex: str,
-    method: Literal["subtract", "conjmult"],
-) -> np.ndarray:
-    """Calculate the phase difference between two points.
-
-    The method can either be "subtract" or "conjmult".
-    """
-    if method == "subtract":
-        d_phase = stm[key_phase].isel(space=target_idx).data - stm[key_phase].isel(space=source_idx).data
-    elif method == "conjmult":
-        complex_source = stm[key_complex].isel(space=source_idx).data
-        complex_target = stm[key_complex].isel(space=target_idx).data
-        d_phase = np.angle(complex_target * complex_source.conj())
-    else:
-        raise NotImplementedError(f"Unknown difference method {method}, known are subtract and conjmult")
-
-    return d_phase
 
 
 def _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt, sparse_mode: bool = False):

@@ -5,7 +5,6 @@ import pytest
 import xarray as xr
 
 from depsi.network import (
-    _compute_phase_difference,
     _ensure_network_min_connections,
     _network_relation_matrix,
     _remove_network_points_min_connections,
@@ -114,20 +113,6 @@ class TestNetworkFormation:
             np.unique(np.column_stack((source, target)), axis=0).shape[0] == source.shape[0]
         )  # check if all (source, target) pairs are unique
         assert np.unique(arcs["uid"].values).shape[0] == arcs.sizes["space"]
-
-    @pytest.mark.parametrize("method", ["subtract", "conjmult"])
-    def test_compute_phase_difference(self, stm_random, method):
-        arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
-        d_phase_subtract_0_0 = _compute_phase_difference(
-            stm_random, arcs["source"], arcs["source"], "phase", "complex", method=method
-        )
-        d_phase_subtract_0_1 = _compute_phase_difference(
-            stm_random, arcs["source"], arcs["target"], "phase", "complex", method=method
-        )
-        # Phase differences should be zero for the same source.
-        assert d_phase_subtract_0_0 == pytest.approx(np.zeros(d_phase_subtract_0_0.shape), abs=1e-7)
-        # Phase difference should be within the range of -2*pi to 2*pi for different sources.
-        assert d_phase_subtract_0_1 == pytest.approx(np.zeros(d_phase_subtract_0_1.shape), abs=2 * np.pi + 1e-7)
 
     def test_stm_to_arcs_subtract(self, stm_random):
         # Generate arcs of a Delaunay network with subtracted phase differences.
