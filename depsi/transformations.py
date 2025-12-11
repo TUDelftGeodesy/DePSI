@@ -6,6 +6,8 @@ from typing import NamedTuple
 import numpy
 from numpy.polynomial.chebyshev import chebval
 
+from depsi.utils import npdatetime64_to_datetime
+
 logger = logging.getLogger(__name__)
 
 
@@ -136,15 +138,14 @@ def orbit_fit(orbit_time: numpy.ndarray, xyz_pos: numpy.ndarray, xyz_vel: numpy.
     cz = numpy.polynomial.chebyshev.chebfit(px, xyz_pos[:, 2], 7)
 
     if xyz_vel is None:  # Doris does not return velocity state data --> we calculate it instead
-        xyz_vel = numpy.zeros(xyz_pos.shape)
-        xyz_vel[:, 0] = numpy.polynomial.chebyshev.chebder(cx)
-        xyz_vel[:, 1] = numpy.polynomial.chebyshev.chebder(cy)
-        xyz_vel[:, 2] = numpy.polynomial.chebyshev.chebder(cz)
-
-    # fit velocity
-    cvx = numpy.polynomial.chebyshev.chebfit(px, xyz_vel[:, 0], 7)
-    cvy = numpy.polynomial.chebyshev.chebfit(px, xyz_vel[:, 1], 7)
-    cvz = numpy.polynomial.chebyshev.chebfit(px, xyz_vel[:, 2], 7)
+        cvx = numpy.polynomial.chebyshev.chebder(cx)
+        cvy = numpy.polynomial.chebyshev.chebder(cy)
+        cvz = numpy.polynomial.chebyshev.chebder(cz)
+    else:
+        # fit velocity
+        cvx = numpy.polynomial.chebyshev.chebfit(px, xyz_vel[:, 0], 7)
+        cvy = numpy.polynomial.chebyshev.chebfit(px, xyz_vel[:, 1], 7)
+        cvz = numpy.polynomial.chebyshev.chebfit(px, xyz_vel[:, 2], 7)
 
     # fit acceleration
     cax = numpy.polynomial.chebyshev.chebder(cvx)
@@ -528,7 +529,7 @@ def radar_to_time(
         Time radar coordinates, azimuth as datetime.datetime and range in 2-way seconds.
 
     """
-    azimuth_time = metadata["first_azimuth_time"] + numpy.array(
+    azimuth_time = npdatetime64_to_datetime(metadata["first_azimuth_time"], tz_aware=False) + numpy.array(
         [datetime.timedelta(seconds=az / metadata["pulse_repetition_frequency"]) for az in azimuth_coords]
     )
     range_time = range_coords / metadata["range_sampling_rate"] + metadata["first_range_time"]
@@ -674,9 +675,10 @@ def radar_to_latlonh(
         Return latitude/longitude/height coordinates
 
     """
-    metadata = validate_geocoding_metadata(metadata)
-    xyz = radar_to_xyz(azimuth_coords, range_coords, elevation, metadata, return_satellite_vector=False)
+    metadata_validated = validate_geocoding_metadata(metadata)
+    xyz = radar_to_xyz(azimuth_coords, range_coords, elevation, metadata_validated, return_satellite_vector=False)
     latlonh = xyz_to_latlonh(xyz)
+    latlonh[:2, :] = numpy.rad2deg(latlonh[:2, :])  # since original output is in radians
     return latlonh
 
 
@@ -689,7 +691,7 @@ def validate_geocoding_metadata(metadata: dict) -> dict:
     Parameters
     ----------
     metadata: dict
-        Metadata readout as per `sarxarray.read_metadata` (>v1.1.1)
+        Metadata readout as per `sarxarray.read_metadata` (>=v1.2.2)
 
     Returns
     -------
