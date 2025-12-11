@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.utils import generate_pnt_uids
+from depsi.utils import compute_phase_difference, generate_pnt_uids
 
 
 class TestGeneratePntUids:
@@ -88,3 +88,30 @@ class TestGeneratePntUids:
         # Attempt to generate unique point identifiers and expect a ValueError
         with pytest.raises(ValueError):
             _ = generate_pnt_uids(stm)
+
+
+class TestComputePhaseDifference:
+    def test_compute_phase_difference(self):
+        rng = np.random.default_rng(seed=42)
+        complex = rng.uniform(-1, 1, (17, 3)) + 1j * rng.uniform(-1, 1, (17, 3))
+        phase = np.angle(complex)
+
+        # Phase difference between same phases should be zero
+        assert np.allclose(compute_phase_difference(phase, phase, method="subtract"), 0.0)
+
+        # Phase difference between complex and itself should be zero
+        assert np.allclose(compute_phase_difference(complex, complex, method="conjmult"), 0.0)
+
+        # Phase difference between complex and its negative should be pi or -pi
+        assert np.allclose(np.abs(compute_phase_difference(complex, -complex, method="conjmult")), np.pi)
+
+    def test_compute_phase_difference_errors(self):
+        rng = np.random.default_rng(seed=42)
+        complex = rng.uniform(-1, 1, (17, 3)) + 1j * rng.uniform(-1, 1, (17, 3))
+        phase = np.angle(complex)
+
+        with pytest.raises(NotImplementedError):
+            _ = compute_phase_difference(phase, phase, method="invalid_method")
+
+        with pytest.raises(ValueError):
+            _ = compute_phase_difference(phase, phase, method="conjmult")  # conjmult requires complex inputs
