@@ -6,10 +6,10 @@ from depsi.transformations import radar_to_latlonh
 
 
 def test_radar_to_latlonh():
-    metadata_path = "data/metadata/doris5/20180318/metadata.res"
+    metadata_path = "tests/data/metadata/doris5/20180318/metadata.res"
     metadata_dict = sarxarray.read_metadata(metadata_path, driver="doris5")
 
-    data = xr.open_zarr("data/stm_sparse.zarr")
+    data = xr.open_zarr("tests/data/stm_sparse.zarr")
 
     azimuths = data.azimuth.values
     ranges = data.range.values
