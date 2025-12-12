@@ -328,18 +328,18 @@ def fit_variogram(
     # Prepare the parameters
     variogram_parameters = {}
     if variogram_model == "linear":
-        variogram_parameters['slope'] = etimated_model_parameters[0]
-        variogram_parameters['nugget'] = etimated_model_parameters[1]
+        variogram_parameters['slope'] = estimated_model_parameters[0]
+        variogram_parameters['nugget'] = estimated_model_parameters[1]
     elif variogram_model == "power":
-        variogram_parameters['scale'] = etimated_model_parameters[0]
-        variogram_parameters['exponent'] = etimated_model_parameters[1]
-        variogram_parameters['nugget'] = etimated_model_parameters[2]
+        variogram_parameters['scale'] = estimated_model_parameters[0]
+        variogram_parameters['exponent'] = estimated_model_parameters[1]
+        variogram_parameters['nugget'] = estimated_model_parameters[2]
     else:
-        variogram_parameters['sill'] = etimated_model_parameters[0] + etimated_model_parameters[2]
-        variogram_parameters['range'] = etimated_model_parameters[1]
-        variogram_parameters['nugget'] = etimated_model_parameters[2]
+        variogram_parameters['sill'] = estimated_model_parameters[0] + estimated_model_parameters[2]
+        variogram_parameters['range'] = estimated_model_parameters[1]
+        variogram_parameters['nugget'] = estimated_model_parameters[2]
 
-    estimated_semivariances = variogram_function(etimated_model_parameters, lags)
+    estimated_semivariances = variogram_function(estimated_model_parameters, lags)
     return variogram_parameters, (lags, estimated_semivariances, semivariances)
 
 
@@ -601,10 +601,10 @@ def solve_kriging(
             dims=input_core_dims
         )
 
-        interpolated, sigmasq = solve_kriging_per_single_time(da, grid, method=method, **kwargs)
-        return interpolated, sigmasq
+        predicted, sigmasq = solve_kriging_per_single_time(da, grid, method=method, **kwargs)
+        return predicted, sigmasq
 
-    interpolated, sigmasq = xr.apply_ufunc(
+    predicted, sigmasq = xr.apply_ufunc(
         apply_kriging_per_single_time,
         ps_atmosphere,
         input_core_dims=[input_core_dims],
@@ -616,7 +616,7 @@ def solve_kriging(
     )
 
     # Update time values
-    interpolated = interpolated.assign_coords(
+    predicted = predicted.assign_coords(
         time = ps_atmosphere["time"].data
     )
     sigmasq = sigmasq.assign_coords(
@@ -624,7 +624,7 @@ def solve_kriging(
     )
 
     return xr.Dataset({
-        'interpolated': interpolated,
+        'predicted': predicted,
         'sigmasq': sigmasq
     })
 

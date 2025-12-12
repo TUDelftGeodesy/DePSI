@@ -485,7 +485,7 @@ class TestSolveKriging:
 
         results = solve_kriging(da, points)
         assert isinstance(results, xr.Dataset)
-        assert 'interpolated' in results and 'sigmasq' in results
+        assert 'predicted' in results and 'sigmasq' in results
         assert len(results.time) == len(da.time)
 
     def test_solve_kriging_with_time_in_grid(self, get_test_data):
@@ -516,7 +516,7 @@ class TestEstimateAtmospherePhase:
         assert 'atmosphere_mother' in results
         assert 'unmodeled_disp' in results
         assert 'atmosphere_estimates' in results
-        assert 'atmosphere_interpolated' in results
+        assert 'atmosphere_predicted' in results
         assert 'atmosphere_sigmasq' in results
 
     def test_estimate_atmosphere_phase_kwargs(self, get_test_data):
@@ -552,5 +552,5 @@ class TestEstimateAtmospherePhase:
         assert 'atmosphere_mother' in results
         assert 'unmodeled_disp' in results
         assert 'atmosphere_estimates' in results
-        assert 'atmosphere_interpolated' in results
+        assert 'atmosphere_predicted' in results
         assert 'atmosphere_sigmasq' in results
