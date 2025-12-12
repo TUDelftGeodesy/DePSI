@@ -515,13 +515,15 @@ def solve_kriging_per_single_time(
                 'points',
                 grid.coords['x'].data[index],
                 grid.coords['y'].data[index],
-                backend='loop'
+                backend='loop'  # use 'loop' backend for single point
                 )
             return np.concatenate([zvalues, sigmasq])
 
         # Loop over each point in grid and apply krige
         zvalues = np.empty(indices.shape[0])
         sigmasq = np.empty(indices.shape[0])
+
+        # TODO: Parallelize this loop if needed
         for index, _ in enumerate(indices):
             zvalues[index], sigmasq[index] = _apply_kriging_one_point(index)
 
