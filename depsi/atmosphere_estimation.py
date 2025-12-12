@@ -317,7 +317,7 @@ def fit_variogram(
 
     # see reference in
     # https://github.com/GeoStat-Framework/PyKrige/blob/e02baad442ac99b22f038b09b6290e7abacc17ae/src/pykrige/core.py#L582
-    etimated_model_parameters = pykrige.core._calculate_variogram_model(
+    estimated_model_parameters = pykrige.core._calculate_variogram_model(
         lags,
         semivariances,
         variogram_model,
