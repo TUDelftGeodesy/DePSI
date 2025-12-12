@@ -329,7 +329,7 @@ def fit_variogram(
     variogram_parameters = {}
     if variogram_model == "linear":
         variogram_parameters['slope'] = etimated_model_parameters[0]
-        variogram_parameters['nuggest'] = etimated_model_parameters[1]
+        variogram_parameters['nugget'] = etimated_model_parameters[1]
     elif variogram_model == "power":
         variogram_parameters['scale'] = etimated_model_parameters[0]
         variogram_parameters['exponent'] = etimated_model_parameters[1]
