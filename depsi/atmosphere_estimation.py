@@ -605,7 +605,7 @@ def solve_kriging(
         return interpolated, sigmasq
 
     interpolated, sigmasq = xr.apply_ufunc(
-        apply_krige_per_single_time,
+        apply_kriging_per_single_time,
         ps_atmosphere,
         input_core_dims=[input_core_dims],
         output_core_dims=[list(grid.sizes)[::-1], list(grid.sizes)[::-1]], # result has shape (y, x)
