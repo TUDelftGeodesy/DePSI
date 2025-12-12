@@ -651,7 +651,7 @@ def estimate_atmosphere_phase(stm: xr.Dataset, **kwargs) -> xr.Dataset:
     Returns
     -------
     xr.Dataset
-        The STM with the estimated atmospheric phase.
+        The STM with the predicted atmospheric phase.
     """
     # Step 1: Apply temporal filtering to extract high-frequency atmospheric signal
     unmodeled_displacement_kwargs = kwargs.get('unmodeled_displacement_kwargs', {})
