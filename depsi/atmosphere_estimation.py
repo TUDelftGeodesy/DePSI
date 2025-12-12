@@ -630,7 +630,10 @@ def solve_kriging(
 
 
 def estimate_atmosphere_phase(
-        stm: xr.Dataset, variable_name="psc_phase_residuals", **kwargs
+        stm: xr.Dataset,
+        psc_phase_residuals="psc_phase_residuals",
+        atmosphere_mother: int | str="atmosphere_mother",
+        **kwargs
     ) -> xr.Dataset:
     """Estimate the atmosphere phase.
 
@@ -642,8 +645,10 @@ def estimate_atmosphere_phase(
     ----------
     stm: xr.Dataset
         The STM with unwrapped phases.
-    variable_name: str. The name of the variable in the stm Dataset that contains
+    psc_phase_residuals: str. The name of the variable in the stm Dataset that contains
         the PSC phase residuals. Default is "psc_phase_residuals".
+    atmosphere_mother: int | str. A string indicating the name of the variable in the stm Dataset
+        that contains the atmosphere mother or an integer indicating the time index of the atmosphere.
     kwargs: dict
         Additional keyword arguments for the `estimate_unmodeled_displacement` function and
         the `solve_kriging` function. It can contain:
@@ -660,7 +665,7 @@ def estimate_atmosphere_phase(
     # Step 1: Apply temporal filtering to extract high-frequency atmospheric signal
     unmodeled_displacement_kwargs = kwargs.get('unmodeled_displacement_kwargs', {})
     unmodeled_disp = estimate_unmodeled_displacement(
-        psc_phase_residuals=stm[variable_name],
+        psc_phase_residuals=stm[psc_phase_residuals],
         baseline_years=stm["time"],
         **unmodeled_displacement_kwargs,
     )
@@ -668,8 +673,18 @@ def estimate_atmosphere_phase(
     # Add results to stm
     stm["unmodeled_disp"] = unmodeled_disp
 
+    # Get atmosphere mother
+    if isinstance(atmosphere_mother, str):
+        if atmosphere_mother not in stm:
+            raise ValueError(
+                f"atmosphere_mother '{atmosphere_mother}' not found in stm Dataset."
+            )
+        atmosphere_mother = stm[atmosphere_mother]
+    else:
+        atmosphere_mother = stm.isel(time=atmosphere_mother)[psc_phase_residuals]
+
     # Estimate atmosphere phase
-    stm["atmosphere_estimates"] = stm[variable_name] - stm["unmodeled_disp"] + stm["atmosphere_mother"]
+    stm["atmosphere_estimates"] = stm[psc_phase_residuals] - stm["unmodeled_disp"] + atmosphere_mother
 
     # Step 2: Apply spatial kriging to predict atmospheric phase per epoch
     kriging_kwargs = kwargs.get('kriging_kwargs', {})
