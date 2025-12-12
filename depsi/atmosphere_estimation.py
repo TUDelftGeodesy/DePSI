@@ -667,7 +667,7 @@ def estimate_atmosphere_phase(stm: xr.Dataset, **kwargs) -> xr.Dataset:
     # Estimate atmosphere phase
     stm["atmosphere_estimates"] = stm["psc_phase_residuals"] - stm["unmodeled_disp"] + stm["atmosphere_mother"]
 
-    # Step 2: Apply spatial kriging to estimate atmospheric phase per epoch
+    # Step 2: Apply spatial kriging to predict atmospheric phase per epoch
     kriging_kwargs = kwargs.get('kriging_kwargs', {})
     interpolated_atmosphere = solve_kriging(
         ps_atmosphere=stm["atmosphere_estimates"],
