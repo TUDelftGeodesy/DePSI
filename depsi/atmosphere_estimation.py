@@ -639,7 +639,7 @@ def estimate_atmosphere_phase(stm: xr.Dataset, **kwargs) -> xr.Dataset:
     Parameters
     ----------
     stm: xr.Dataset
-        The network STMs with unwrapped phases.
+        The STM with unwrapped phases.
     kwargs: dict
         Additional keyword arguments for the `estimate_unmodeled_displacement` function and
         the `solve_kriging` function. It can contain:
