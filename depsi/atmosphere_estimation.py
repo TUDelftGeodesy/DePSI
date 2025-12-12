@@ -675,6 +675,6 @@ def estimate_atmosphere_phase(stm: xr.Dataset, **kwargs) -> xr.Dataset:
         **kriging_kwargs
     )
 
-    stm["atmosphere_interpolated"] = interpolated_atmosphere["interpolated"]
+    stm["atmosphere_predicted"] = predicted_atmosphere["predicted"]
     stm["atmosphere_sigmasq"] = interpolated_atmosphere["sigmasq"]
     return stm
