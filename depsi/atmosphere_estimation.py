@@ -593,7 +593,7 @@ def solve_kriging(
                 f"{input_core_dims}."
             )
 
-    def apply_krige_per_single_time(data: np.ndarray):
+    def apply_kriging_per_single_time(data: np.ndarray):
         """Apply kriging for a single time step."""
         da = xr.DataArray(
             data=data,
