@@ -1,4 +1,12 @@
-# SLC related methods
+# Data loading
+
+In this section, we will demonstrate how to get started with the `DePSI` by reading the SLC data and metadata. 
+
+To add:
+
+- read_slc_stack
+- read_metadata
+- read_weather_data
 
 ## Converting coregistered interferogram stack to SLC stack
 

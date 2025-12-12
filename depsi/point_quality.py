@@ -6,6 +6,7 @@ import ruptures as rpt
 import xarray as xr
 
 from depsi.classification import _nad_block, _nmad_block
+from depsi.network import find_points_within_buffer
 from depsi.utils import crop_slc_spacetime, npdatetime64_to_datetime
 
 # The partitioning requires a jump size when using pelt mode. This should always be 5.
@@ -279,6 +280,114 @@ def stm_add_incremental_recal_nad_nmad(
     return stm
 
 
+def detect_side_lobes(
+    stm: xr.Dataset,
+    max_pixel_dist: float,
+    min_correlation: float,
+    complex_variable_name: str = "sd_complex",
+    amplitude_variable_name: str = "sd_amplitude_unnormalized",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Detect and mask side-lobe points based on the phase correlation between points.
+
+    It first finds points on the same range and azimuth and only considers points close by. Then it
+    computes the complex DD phase and computes the correlation.
+
+    Parameters
+    ----------
+    stm : xarray.Dataset
+      An input stm must include 'range', 'azimuth' variables.
+      The complex and phase variables are required but customized names are allowed.
+    max_pixel_dist : float
+      The maximum allowed spatial distance (in pixels) between points to be considered potential side-lobes.
+    min_correlation : float
+      The minimum correlation threshold to classify points as side-lobes. 0 means no correlation, 1 is maximum
+      correlation
+    complex_variable_name : str, optional
+        The name of the complex variable in the input dataset, by default "complex".
+    amplitude_variable_name : str, optional
+        The name of the amplitude variable in the input dataset, by default "amplitude".
+
+    Returns
+    -------
+    side_lobes_array : np.ndarray
+      An array containing the indices of the detected side-lobe points.
+    mask_side_lobes : np.ndarray
+      A boolean mask where 'False' indicates detected side-lobe points.
+    """
+    # Lazy load variables
+    range_vals = stm["range"].data
+    azimuth_vals = stm["azimuth"].data
+    complex_val = stm[complex_variable_name].data
+    amplitude = stm[amplitude_variable_name].data
+    nr_epochs = len(stm.time)
+
+    # Define an empty set where the sidelobes will be stored
+    side_lobes = set()
+
+    for point in range(stm.sizes["space"]):
+        # Skip the point if it is already detected as a sidelobe
+        if point in side_lobes:
+            continue
+
+        # Get the range and azimuth coordinates of the point
+        range_i = range_vals[point]
+        azimuth_i = azimuth_vals[point]
+
+        # Search for points close by with same range and azimuth coordinates
+        idx_range = np.nonzero(
+            np.logical_and(
+                range_vals == range_i,  # Same range value
+                np.abs(azimuth_vals - azimuth_i) < max_pixel_dist,  # Within pixel distance
+            )
+        )[0]
+
+        idx_azimuth = np.nonzero(
+            np.logical_and(
+                azimuth_vals == azimuth_i,  # Same azimuth value
+                np.abs(range_vals - range_i) < max_pixel_dist,  # Within pixel distance
+            )
+        )[0]
+
+        potential_side_lobe_idx = np.union1d(idx_range, idx_azimuth)
+        potential_side_lobe_idx = (
+            potential_side_lobe_idx.compute()
+            if isinstance(potential_side_lobe_idx, da.Array)
+            else potential_side_lobe_idx
+        )
+
+        for point2 in potential_side_lobe_idx:
+            if point2 != point and point2 not in side_lobes:  # Skip the current and already detected side-lobe points
+                dd_complex = _compute_dd_for_correlation(
+                    complex_val[point, :], complex_val[point2, :]
+                )  # Compute DD between the two points
+                corr = _calculate_phase_correlation(
+                    dd_complex, nr_epochs
+                )  # Check the phase difference between two points and compute correlation
+
+                if (
+                    corr >= min_correlation
+                ):  # The  point with the lowest mean amplitude will be detected as the side-lobe
+                    mean_ampl_p1 = np.mean(amplitude[point, :])
+                    mean_ampl_p2 = np.mean(amplitude[point2, :])
+
+                    if mean_ampl_p2 < mean_ampl_p1:
+                        side_lobes.add(
+                            point2
+                        )  # point 2 has the lowest mean amplitude, so it is detected as the side-lobe
+                    else:
+                        side_lobes.add(
+                            point
+                        )  # point 1 has the lowest mean amplitude, so it is detected as the side-lobe
+
+    # Make an array of the set
+    side_lobes_array = np.array(list(side_lobes))
+
+    mask_side_lobes = np.ones(stm.sizes["space"], dtype=bool)  # Create a mask
+    mask_side_lobes[side_lobes_array] = False
+
+    return side_lobes_array, mask_side_lobes
+
+
 def _estimate_breakpoints(
     amplitude_array: xr.DataArray,
     db_partitioning: bool = False,
@@ -319,23 +428,29 @@ def _estimate_breakpoints(
     # Rechunk in time since no partitions can be there
     amplitude_array = amplitude_array.chunk({"time": -1})
 
-    if db_partitioning:
-        amplitude_ts = 10 * da.log10(amplitude_array)
+    # Check if there are actually enough observations to do partitioning (thus at least 2 partitions)
+    if amplitude_array.sizes["time"] < 2 * min_partition_size:
+        # if not, there are no breakpoints
+        computed_breakpoints = np.zeros(amplitude_array.shape, dtype=bool)
     else:
-        amplitude_ts = amplitude_array
+        if db_partitioning:
+            amplitude_ts = 10 * da.log10(amplitude_array)
+        else:
+            amplitude_ts = amplitude_array
 
-    if search_method not in search_method_functions.keys():
-        raise ValueError(f"search_method should be 'pelt' or 'binseg' but is {search_method}!")
+        if search_method not in search_method_functions.keys():
+            raise ValueError(f"search_method should be 'pelt' or 'binseg' but is {search_method}!")
 
-    breakpoints = xr.map_blocks(
-        search_method_functions[search_method],
-        amplitude_ts,
-        args=(cost_model, min_partition_size),
-        template=amplitude_ts,
-    )
+        breakpoints = xr.map_blocks(
+            search_method_functions[search_method],
+            amplitude_ts,
+            args=(cost_model, min_partition_size),
+            template=amplitude_ts,
+        )
 
-    # Compute the breakpoints (necessary for the identifiers since the chunking breaks)
-    computed_breakpoints = breakpoints.values
+        # Compute the breakpoints (necessary for the identifiers since the chunking breaks)
+        computed_breakpoints = breakpoints.values
+
     # to compute statistics per partition we need to assign each partition a unique identifier.
     # This consists of two parts:
     # 1. a cumulative sum over the entire breakpoint True/False array. This will increase the identifier by 1 for each
@@ -635,3 +750,112 @@ def _compute_partition_nad_nmad_amp_stats(amp: xr.DataArray) -> xr.DataArray:
     amp["partition_mad"] = (amp.dims, np.ones_like(data) * mad)
     amp["partition_amplitude_median"] = (amp.dims, np.ones_like(data) * median)
     return amp
+
+
+def _calculate_phase_correlation(dd_complex, nr_epochs):
+    """Compute correlation between phase time series of two pixels based on their double-difference (DD) phasors.
+
+    This function calculates the phase similarity between two complex-valued time series
+    by analyzing the angular differences in their double-difference (DD) phasors.
+    The correlation is normalized over the number of epochs to produce a value between 0 and 1,
+    where 1 indicates perfect correlation.
+
+    Parameters
+    ----------
+    dd_complex : array-like
+      A complex-valued array representing the double-difference phasors
+                             between two pixels over multiple epochs.
+    nr_epochs : int
+      The number of time epochs (observations) over which the correlation is calculated.
+
+    Returns
+    -------
+    float
+        A correlation value between 0 and 1, representing the phase similarity of the two time series.
+    """
+    corr = np.abs(np.sum(np.exp(1j * (np.angle(dd_complex))))) / nr_epochs
+    return corr
+
+
+def _compute_dd_for_correlation(complex_p1, complex_p2):
+    """Compute the complex double-difference (DD) between two complex-valued time series.
+
+    This function calculates the element-wise product of the complex conjugate of the first time series (`complex_p1`)
+    and the second time series (`complex_p2`). The result represents the phase difference
+    between the two series, which is useful for detecting similarities in phase behavior.
+
+    Parameters
+    ----------
+    complex_p1 : np.ndarray
+      A complex-valued array representing the first time series.
+    complex_p2 : np.ndarray
+      A complex-valued array representing the second time series.
+
+    Returns
+    -------
+    np.ndarray
+        An array of complex values representing the phase differences (double differences)
+    """
+    complex_conj_p1 = np.conj(complex_p1)
+    dd_complex = complex_conj_p1 * complex_p2
+
+    return dd_complex
+
+
+def compute_spatiotemporal_consistency(
+    stm: xr.Dataset,
+    min_dist: float | int,
+    max_dist: float | int,
+    x_crd_layer_name: str,
+    y_crd_layer_name: str,
+    coordinate_type: Literal["euclidean", "geographic"],
+) -> xr.Dataset:
+    """Calculate the spatio-temporal consistency of each point in the STM.
+
+    Equation used is specified in the thesis of Freek van Leijen, Sec. 6.2.6.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+        Space-Time matrix containing at least the coordinates `space` and `time`, and at least the layers `ts_los`
+        and the coordinate layers `x_crd_layer_name` and `y_crd_layer_name`
+    min_dist: float | int
+        Minimum distance for a point B to point A to be considered for the spatio-temporal consistency of point A
+    max_dist: float | int
+        Maximum distance for a point B to point A to be considered for the spatio-temporal consistency of point A
+    x_crd_layer_name: str
+        Name of the layer containing the X-coordinates
+    y_crd_layer_name: str
+        Name of the layer containing the Y-coordinates
+    coordinate_type: Literal["euclidean", "geographic"]
+        Whether the coordinates in the provided layers are Euclidean (e.g. RD) or Geographic (e.g. latitude/longitude)
+
+    Returns
+    -------
+    xr.Dataset
+        The same input STM with an extra layer named `stc` containing the spatio-temporal consistency in millimeters
+
+    """
+    x_crds = stm[x_crd_layer_name].values.flatten()
+    y_crds = stm[y_crd_layer_name].values.flatten()
+    max_indices = find_points_within_buffer(
+        x_crds, y_crds, x_crds, y_crds, max_dist, coordinate_type, return_aggregate_point_buffer=False
+    )
+    min_indices = find_points_within_buffer(
+        x_crds, y_crds, x_crds, y_crds, min_dist, coordinate_type, return_aggregate_point_buffer=False
+    )
+    stcs = []
+
+    for point in range(x_crds.shape[0]):
+        buffer_indices = [idx for idx in max_indices[point] if idx not in min_indices[point] and idx != point]
+        if len(buffer_indices) == 0:
+            stcs.append(np.nan)
+        else:
+            buffer_ts_sd = stm.ts_los.isel(space=buffer_indices) - stm.ts_los.isel(space=point)
+            buffer_ts_sd_comp = buffer_ts_sd.values
+            buffer_ts_dd = buffer_ts_sd_comp[:, :-1] - buffer_ts_sd_comp[:, 1:]
+            buffer_ts_stcs = np.std(buffer_ts_dd, axis=1).flatten()
+            stcs.append(min(buffer_ts_stcs) * 1000)  # * 1000 to convert from meters to millimeters
+
+    stm = stm.assign({"stc": (["space"], stcs)})
+    return stm

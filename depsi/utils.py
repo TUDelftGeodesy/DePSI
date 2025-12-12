@@ -1,6 +1,10 @@
+import math
 import os
+from typing import Literal
 
+import asf_search as asf
 import dask.array as da
+import pandas as pd
 import pyproj
 
 try:
@@ -20,10 +24,34 @@ except ImportError:  # UTC can only be imported from Python 3.11 onwards
         stacklevel=1,  # necessary to start the call stack here.
     )
 
+import logging
+
 import geopandas
 import numpy as np
 import pytz
 import xarray as xr
+
+logger = logging.getLogger(__name__)
+
+EARTH_RADIUS = 6378136  # m
+
+
+def wrap_phase(phs_abs):
+    """Wrap the absolute phase to the range [-pi, pi).
+
+    Parameters
+    ----------
+    phs_abs : array_like or float
+        The absolute phase.
+
+    Returns
+    -------
+    ndarray or float
+        The wrapped phase in the range [-pi, pi).
+    """
+    phs_wrapped = np.remainder(phs_abs + np.pi, 2 * np.pi) - np.pi
+
+    return phs_wrapped
 
 
 def _orbit_fit(orbit, verbose=0, der=True):
@@ -106,7 +134,52 @@ def _orbit_fit(orbit, verbose=0, der=True):
     return orbit_fit
 
 
-def npdatetime64_to_datetime(date: np.datetime64) -> datetime:
+def get_distance(
+    source: list | tuple | np.ndarray,
+    target: list | tuple | np.ndarray,
+    mode: Literal["euclidean", "geographic"] = "euclidean",
+):
+    """Calculate the distance between two points.
+
+    The Euclidean mode calculates distance on a 2D XY-plane. The Geographic mode approximates the Earth as a sphere
+    with radius 6378136 meter (the polar radius). On long north-south oriented arcs, distance errors of up to 0.3% are
+    possible.
+
+    Parameters
+    ----------
+    source: list | tuple | np.ndarray
+        The source point, formatted as (x, y) / (lon, lat)
+    target: list | tuple | np.ndarray
+        The target point, formatted as (x, y) / (lon, lat)
+    mode: Literal["euclidean", "geographic"], default "euclidean"
+        Whether the source and target points are given in (x, y) (units meters) or (lon, lat) (units degrees)
+
+    Returns
+    -------
+        The distance between the two points in meters.
+    """
+    if mode == "euclidean":
+        return math.dist(source, target)
+    elif mode == "geographic":
+        # this is the Haversine formula
+        lat1 = source[1]
+        lat2 = target[1]
+        dphi = np.radians(lat1 - lat2)
+        dlambda = np.radians(source[0] - target[0])
+        dist = (
+            2
+            * EARTH_RADIUS
+            * np.arcsin(
+                np.sqrt(
+                    (1 - np.cos(dphi) + np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * (1 - np.cos(dlambda))) / 2
+                )
+            )
+        )
+        return dist
+    raise ValueError(f"Unknown mode {mode}, only know euclidean and geographic!")
+
+
+def npdatetime64_to_datetime(date: np.datetime64, tz_aware: bool = True) -> datetime:
     """Convert a numpy datetime64 object to a python datetime object.
 
     Parses the np.datetime64 object into a datetime object.
@@ -115,6 +188,8 @@ def npdatetime64_to_datetime(date: np.datetime64) -> datetime:
     ----------
     date : np.datetime64
       the date to be converted
+    tz_aware: bool, default True
+      whether the returned datetime object should be timezone-aware or not
 
     Returns
     -------
@@ -122,7 +197,10 @@ def npdatetime64_to_datetime(date: np.datetime64) -> datetime:
       The same date converted to a datetime object
     """
     timestamp = (date - np.datetime64("1970-01-01T00:00:00")) / np.timedelta64(1, "s")
-    return datetime.fromtimestamp(timestamp, UTC)
+    dt_obj = datetime.fromtimestamp(timestamp, UTC)
+    if not tz_aware:
+        dt_obj = datetime.strptime(dt_obj.strftime("%Y%m%d:%H%M%S"), "%Y%m%d:%H%M%S")
+    return dt_obj
 
 
 def _get_aoi_shapefile_bounding_box(aoi_filename: str) -> tuple:
@@ -288,7 +366,22 @@ def crop_slc_spacetime(
             & (slcs["lon"] >= min(bounding_box[0]))
             & (slcs["lon"] <= max(bounding_box[0]))
         )
-        slcs = slcs.where(space_mask.compute(), drop=True)
+
+        comp_space_mask = space_mask.compute()
+        az_sum = comp_space_mask.sum(dim="azimuth")
+        rg_sum = comp_space_mask.sum(dim="range")
+
+        # first and last non zero
+        min_range, max_range = (
+            az_sum.where(az_sum > 0, drop=True)["range"].min().values,
+            az_sum.where(az_sum > 0, drop=True)["range"].max().values,
+        )
+        min_azimuth, max_azimuth = (
+            rg_sum.where(rg_sum > 0, drop=True)["azimuth"].min().values,
+            rg_sum.where(rg_sum > 0, drop=True)["azimuth"].max().values,
+        )
+        # data at original locations not nan
+        slcs = slcs.sel(azimuth=range(min_azimuth, max_azimuth), range=range(min_range, max_range))
 
     return slcs
 
@@ -374,7 +467,9 @@ def stm_compute_single_time_differences(
     """Compute the single differences of an STM in time with respect to a given mother image.
 
     This computes the single difference complex value, phase, unnormalized amplitude, and h2ph values with respect
-    to the provided single difference mother
+    to the provided single difference mother. The mother image is the first image acquired on or after the provided
+    date (if a datetime object or str object is provided), or the mother image of the input dataset (if 'auto' mode
+    is selected).
 
     Parameters
     ----------
@@ -401,7 +496,7 @@ def stm_compute_single_time_differences(
     ValueError
       Raised when:
         - single_difference_mother is of an unsupported format
-        - the date provided to single_difference_mother is not in the input stack
+        - the date provided to single_difference_mother is not in the input stack date range
     """
     # Identify the mother image
     if isinstance(single_difference_mother, datetime):
@@ -409,8 +504,8 @@ def stm_compute_single_time_differences(
             single_difference_mother.year, single_difference_mother.month, single_difference_mother.day, tzinfo=pytz.UTC
         )
         mother_index = [
-            idx for idx, date in enumerate(stm["time"].values) if format_mother_date == npdatetime64_to_datetime(date)
-        ]
+            idx for idx, date in enumerate(stm["time"].values) if format_mother_date <= npdatetime64_to_datetime(date)
+        ]  # select all images beyond the mother date
     elif isinstance(single_difference_mother, str):
         if single_difference_mother == "auto":
             mother_index = np.where(abs(stm["h2ph"]).sum(axis=0).values == 0)[0]
@@ -424,8 +519,8 @@ def stm_compute_single_time_differences(
             mother_index = [
                 idx
                 for idx, date in enumerate(stm["time"].values)
-                if format_mother_date == npdatetime64_to_datetime(date)
-            ]
+                if format_mother_date <= npdatetime64_to_datetime(date)
+            ]  # select all images beyond the mother date
         else:
             raise ValueError(f'Cannot parse {single_difference_mother}, not of type "auto" or "YYYYMMDD"!')
     else:
@@ -433,10 +528,10 @@ def stm_compute_single_time_differences(
     if len(mother_index) == 0:
         raise ValueError(
             f"Cannot find provided mother date {single_difference_mother}, "
-            f"please provide a date that is part of the stack! Possible dates: "
-            f"{stm.time.values}"
+            "please provide a date that is within the range of the stack! Possible dates: "
+            f"{stm.time.values[0]}--{stm.time.values[-1]}"
         )
-    sd_mother_index = mother_index[0]  # 0 in case somehow more than 1 image is detected
+    sd_mother_index = mother_index[0]  # 0 in case more than 1 image is detected
     # In that case we take the first image that was detected, as this is expected
     sd_mother = npdatetime64_to_datetime(stm["time"].values[sd_mother_index])
 
@@ -458,3 +553,145 @@ def stm_compute_single_time_differences(
     stm = stm.assign({"sd_phase": (["space", "time"], sd_phase.data)})
 
     return stm
+
+
+def identify_s1_orbits_in_aoi(lon: list | np.ndarray, lat: list | np.ndarray) -> tuple[list[str], dict]:
+    """Identify the Sentinel-1 orbit numbers and directions crossing a AoI.
+
+    Parameters
+    ----------
+    lon: list | np.ndarray
+        List of all the longitudes of all the points of interest in the AoI
+    lat: list | np.ndarray
+        List of all the latitudes of all the points of interest in the AoI
+
+    Returns
+    -------
+    list
+        The orbits overlapping with the AoI
+    dict
+        The footprints of the overlapping SLCs per track
+    """
+    bbox = [[np.min(lon), np.max(lon)], [np.min(lat), np.max(lat)]]
+    wkt = (
+        f"POLYGON(("
+        f"{bbox[0][0]} {bbox[1][0]}, "
+        f"{bbox[0][1]} {bbox[1][0]}, "
+        f"{bbox[0][1]} {bbox[1][1]}, "
+        f"{bbox[0][0]} {bbox[1][1]}, "
+        f"{bbox[0][0]} {bbox[1][0]}))"
+    )
+    slcs = None
+    counter = 0
+    while slcs is None:
+        try:
+            slcs = asf.geo_search(
+                intersectsWith=wkt,
+                platform=asf.PLATFORM.SENTINEL1,
+                beamMode="IW",
+                processingLevel="SLC",
+                start="one month ago",
+                end="now",
+            )
+        except (asf.exceptions.ASFSearch5xxError, asf.exceptions.ASFSearchError, TimeoutError):
+            counter += 1
+            print(f"ASF encountered an internal error. Retrying... (#{counter})")
+
+    orbits = [
+        f"s1_{slc.properties['flightDirection'].lower().replace('e', '')[:3]}_t{slc.properties['pathNumber']:0>3d}"
+        for slc in slcs
+    ]
+    filtered_orbits = list(sorted(list(set(orbits))))
+
+    extents = [slc.geojson()["geometry"]["coordinates"][0] for slc in slcs]
+    footprints = {}
+    for orbit in filtered_orbits:
+        footprints[orbit] = []
+
+    for extent in range(len(extents)):
+        footprints[orbits[extent]].append(extents[extent])
+
+    return filtered_orbits, footprints
+
+
+def generate_pnt_uids(
+    stm: xr.Dataset, ensure_unique: bool = True, overwrite: bool = False
+) -> xr.Dataset:
+    """Generate unique identifiers based on radar coordinates and assign them to the STM.
+
+    The unique identifiers are assigned as a new coordinate "pnt_uid" in the STM.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+        The space-time matrix with coordinate "azimuth" and "range".
+    ensure_unique: bool, optional
+        Whether to ensure that the generated unique identifiers are unique. Default is True.
+        When True, numpy.unique is used to check for uniqueness and raise an error if duplicates are found.
+        For very large STMs, this can be computationally expensive. Consider setting to False if the radar
+        coordinates are known to be unique.
+    overwrite: bool, optional
+        Whether to overwrite existing "pnt_uid" coordinate in the STM. Default is False.
+        If False and "pnt_uid" already exists in coordinates or data variables, a warning
+        is logged and the STM is returned unchanged.
+        If True and "pnt_uid" exists in data variables, it is dropped before generating new identifiers.
+
+    Returns
+    -------
+    xr.Dataset
+        The space-time matrix with an added unique identifier coordinate "pnt_uid"
+    """
+    # Copy the input STM to avoid modifying it directly
+    stm_output = stm.copy()
+
+    # Check if pnt_uid already exists
+    if "pnt_uid" in stm.coords and not overwrite:
+        warning_msg = (
+            "No pnt_uid has been generated. "
+            "STM already contains 'pnt_uid' coordinate. "
+            "Set 'overwrite=True' to regenerate unique identifiers."
+        )
+        logger.warning(warning_msg)
+        return stm_output
+
+    # Check if pnt_uid is in data variables
+    if "pnt_uid" in stm.data_vars:
+        if not overwrite:
+            warning_msg = (
+                "No pnt_uid has been generated. "
+                "STM already contains 'pnt_uid' data variable. "
+                "Setting 'overwrite=True' will drop this data variable "
+                "and regenerate unique identifiers as coordinates."
+            )
+            logger.warning(warning_msg)
+            return stm_output
+        else:
+            stm_output = stm_output.drop_vars("pnt_uid")
+
+    # Check input:
+    # stm should have coordinates "azimuth" and "range"
+    # they should only have space dimension
+    # there should be no nan values in these coordinates
+    for key_dim in ["azimuth", "range"]:
+        assert key_dim in stm.coords, f"Expected STM to have coordinate '{key_dim}'."
+        assert stm[key_dim].dims == ("space",), f"Coordinate '{key_dim}' should have and only have 'space' dimension."
+        assert not np.any(np.isnan(stm[key_dim].values)), f"Coordinate '{key_dim}' contains NaN values."
+
+    # Generate unique identifiers
+    # This is done by pandas hashing the azimuth and range coordinates together
+    # Index is set to False to avoid including the index in the hash
+    # reset coords to avoid involving other coords in the hash
+    df = stm.reset_coords()[["azimuth", "range"]].to_dataframe()
+    uid = pd.util.hash_pandas_object(df, index=False).values
+
+    # Ensure uniqueness if requested
+    if ensure_unique:
+        unique_uids = np.unique(uid)
+        if unique_uids.shape[0] != uid.shape[0]:
+            logger.error("Duplicate unique identifiers detected in STM!")
+            raise ValueError("Generated unique identifiers are not unique. Check radar coordinates for duplicates.")
+
+    # Assign unique identifiers to the STM
+    stm_output = stm_output.assign_coords({"pnt_uid": (["space"], uid)})
+
+    return stm_output

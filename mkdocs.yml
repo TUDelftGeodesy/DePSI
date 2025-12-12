@@ -6,13 +6,22 @@ nav:
   - Getting started: 
     - About DePSI: index.md
   - Usage:
-    - SLC methods: usages/slc.md
-  - API Reference: api_reference.md
-  - Developer Guide: dev_guide.md
+    - Load data: usages/io.md
+    - Select PS and DS: usages/classification.md
+    - Quality improvement: usages/quality.md
+    - Network unwrapping: usages/network.md
+  - Contributing: 
+    - Contributing guide: CONTRIBUTING.md
+    - Practical info for developers: dev_guide.md
+    - Code of conduct: CODE_OF_CONDUCT.md
+  - Example Notebooks:
+    - SARXarray and STMTools Dependencies of DePSI: notebooks/demo_sarxarray_and_stmtools.ipynb
+    - DePSI example workflow: notebooks/demo_depsi.ipynb
 
 
 theme:
   name: material
+  custom_dir: docs/notebooks/download_button
   palette:
     # Palette toggle for light mode
     - scheme: default
@@ -56,3 +65,5 @@ markdown_extensions:
 
 extra:
   generator: false
+  version:
+    provider: mike

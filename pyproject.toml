@@ -14,6 +14,11 @@ dependencies = [
     "scipy",
     "stmtools",
     "ruptures",
+    "networkx",
+    "drama",
+    "asf_search",
+    "sparse",
+    "scikit-learn"
 ]
 description = "Python package for interferometric synthetic aperture radar (InSAR) time series processing."
 readme = "README.md"
@@ -50,6 +55,7 @@ docs = [
 ]
 demo = [
     "jupyterlab",
+    "contextily",
 ]
 
 [tool.setuptools]
@@ -83,7 +89,7 @@ lint.ignore = [
 ] # docstring style
 
 line-length = 120
-exclude = ["docs", "build", "*.ipynb", "examples/*", "depsi/LAMBDA.py"]
+exclude = ["docs", "build", "*.ipynb", "scripts/*", "depsi/LAMBDA.py", "examples/scripts/*"]
 # Allow unused variables when underscore-prefixed.
 lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 target-version = "py310"

@@ -8,13 +8,13 @@ from depsi.point_quality import detect_outliers_stm, stm_partitioning, stm_add_i
 
 # ############## INPUT VARIABLES
 
-slc_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t110.zarr'
+slc_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_base.zarr'
 
 # Crop in space
 aoi_file = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/shape/nl_amsterdam_shape.shp'
 
 # STM save path
-stm_save_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t110_stm.zarr'
+stm_save_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_stm.zarr'
 
 # Crop in time
 first_date = datetime(2014, 1, 1)
@@ -30,7 +30,7 @@ recalibration_jump_size = 10
 
 # PS selection method
 ps_selection_method = "nmad"
-threshold = 0.1
+threshold = 0.25
 chunks_ps_selection = 1000
 
 # Input variables for the outlier detection
@@ -51,15 +51,18 @@ ps_mother_epoch_sd = '20190806'
 
 # ## FUNCTIONALITY
 # ############ LOAD THE SLCS FROM ZARR ###############
+print("Reading SLC stack...")
 slcs = read_slc_stack(slc_path)
 
 # ############ CROP ##########
+print("Start cropping...")
 cropped_slcs = crop_slc_spacetime(slcs,
                                   aoi_filename=aoi_file,
                                   start_date=first_date,
                                   end_date=last_date)
 
 # ######## POINT SELECTION WITH THE PARAMETERS ABOVE ############
+print("Starting PS selection...")
 stm = ps_selection(cropped_slcs,
                    method=ps_selection_method,
                    threshold=threshold,
@@ -69,21 +72,26 @@ stm = ps_selection(cropped_slcs,
                    mem_persist=False)
 
 # Add the incremental or recalibration NAD / NMAD to the STM
+print("Add Inc/Recal NAD/NMAD...")
 stm = stm_add_incremental_recal_nad_nmad(stm,
                                          mode=increment_mode,
                                          method=ps_selection_method,
                                          recalibration_jump_size=recalibration_jump_size)
 
 # Add RD coordinates to the STM
+print("Add RD coordinates...")
 stm = project_stm_coordinates(stm, "RD")
 
 # Add time deltas to the STM
+print("Add time deltas...")
 stm = add_stm_time_deltas(stm)
 
 # Add single differences to the STM
+print("Add Single time differences...")
 stm = stm_compute_single_time_differences(stm, ps_mother_epoch_sd)
 
 if do_ps_partitioning:
+    print("Start normal partitions...")
     stm = stm_partitioning(stm,
                            db_partitioning=ps_db_partitioning,
                            search_method=ps_partitioning_search_method,
@@ -93,6 +101,7 @@ if do_ps_partitioning:
                            output_variable_prefix="partition",
                            output_variables=("nmad", "nad", "quality_nmad_2sigma"))
 
+    print("Start Single Difference partitions...")
     stm = stm_partitioning(stm,
                            db_partitioning=ps_db_partitioning,
                            search_method=ps_partitioning_search_method,
@@ -102,10 +111,16 @@ if do_ps_partitioning:
                            output_variable_prefix="partition_sd",
                            output_variables=("mad", "amplitude_sigma", "amplitude_mean", "amplitude_median"))
 
+# Rechunk to prevent inconsistent chunks
+stm = stm.chunk({"time": -1, "space": chunks_ps_selection})
+
 # Do outlier detection
 if do_ps_outlier_detection:
+    print("Start outlier detection...")
     stm = detect_outliers_stm(stm, db_outlier_detection=ps_outlier_detection_db, window_size=ps_window_size_outliers,
                               n_sigma=ps_n_sigma_outliers)
 
 # Save
+print("Saving...")
 stm.to_zarr(stm_save_path, mode='w')
+print("Done!")
