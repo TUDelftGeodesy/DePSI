@@ -633,7 +633,7 @@ def estimate_atmosphere_phase(stm: xr.Dataset, **kwargs) -> xr.Dataset:
     """Estimate the atmosphere phase.
 
     This function applies a temporal filter to extract the high-frequency
-    atmospheric signal and then uses spatial kriging to estimate the atmospheric
+    atmospheric signal and then uses spatial kriging to predict the atmospheric
     phase per epoch.
 
     Parameters
