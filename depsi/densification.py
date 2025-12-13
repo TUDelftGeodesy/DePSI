@@ -41,7 +41,7 @@ def densification(
     key_sdphase : str, optional
         Name of the data variable containing phase data (default is 'sd_phase').
     key_btemp : str, optional
-        Name of the coordinate containing temporal baselines (default is 'years').
+        Name of the data variable containing time baselines for arc estimation (default is 'years').
     phase_diff_method : str, optional
         Method for computing phase differences (default is 'subtract').
 
@@ -60,6 +60,10 @@ def densification(
     # Check number of connections
     if n_connections > 1:
         raise NotImplementedError("Currently only n_connections=1 is supported.")
+
+    # Make sure stm_densification and stm_network_pnts have the same time coordinates
+    if not np.array_equal(stm_densification["time"].values, stm_network_pnts["time"].values):
+        raise ValueError("stm_densification and stm_network_pnts must have the same 'time' coordinates.")
 
     # Make a copy of densification points
     stm_densification_output = stm_densification.copy()
@@ -121,10 +125,9 @@ def densification(
     )
     stm_densification_output["ambiguities"] = (("space", "time"), estimated_ambiguities)
 
-    # Attach network points
-    stm_densification_output = xr.concat(
-        [stm_network_pnts, stm_densification_output], dim="space", join="outer", data_vars="all"
-    )
+    # Attach network points to the output
+    # Join in space dimension, keep all data variables
+    stm_densification_output = xr.concat([stm_network_pnts, stm_densification_output], dim="space", data_vars="all")
 
     return stm_densification_output
 
