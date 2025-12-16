@@ -1,7 +1,7 @@
 import collections
 import datetime
 import logging
-from typing import NamedTuple
+from typing import Literal
 
 import numpy
 import pyproj
@@ -11,20 +11,23 @@ from depsi.utils import npdatetime64_to_datetime
 
 logger = logging.getLogger(__name__)
 
-
-class Ellipsoid(NamedTuple):
-    """Base class for ellipsoidal constants."""
-
-    a: float
-    b: float
-    f: float
-
-
 SPEED_OF_LIGHT = 299792458.0
 MJD_EPOCH = datetime.datetime(2000, 1, 1)
-WGS84 = Ellipsoid(6378137.0, 6356752.3141, 0.003352810681182)
+WGS84 = pyproj.CRS.from_epsg(4326).ellipsoid
 
 OrbitFit = collections.namedtuple("OrbitFit", "time0, cx, cy, cz, cvx, cvy, cvz, cax, cay, caz")
+
+VALIDATION_NONORBIT_KEYS = {
+    "radar_to_latlonh": [
+        "scene_centre_longitude",
+        "scene_centre_latitude",
+        "first_azimuth_time",
+        "pulse_repetition_frequency",
+        "first_range_time",
+        "range_sampling_rate",
+    ],
+    "latlonh_to_radar": ["first_azimuth_time", "number_of_rows", "pulse_repetition_frequency"],
+}
 
 
 def seconds_of_day(t: datetime.datetime) -> float:
@@ -52,7 +55,7 @@ def latlonh_to_xyz(latlonh: numpy.ndarray) -> numpy.ndarray:
     Parameters
     ----------
     latlonh: numpy.ndarray
-        latitude, longitude, ellipsoidal height coordinates as a numpy array in [degrees/m].
+        latitude, longitude, ellipsoidal height coordinates as a numpy array in [degrees/m] of shape (N, 3).
 
     Returns
     -------
@@ -74,7 +77,7 @@ def xyz_to_latlonh(xyz: numpy.ndarray) -> numpy.ndarray:
     Parameters
     ----------
     xyz: numpy.ndarray
-        x, y, z Cartesian geocentric coordinates in metres.
+        x, y, z Cartesian geocentric coordinates in metres of shape (N, 3).
 
     Returns
     -------
@@ -223,7 +226,8 @@ def latlonh_to_radar(latlonh: numpy.ndarray, metadata: dict) -> tuple[numpy.ndar
         Ellipsoidal geodetic coordinates (latitude, longitude, ellipsoidal height)
         in radians and meters.
     metadata: dict
-        Image metadata
+        Image metadata, at least `orbit_time`, `orbit_position`, `orbit_velocity`, `first_azimuth_time`,
+        `number_of_rows` and `pulse_repetition_frequency`
 
     Returns
     -------
@@ -231,13 +235,15 @@ def latlonh_to_radar(latlonh: numpy.ndarray, metadata: dict) -> tuple[numpy.ndar
         Radar coordinates (azimuth, range).
 
     """
+    metadata_validated = validate_geocoding_metadata(metadata, mode="latlonh_to_radar", orbit_required=True)
+
     xyz = latlonh_to_xyz(latlonh)
 
     # get time coords
-    azimuth_time, range_time, satellite_vector = xyz_to_time(xyz, metadata)
+    azimuth_time, range_time, satellite_vector = xyz_to_time(xyz, metadata_validated)
 
     # convert to pixels
-    return time_to_radar(azimuth_time, range_time, metadata)
+    return time_to_radar(azimuth_time, range_time, metadata_validated)
 
 
 def latlonh_to_radar_vec(latlonh: numpy.ndarray, metadata: dict) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
@@ -252,7 +258,8 @@ def latlonh_to_radar_vec(latlonh: numpy.ndarray, metadata: dict) -> tuple[numpy.
         Ellipsoidal geodetic coordinates (latitude, longitude, ellipsoidal height)
         in radians and meters.
     metadata: dict
-        Image metadata
+        Image metadata, at least `orbit_time`, `orbit_position`, `orbit_velocity`, `first_azimuth_time`,
+        `number_of_rows` and `pulse_repetition_frequency`
 
     Returns
     -------
@@ -260,16 +267,20 @@ def latlonh_to_radar_vec(latlonh: numpy.ndarray, metadata: dict) -> tuple[numpy.
         Radar coordinates (azimuth, range).
 
     """
+    metadata_validated = validate_geocoding_metadata(metadata, mode="latlonh_to_radar", orbit_required=True)
+
     xyz = latlonh_to_xyz(latlonh)
 
     # get time coords
-    azimuth_time, range_time, satellite_vector = xyz_to_time_vec(xyz, metadata)
+    azimuth_time, range_time, satellite_vector = xyz_to_time_vec(xyz, metadata_validated)
 
     # convert to pixels
-    return time_to_radar(azimuth_time, range_time, metadata)
+    return time_to_radar(azimuth_time, range_time, metadata_validated)
 
 
-def xyz_to_time(xyz: numpy.ndarray, metadata: dict) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+def xyz_to_time(
+    xyz: numpy.ndarray, metadata: dict, maxiter: int = 10, criter: float = 1e-10
+) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     """Transform ECEF coordinates to radar time coordinates (azimuth time, range time).
 
     Return azimuth time, range time and satellite vector for a target given in geocentric
@@ -280,7 +291,12 @@ def xyz_to_time(xyz: numpy.ndarray, metadata: dict) -> tuple[numpy.ndarray, nump
     xyz: numpy.ndarray
         ECEF coordinates (x, y, z) in meters.
     metadata: dict
-        Image metadata
+        Image metadata, at least `orbit_time`, `orbit_position`, `orbit_velocity`, `first_azimuth_time`,
+        `number_of_rows` and `pulse_repetition_frequency`
+    maxiter: int, default 10
+        How many iterations at most to perform in the optimization
+    criter: float, default 1e-10
+        The limit below which the solution is accepted as converged
 
     Returns
     -------
@@ -288,9 +304,6 @@ def xyz_to_time(xyz: numpy.ndarray, metadata: dict) -> tuple[numpy.ndarray, nump
         (azimuth time, range time (two-way), satellite vector)
 
     """
-    maxiter = 10
-    criter = 1e-10
-
     orbit = orbit_fit(
         metadata["orbit_time"],
         metadata["orbit_position"],
@@ -353,7 +366,9 @@ def xyz_to_time(xyz: numpy.ndarray, metadata: dict) -> tuple[numpy.ndarray, nump
     return t_azimuth, t_range, sat_xyz.squeeze()
 
 
-def xyz_to_time_vec(xyz: numpy.ndarray, metadata: dict) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+def xyz_to_time_vec(
+    xyz: numpy.ndarray, metadata: dict, maxiter: int = 10, criter: float = 1e-10
+) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     """Transform ECEF coordinates to radar time coordinates (azimuth time, range time) in a vectorized manner.
 
     Return azimuth time, range time and satellite vector for a target given in geocentric
@@ -364,7 +379,12 @@ def xyz_to_time_vec(xyz: numpy.ndarray, metadata: dict) -> tuple[numpy.ndarray, 
     xyz: numpy.ndarray
         ECEF coordinates (x, y, z) in meters. Shape (3,) or (3, N).
     metadata: dict
-        Image metadata
+        Image metadata, at least `orbit_time`, `orbit_position`, `orbit_velocity`, `first_azimuth_time`,
+        `number_of_rows` and `pulse_repetition_frequency`
+    maxiter: int, default 10
+        How many iterations at most to perform in the optimization
+    criter: float, default 1e-10
+        The limit below which the solution is accepted as converged
 
     Returns
     -------
@@ -375,9 +395,6 @@ def xyz_to_time_vec(xyz: numpy.ndarray, metadata: dict) -> tuple[numpy.ndarray, 
         - t_range:   1D float array, shape (N,)
         - sat_xyz:   (3,) for N=1, or (3, N) for N>1 (like original .squeeze() behavior)
     """
-    maxiter = 10
-    criter = 1e-10
-
     orbit = orbit_fit(
         metadata["orbit_time"],
         metadata["orbit_position"],
@@ -471,7 +488,8 @@ def time_to_radar(
     range_time: float
         Range time in seconds, 2-way.
     metadata: dict
-        Image metadata
+        Image metadata, at least `pulse_repetition_frequency`, `first_azimuth_time`, `range_sampling_rate`,
+        `first_range_time`
 
     Returns
     -------
@@ -502,7 +520,8 @@ def radar_to_time(
     range_coords: numpy.ndarray
         Range pixel coordinates.
     metadata: dict
-        Image metadata
+        Image metadata, at least `pulse_repetition_frequency`, `first_azimuth_time`, `range_sampling_rate`,
+        `first_range_time`
 
     Returns
     -------
@@ -537,7 +556,8 @@ def radar_to_xyz(
     elevation: numpy.ndarray
         Ellipsoidal elevation.
     metadata: dict
-        Image metadata
+        Image metadata, at least `scene_centre_longitude`, `scene_centre_latitude`, `orbit_time`, `orbit_position`,
+        `orbit_velocity`, `pulse_repetition_frequency`, `first_azimuth_time`, `range_sampling_rate`, `first_range_time`
     return_satellite_vector: bool, Optional
         Switch to return satellite state vector.
 
@@ -548,7 +568,7 @@ def radar_to_xyz(
         with satellite state vector (Optional).
 
     """
-    e2 = (WGS84.a**2 - WGS84.b**2) / WGS84.a**2
+    e2 = (WGS84.semi_major_metre**2 - WGS84.semi_minor_metre**2) / WGS84.semi_major_metre**2
     # iteration criterions:
     maxiter = 10
     criter = 1e-6
@@ -556,7 +576,7 @@ def radar_to_xyz(
     # initialize iteration for scene center:
     center_lat = metadata["scene_centre_latitude"] / 180 * numpy.pi
     center_lon = metadata["scene_centre_longitude"] / 180 * numpy.pi
-    center_N = WGS84.a / numpy.sqrt(1 - e2 * (numpy.sin(center_lat) ** 2))
+    center_N = WGS84.semi_major_metre / numpy.sqrt(1 - e2 * (numpy.sin(center_lat) ** 2))
     center_X = (center_N + numpy.mean(elevation)) * numpy.cos(center_lat) * numpy.cos(center_lon)
     center_Y = (center_N + numpy.mean(elevation)) * numpy.cos(center_lat) * numpy.sin(center_lon)
     center_Z = (center_N + numpy.mean(elevation) - e2 * center_N) * numpy.sin(center_lat)
@@ -592,7 +612,7 @@ def radar_to_xyz(
                 [
                     vel[0] * dx + vel[1] * dy + vel[2] * dz,
                     dx**2 + dy**2 + dz**2 - (SPEED_OF_LIGHT * t / 2) ** 2,
-                    (x**2 + y**2) / ((WGS84.a + h) ** 2) + (z / (WGS84.b + h)) ** 2 - 1,
+                    (x**2 + y**2) / ((WGS84.semi_major_metre + h) ** 2) + (z / (WGS84.semi_minor_metre + h)) ** 2 - 1,
                 ]
             )
             design = numpy.array(
@@ -601,9 +621,9 @@ def radar_to_xyz(
                     2 * numpy.array([dx, dy, dz]),
                     numpy.array(
                         [
-                            2 * x / ((WGS84.a + h) ** 2),
-                            2 * y / ((WGS84.a + h) ** 2),
-                            2 * z / ((WGS84.b + h) ** 2),
+                            2 * x / ((WGS84.semi_major_metre + h) ** 2),
+                            2 * y / ((WGS84.semi_major_metre + h) ** 2),
+                            2 * z / ((WGS84.semi_minor_metre + h) ** 2),
                         ]
                     ),
                 ]
@@ -648,7 +668,9 @@ def radar_to_latlonh(
     elevation: numpy.ndarray
         Ellipsoidal elevation.
     metadata: dict
-        Image metadata
+        Image metadata, at least `scene_centre_longitude`, `scene_centre_latitude`,
+        `pulse_repetition_frequency`, `first_azimuth_time`, `range_sampling_rate`, `first_range_time`, and
+        (`orbit_txyz` OR `orbit_time`, `orbit_position`), optionally `orbit_velocity`
 
     Returns
     -------
@@ -656,13 +678,15 @@ def radar_to_latlonh(
         Return latitude/longitude/height coordinates
 
     """
-    metadata_validated = validate_geocoding_metadata(metadata)
+    metadata_validated = validate_geocoding_metadata(metadata, mode="radar_to_latlonh", orbit_required=True)
     xyz = radar_to_xyz(azimuth_coords, range_coords, elevation, metadata_validated, return_satellite_vector=False)
     latlonh = xyz_to_latlonh(xyz.T)
     return latlonh
 
 
-def validate_geocoding_metadata(metadata: dict) -> dict:
+def validate_geocoding_metadata(
+    metadata: dict, mode: Literal["latlonh_to_radar", "radar_to_latlonh"], orbit_required: bool
+) -> dict:
     """Validate that all fields necessary for the geocoding are present, and regulate the orbit metadata.
 
     Since DORIS v5 outputs `orbit_txyz` instead of orbit_time, orbit_position, and orbit_velocity, this function will
@@ -672,6 +696,10 @@ def validate_geocoding_metadata(metadata: dict) -> dict:
     ----------
     metadata: dict
         Metadata readout as per `sarxarray.read_metadata` (>=v1.2.2)
+    mode: Literal["latlonh_to_radar", "radar_to_latlonh"]
+        Which keys to check that exist
+    orbit_required: bool
+        Whether or not to construct `orbit_time`, `orbit_position` and `orbit_velocity` if they don't exist
 
     Returns
     -------
@@ -679,30 +707,26 @@ def validate_geocoding_metadata(metadata: dict) -> dict:
         The validated and corrected metadata dictionary
 
     """
-    for key in [
-        "scene_centre_longitude",
-        "scene_centre_latitude",
-        "first_azimuth_time",
-        "pulse_repetition_frequency",
-        "first_range_time",
-        "range_sampling_rate",
-    ]:
+    assert mode in VALIDATION_NONORBIT_KEYS.keys(), f"Unknown mode {mode}, known are {VALIDATION_NONORBIT_KEYS.keys()}"
+    for key in VALIDATION_NONORBIT_KEYS[mode]:
         assert key in metadata.keys(), f"Key {key} is missing from metadata, cannot proceed!"
 
-    # Orbit info from DORIS5 is read in in orbit_txyz instead of orbit_time and orbit_position --> needs to be split up
-    if "orbit_time" not in metadata.keys():
-        if "orbit_txyz" in metadata.keys():
-            metadata["orbit_time"] = metadata["orbit_txyz"][:, 0]
-        else:
-            raise ValueError("Key orbit_time is missing and cannot be reconstructed from orbit_txyz!")
+    if orbit_required:
+        # Orbit info from DORIS5 is read in in orbit_txyz instead of orbit_time and orbit_position -->
+        # needs to be split up
+        if "orbit_time" not in metadata.keys():
+            if "orbit_txyz" in metadata.keys():
+                metadata["orbit_time"] = metadata["orbit_txyz"][:, 0]
+            else:
+                raise ValueError("Key orbit_time is missing and cannot be reconstructed from orbit_txyz!")
 
-    if "orbit_position" not in metadata.keys():
-        if "orbit_txyz" in metadata.keys():
-            metadata["orbit_position"] = metadata["orbit_txyz"][:, 1:]
-        else:
-            raise ValueError("Key orbit_position is missing and cannot be reconstructed from orbit_txyz!")
+        if "orbit_position" not in metadata.keys():
+            if "orbit_txyz" in metadata.keys():
+                metadata["orbit_position"] = metadata["orbit_txyz"][:, 1:]
+            else:
+                raise ValueError("Key orbit_position is missing and cannot be reconstructed from orbit_txyz!")
 
-    if "orbit_velocity" not in metadata.keys():
-        metadata["orbit_velocity"] = None  # this one can be reconstructed when necessary
+        if "orbit_velocity" not in metadata.keys():
+            metadata["orbit_velocity"] = None  # this one can be reconstructed when necessary
 
     return metadata
