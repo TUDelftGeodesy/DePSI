@@ -9,6 +9,7 @@ requires-python = ">=3.10"
 dependencies = [
     "matplotlib",
     "pydantic",
+    "pykrige",
     "sarxarray>=1.2.2",
     "scipy",
     "stmtools",
