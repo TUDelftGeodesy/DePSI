@@ -4,6 +4,7 @@ import logging
 from typing import NamedTuple
 
 import numpy
+import pyproj
 from numpy.polynomial.chebyshev import chebval
 
 from depsi.utils import npdatetime64_to_datetime
@@ -51,22 +52,15 @@ def latlonh_to_xyz(latlonh: numpy.ndarray) -> numpy.ndarray:
     Parameters
     ----------
     latlonh: numpy.ndarray
-        latitude, longitude, ellipsoidal height coordinates as a numpy array in [radians/m].
+        latitude, longitude, ellipsoidal height coordinates as a numpy array in [degrees/m].
 
     Returns
     -------
     xyz: numpy.ndarray
         Cartesian geocentric coordinates in [m].
     """
-    e2 = 2 * WGS84.f - WGS84.f**2
-
-    if latlonh.ndim < 2:
-        latlonh = latlonh[:, None]
-
-    n = numpy.divide(WGS84.a, numpy.sqrt(1 - e2 * numpy.power(numpy.sin(latlonh[0, :]), 2)))
-    x = (n + latlonh[2, :]) * numpy.cos(latlonh[0, :]) * numpy.cos(latlonh[1, :])
-    y = (n + latlonh[2, :]) * numpy.cos(latlonh[0, :]) * numpy.sin(latlonh[1, :])
-    z = (n - n * e2 + latlonh[2, :]) * numpy.sin(latlonh[0, :])
+    transformer = pyproj.Transformer.from_crs("EPSG:4979", "EPSG:4978", always_xy=True)
+    x, y, z = transformer.transform(latlonh[:, 1], latlonh[:, 0], latlonh[:, 2])
 
     return numpy.array([x, y, z]).squeeze()
 
@@ -85,25 +79,12 @@ def xyz_to_latlonh(xyz: numpy.ndarray) -> numpy.ndarray:
     Returns
     -------
     latlonh: numpy.ndarray
-        Latitude, longitude, ellipsoidal height coordinates as radians and metres.
+        Latitude, longitude, ellipsoidal height coordinates as degrees and metres.
     """
-    e2 = 2 * WGS84.f - WGS84.f**2
+    transformer = pyproj.Transformer.from_crs("EPSG:4978", "EPSG:4979", always_xy=True)
+    lon, lat, h = transformer.transform(xyz[:, 0], xyz[:, 1], xyz[:, 2])
 
-    if xyz.ndim < 2:
-        xyz = xyz[:, None]
-
-    r = numpy.sqrt(numpy.power(xyz[0, :], 2) + numpy.power(xyz[1, :], 2))
-
-    i = 1
-    maxiter = 5
-    n_p = xyz[2, :]
-    while i < maxiter:
-        phi = numpy.arctan((xyz[2, :] + e2 * n_p) / r)
-        n = WGS84.a / numpy.sqrt(1 - e2 * numpy.power(numpy.sin(phi), 2))
-        n_p = n * numpy.sin(phi)
-        i += 1
-
-    return numpy.array([phi, numpy.arctan2(xyz[1, :], xyz[0, :]), r / numpy.cos(phi) - n]).squeeze()
+    return numpy.array([lat, lon, h]).squeeze()
 
 
 def orbit_fit(orbit_time: numpy.ndarray, xyz_pos: numpy.ndarray, xyz_vel: numpy.ndarray | None) -> OrbitFit:
@@ -677,8 +658,7 @@ def radar_to_latlonh(
     """
     metadata_validated = validate_geocoding_metadata(metadata)
     xyz = radar_to_xyz(azimuth_coords, range_coords, elevation, metadata_validated, return_satellite_vector=False)
-    latlonh = xyz_to_latlonh(xyz)
-    latlonh[:2, :] = numpy.rad2deg(latlonh[:2, :])  # since original output is in radians
+    latlonh = xyz_to_latlonh(xyz.T)
     return latlonh
 
 
