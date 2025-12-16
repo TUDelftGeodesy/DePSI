@@ -1,11 +1,14 @@
 """Geocoding module.
-Functions of transformation between WGS84 coordinates (lat, lon, ellipsoid height) and Radar Coordinates (azimuth, range, ellipsoid height).
 
-When transfering from Rardar to WGS84, the following steps are performed:
+Functions for transformations between WGS84 coordinates (lat, lon, ellipsoid height) and
+Radar Coordinates (azimuth, range, ellipsoid height), as well as back and forth between ECEF coordinates (X, Y, Z)
+and time coordinates (time).
+
+When transferring from Radar to WGS84, the following steps are performed (in radar_to_latlonh):
 1. radar_to_xyz (calling radar_to_time internally)
 2. xyz_to_latlonh
 
-When transfering from WGS84 to Radar, the following steps are performed
+When transfering from WGS84 to Radar, the following steps are performed (in latlonh_to_radar or latlonh_to_radar_vec):
 1. latlonh_to_xyz
 2. xyz_to_time
 3. time_to_radar
