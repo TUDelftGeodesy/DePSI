@@ -119,9 +119,12 @@ def densification(
             {"idx_network": "idx_network"}
         )
 
+    # Calculate estimated ambiguities for densification points
+    # Because arc ambiguities = network ambiguities - densification ambiguities
+    # => densification ambiguities = network ambiguities - arc ambiguities
     estimated_ambiguities = (
         stm_network_pnts.isel(space=stm_densification_arcs["idx_network"])["ambiguities"].values
-        + stm_densification_arcs["ambiguities"].values
+        - stm_densification_arcs["ambiguities"].values
     )
     stm_densification_output["ambiguities"] = (("space", "time"), estimated_ambiguities)
 
