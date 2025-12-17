@@ -28,7 +28,6 @@ from depsi.utils import npdatetime64_to_datetime
 logger = logging.getLogger(__name__)
 
 SPEED_OF_LIGHT = 299792458.0
-MJD_EPOCH = datetime.datetime(2000, 1, 1)
 WGS84 = pyproj.CRS.from_epsg(4326).ellipsoid
 
 OrbitFit = collections.namedtuple("OrbitFit", "time0, cx, cy, cz, cvx, cvy, cvz, cax, cay, caz")
