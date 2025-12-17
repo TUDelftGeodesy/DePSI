@@ -10,7 +10,7 @@ dependencies = [
     "matplotlib",
     "pydantic",
     "pykrige",
-    "sarxarray",
+    "sarxarray>=1.2.2",
     "scipy",
     "stmtools",
     "ruptures",
