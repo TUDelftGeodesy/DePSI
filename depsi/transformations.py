@@ -66,7 +66,7 @@ def seconds_of_day(t: datetime.datetime) -> float:
 def latlonh_to_xyz(latlonh: numpy.ndarray) -> numpy.ndarray:
     """Transform WGS84 coordinates to ECEF coordinates.
 
-    Transformation of ellipsoidal to Cartesian geocentric (ECEF) coordinates using WGS84/GRS80 ellipsoid.
+    Transformation of ellipsoidal to Cartesian geocentric (ECEF) coordinates using WGS84 ellipsoid.
 
     Parameters
     ----------
