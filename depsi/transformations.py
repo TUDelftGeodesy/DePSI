@@ -85,7 +85,7 @@ def latlonh_to_xyz(latlonh: numpy.ndarray) -> numpy.ndarray:
 
 
 def xyz_to_latlonh(xyz: numpy.ndarray) -> numpy.ndarray:
-    """Transform ECEF Coordinates to GRS80 coordinates.
+    """Transform ECEF Coordinates to WGS84 coordinates.
 
     Transformation of geocentric Cartesian (ECEF) coordinates to WGS84 ellipsoidal coordinates
     using iteration method.
