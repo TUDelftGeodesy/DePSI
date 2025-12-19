@@ -466,7 +466,7 @@ def _mht_network_adjustment_reject_one(
     Qxx = np.linalg.inv(A.T @ invQy @ A)
     Qecheck = Qyy - (A @ Qxx @ A.T)  # TODO: check how to handle large Qecheck
 
-    # Test statistics TT1 for removing one arc
+    # Test statistics TT1 per arc
     Qecheck_diag = np.array(np.diag(Qecheck).flatten()).squeeze()
     w = echeck**2 / np.tile(np.abs(Qecheck_diag), (N_epochs, 1)).T
     TT1 = np.sum(w, axis=1) / k1**2
