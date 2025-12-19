@@ -31,9 +31,9 @@ import numpy as np
 import pytz
 import xarray as xr
 
-logger = logging.getLogger(__name__)
+from depsi.constants import EARTH_RADIUS
 
-EARTH_RADIUS = 6378136  # m
+logger = logging.getLogger(__name__)
 
 
 def wrap_phase(phs_abs):
@@ -614,9 +614,7 @@ def identify_s1_orbits_in_aoi(lon: list | np.ndarray, lat: list | np.ndarray) ->
     return filtered_orbits, footprints
 
 
-def generate_pnt_uids(
-    stm: xr.Dataset, ensure_unique: bool = True, overwrite: bool = False
-) -> xr.Dataset:
+def generate_pnt_uids(stm: xr.Dataset, ensure_unique: bool = True, overwrite: bool = False) -> xr.Dataset:
     """Generate unique identifiers based on radar coordinates and assign them to the STM.
 
     The unique identifiers are assigned as a new coordinate "pnt_uid" in the STM.

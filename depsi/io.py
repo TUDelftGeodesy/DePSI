@@ -17,11 +17,11 @@ import scipy.spatial as scs
 import xarray as xr
 from shapely.geometry import Point, Polygon
 
+from depsi.constants import SPEED_OF_LIGHT
 from depsi.utils import _orbit_fit, npdatetime64_to_datetime
 
 # Define constants
 SC_N_PATTERN = r"\s+([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
-SPEED_OF_LIGHT = 299792458.0  # m/s
 ALLOWED_KNMI_DATA_COLUMNS = ["TG", "TN", "TX", "RH", "RXH", "EV24"]
 SHAPEFILE_PROJECTIONS = {
     "RD": {
