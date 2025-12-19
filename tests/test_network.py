@@ -10,7 +10,7 @@ from depsi.network import (
     _network_relation_matrix,
     _remove_network_points_min_connections,
     form_network,
-    spatial_unwrapping,
+    spatial_integration,
 )
 
 
@@ -295,7 +295,7 @@ class TestNetworkUnwrap:
             ambigs_errors[idx_s, idx_t] += err
         stm_arcs["ambiguities"] = (("space", "time"), ambigs + ambigs_errors)
 
-        stm_arcs_output, stm_pnts_output, id_ref_output = spatial_unwrapping(stm_pnts, stm_arcs, idx_refpnt=id_ref)
+        stm_arcs_output, stm_pnts_output, id_ref_output = spatial_integration(stm_pnts, stm_arcs, idx_refpnt=id_ref)
 
         # Verify output dimensions, no points should be rejected
         assert stm_pnts_output.sizes["space"] == stm_pnts.sizes["space"]
@@ -369,7 +369,9 @@ class TestNetworkUnwrap:
         stm_arcs["ambiguities"] = (("space", "time"), ambigs)
 
         with pytest.raises(ValueError):
-            stm_arcs_output, stm_pnts_output, id_ref_output = spatial_unwrapping(stm_pnts, stm_arcs, idx_refpnt=idx_ref)
+            stm_arcs_output, stm_pnts_output, id_ref_output = spatial_integration(
+                stm_pnts, stm_arcs, idx_refpnt=idx_ref
+            )
 
     @pytest.mark.parametrize(
         ["idx_source", "idx_target", "n_points", "idx_refpnt"],
