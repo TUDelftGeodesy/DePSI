@@ -82,10 +82,10 @@ def arcs_random(stm_random):
     # Most arcs have quality 0.9
     # Except the last two have quality 0.0
     # And the first five have quality 0.99
-    ens_coh = np.zeros((arcs.sizes["space"],))
-    ens_coh[:-2] = 0.9
-    ens_coh[:5] = 0.99
-    arcs["ens_coh"] = (("space"), ens_coh)
+    temp_coh = np.zeros((arcs.sizes["space"],))
+    temp_coh[:-2] = 0.9
+    temp_coh[:5] = 0.99
+    arcs["temp_coh"] = (("space"), temp_coh)
 
     return arcs
 
@@ -184,9 +184,9 @@ class TestNetworkFormation:
 class TestNetworkEnsure:
     @pytest.mark.parametrize("thres, min_n_connections", [(0.5, 2), (0.5, 1)])
     def test_select_arcs_discard_two(self, arcs_random, stm_random, thres, min_n_connections):
-        """Should only discard two arcs, with ens_coh < 0.5."""
-        # Select arcs based on ens_coh threshold.
-        mask = np.abs(arcs_random["ens_coh"]) > thres  # mask as DataArray
+        """Should only discard two arcs, with temp_coh < 0.5."""
+        # Select arcs based on temp_coh threshold.
+        mask = np.abs(arcs_random["temp_coh"]) > thres  # mask as DataArray
         arcs_selected = arcs_random.where(mask, drop=True)
         arcs_results, _ = _ensure_network_min_connections(arcs_selected, stm_random, min_connections=min_n_connections)
 
@@ -270,7 +270,7 @@ class TestNetworkUnwrap:
         )
 
         # Construct arcs based on true ambiguities
-        # All arcs by default have 0.99 ens_coh
+        # All arcs by default have 0.99 temp_coh
         stm_arcs = form_network(
             stm_pnts,
             key_xcrds="azimuth",
@@ -281,8 +281,8 @@ class TestNetworkUnwrap:
             network_method="redundant",
             max_length=30,
         )
-        ens_coh = np.zeros((stm_arcs.sizes["space"],)) + 0.99
-        stm_arcs["ens_coh"] = (("space"), ens_coh)
+        temp_coh = np.zeros((stm_arcs.sizes["space"],)) + 0.99
+        stm_arcs["temp_coh"] = (("space"), temp_coh)
 
         # Compute arc ambiguities from true point ambiguities
         ambigs = (
