@@ -9,7 +9,7 @@ from depsi.network import (
     _network_relation_matrix,
     _remove_network_points_min_connections,
     form_network,
-    spatial_unwrapping,
+    spatial_integration,
 )
 
 
@@ -81,10 +81,10 @@ def arcs_random(stm_random):
     # Most arcs have quality 0.9
     # Except the last two have quality 0.0
     # And the first five have quality 0.99
-    ens_coh = np.zeros((arcs.sizes["space"],))
-    ens_coh[:-2] = 0.9
-    ens_coh[:5] = 0.99
-    arcs["ens_coh"] = (("space"), ens_coh)
+    temp_coh = np.zeros((arcs.sizes["space"],))
+    temp_coh[:-2] = 0.9
+    temp_coh[:5] = 0.99
+    arcs["temp_coh"] = (("space"), temp_coh)
 
     return arcs
 
@@ -169,9 +169,9 @@ class TestNetworkFormation:
 class TestNetworkEnsure:
     @pytest.mark.parametrize("thres, min_n_connections", [(0.5, 2), (0.5, 1)])
     def test_select_arcs_discard_two(self, arcs_random, stm_random, thres, min_n_connections):
-        """Should only discard two arcs, with ens_coh < 0.5."""
-        # Select arcs based on ens_coh threshold.
-        mask = np.abs(arcs_random["ens_coh"]) > thres  # mask as DataArray
+        """Should only discard two arcs, with temp_coh < 0.5."""
+        # Select arcs based on temp_coh threshold.
+        mask = np.abs(arcs_random["temp_coh"]) > thres  # mask as DataArray
         arcs_selected = arcs_random.where(mask, drop=True)
         arcs_results, _ = _ensure_network_min_connections(arcs_selected, stm_random, min_connections=min_n_connections)
 
@@ -255,7 +255,7 @@ class TestNetworkUnwrap:
         )
 
         # Construct arcs based on true ambiguities
-        # All arcs by default have 0.99 ens_coh
+        # All arcs by default have 0.99 temp_coh
         stm_arcs = form_network(
             stm_pnts,
             key_xcrds="azimuth",
@@ -266,8 +266,8 @@ class TestNetworkUnwrap:
             network_method="redundant",
             max_length=30,
         )
-        ens_coh = np.zeros((stm_arcs.sizes["space"],)) + 0.99
-        stm_arcs["ens_coh"] = (("space"), ens_coh)
+        temp_coh = np.zeros((stm_arcs.sizes["space"],)) + 0.99
+        stm_arcs["temp_coh"] = (("space"), temp_coh)
 
         # Compute arc ambiguities from true point ambiguities
         ambigs = (
@@ -280,7 +280,7 @@ class TestNetworkUnwrap:
             ambigs_errors[idx_s, idx_t] += err
         stm_arcs["ambiguities"] = (("space", "time"), ambigs + ambigs_errors)
 
-        stm_arcs_output, stm_pnts_output, id_ref_output = spatial_unwrapping(stm_pnts, stm_arcs, idx_refpnt=id_ref)
+        stm_arcs_output, stm_pnts_output, id_ref_output = spatial_integration(stm_pnts, stm_arcs, idx_refpnt=id_ref)
 
         # Verify output dimensions, no points should be rejected
         assert stm_pnts_output.sizes["space"] == stm_pnts.sizes["space"]
@@ -295,6 +295,68 @@ class TestNetworkUnwrap:
 
         # Check that the reference point index remains the same
         assert id_ref_output == id_ref
+
+    @pytest.mark.parametrize("idx_ref", [0, 5, 10, 16])
+    def test_spatial_unwrap_ref_pnt_removed(self, idx_ref):
+        """Raise error when reference point is removed"""
+        # Set up test parameters
+        rng = np.random.default_rng(42)
+        Npoints = 17  # Number of points
+        Ntimes = 29  # Number of epochs
+        time = np.arange(Ntimes)
+        complex = rng.uniform(-1, 1, (Npoints, Ntimes)) + 1j * rng.uniform(-1, 1, (Npoints, Ntimes))
+        phase = np.angle(complex)
+        h2ph = rng.uniform(1e3, 1e4, (Npoints, Ntimes))
+
+        # Create the points
+        stm_pnts = xr.Dataset(
+            data_vars={
+                "phase": (("space", "time"), phase),
+                "h2ph": (("space", "time"), h2ph),
+                "complex": (("space", "time"), complex),
+                "ambiguities_true": (
+                    ("space", "time"),
+                    np.round(rng.normal(0, 0.5, (Npoints, Ntimes))).astype(int).clip(-1, 1),
+                ),
+            },
+            coords={
+                "space": ("space", np.arange(Npoints)),
+                "time": ("time", time),
+                "azimuth": ("space", np.round(rng.normal(0, 10, (Npoints))).astype(int)),
+                "range": ("space", np.round(rng.normal(0, 10, (Npoints))).astype(int)),
+            },
+        )
+
+        # Construct arcs based on true ambiguities
+        # All arcs by default have 0.99 temp_coh
+        stm_arcs = form_network(
+            stm_pnts,
+            key_xcrds="azimuth",
+            key_ycrds="range",
+            key_phase="phase",
+            key_h2ph="h2ph",
+            key_Btemp="time",
+            network_method="redundant",
+            max_length=30,
+        )
+        temp_coh = np.zeros((stm_arcs.sizes["space"],)) + 0.99
+        stm_arcs["temp_coh"] = (("space"), temp_coh)
+
+        # Set temp_coh of all arcs connected to reference point to 0.01
+        mask_ref_arcs = (stm_arcs["source"] == idx_ref) | (stm_arcs["target"] == idx_ref)
+        stm_arcs["temp_coh"] = stm_arcs["temp_coh"].where(~mask_ref_arcs, other=0.01)
+
+        # Compute arc ambiguities from true point ambiguities
+        ambigs = (
+            stm_pnts["ambiguities_true"].values[stm_arcs["target"].values, :]
+            - stm_pnts["ambiguities_true"].values[stm_arcs["source"].values, :]
+        )
+        stm_arcs["ambiguities"] = (("space", "time"), ambigs)
+
+        with pytest.raises(ValueError):
+            stm_arcs_output, stm_pnts_output, id_ref_output = spatial_integration(
+                stm_pnts, stm_arcs, idx_refpnt=idx_ref
+            )
 
     @pytest.mark.parametrize(
         ["idx_source", "idx_target", "n_points", "idx_refpnt"],

@@ -31,9 +31,9 @@ import numpy as np
 import pytz
 import xarray as xr
 
-logger = logging.getLogger(__name__)
+from depsi.constants import EARTH_RADIUS
 
-EARTH_RADIUS = 6378136  # m
+logger = logging.getLogger(__name__)
 
 
 def wrap_phase(phs_abs):
