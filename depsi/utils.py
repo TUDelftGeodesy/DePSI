@@ -28,7 +28,7 @@ import numpy as np
 import pytz
 import xarray as xr
 
-EARTH_RADIUS = 6378136  # m
+from depsi.constants import EARTH_RADIUS
 
 
 def wrap_phase(phs_abs):

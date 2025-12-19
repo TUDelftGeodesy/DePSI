@@ -14,6 +14,7 @@ from scipy.spatial import Delaunay, KDTree, distance_matrix
 from sklearn.neighbors import BallTree
 
 from depsi.arc_estimation import arc_estimation_control_network
+from depsi.constants import EARTH_RADIUS
 from depsi.stats import pretest
 from depsi.utils import get_distance
 
@@ -32,9 +33,6 @@ OMT_THRES = 1e-10
 # If for all arcs max(TT1) < TT1_THRES, stop rejection iteration
 # For most cases this threshold is triggered in rejection phase
 TT1_THRES = 1.0
-
-# Used for approximate distance calculation. Unit in meters.
-EARTH_RADIUS = 6378136
 
 
 def spatial_unwrapping(
