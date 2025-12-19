@@ -358,7 +358,7 @@ def _mht_network_adjustment(
         kb_dict[n_con] = kb
 
     # Iteratively remove arcs/points until OMT and all arc statistics pass the test
-    stm_updated = stm_pnts.copy()
+    stm_pnts_updated = stm_pnts.copy()
     stm_arcs_updated = stm_arcs.copy()
     TT1max = TT1_THRES + 1.0  # Initial TT1_max to trigger the while loop
     niter = 0
@@ -399,12 +399,14 @@ def _mht_network_adjustment(
             min_connections_to_ensure = 2  # Just ensure all points are connected in the network
 
         # This makes sure all points can be tested in case of disagreement between arcs
-        stm_arcs_updated, stm_updated = _ensure_network_min_connections(
-            stm_arcs_updated, stm_updated, min_connections=min_connections_to_ensure
+        stm_arcs_updated, stm_pnts_updated = _ensure_network_min_connections(
+            stm_arcs_updated, stm_pnts_updated, min_connections=min_connections_to_ensure
         )
 
-        # Make sure the reference point is still in stm_updated, by checking its azimuth and range
-        mask_refpnt = (stm_updated["azimuth"].values == azimuth_refpnt) & (stm_updated["range"].values == range_refpnt)
+        # Make sure the reference point is still in stm_pnts_updated, by checking its azimuth and range
+        mask_refpnt = (stm_pnts_updated["azimuth"].values == azimuth_refpnt) & (
+            stm_pnts_updated["range"].values == range_refpnt
+        )
         if not np.any(mask_refpnt):
             raise ValueError(
                 f"Reference point ({azimuth_refpnt}, {range_refpnt}) removed in the MHT process. "
@@ -418,7 +420,11 @@ def _mht_network_adjustment(
         invQy = np.diag(1 / Qyy_diag)
 
         A = _network_relation_matrix(
-            stm_arcs_updated["source"], stm_arcs_updated["target"], stm_updated.sizes["space"], idx_refpnt, sparse_mode
+            stm_arcs_updated["source"],
+            stm_arcs_updated["target"],
+            stm_pnts_updated.sizes["space"],
+            idx_refpnt,
+            sparse_mode,
         )  # Update A matrix
         _, echeck = _solve_float_ambiguities(A, stm_arcs_updated["ambiguities"].data, invQy)  # Estimate residual again
         OMT = np.diag(echeck.T @ invQy @ echeck).sum()  # Update OMT statistic
@@ -431,7 +437,7 @@ def _mht_network_adjustment(
             "The network may still contain bad arcs or points."
         )
 
-    return stm_arcs_updated, stm_updated
+    return stm_arcs_updated, stm_pnts_updated
 
 
 def _mht_network_adjustment_reject_one(
@@ -686,7 +692,7 @@ def _remove_network_points_min_connections(
         return stm, arcs
 
     # Select points
-    stm_updated = stm.isel(space=idx_selected)
+    stm_pnts_updated = stm.isel(space=idx_selected)
 
     # Select arcs that connect selected points (Some arcs may be dropped together with points)
     mask_source = np.isin(idx_source, idx_selected)
@@ -704,7 +710,7 @@ def _remove_network_points_min_connections(
     arcs_updated["source"] = xr.DataArray(np.vectorize(idx_map.get)(arcs["source"].values), dims="space")
     arcs_updated["target"] = xr.DataArray(np.vectorize(idx_map.get)(arcs["target"].values), dims="space")
 
-    return stm_updated, arcs_updated
+    return stm_pnts_updated, arcs_updated
 
 
 def _generate_arcs_delaunay(coordinates, max_length):
