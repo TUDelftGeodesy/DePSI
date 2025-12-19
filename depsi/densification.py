@@ -19,6 +19,7 @@ def densification(
     key_sdphase: str = "sd_phase",
     key_btemp: str = "years",
     phase_diff_method: str = "subtract",
+    **kwargs_arc_estimation,
 ) -> xr.Dataset:
     """Densification ambiguity estimation w.r.t. network points.
 
@@ -44,6 +45,8 @@ def densification(
         Name of the data variable containing time baselines for arc estimation (default is 'years').
     phase_diff_method : str, optional
         Method for computing phase differences (default is 'subtract').
+    **kwargs_arc_estimation :
+        Additional keyword arguments to pass to the arc estimation function.
 
     Returns
     -------
@@ -65,12 +68,12 @@ def densification(
     if not np.array_equal(stm_densification["time"].values, stm_network_pnts["time"].values):
         raise ValueError("stm_densification and stm_network_pnts must have the same 'time' coordinates.")
 
-    # Make a copy of densification points
-    stm_densification_output = stm_densification.copy()
-
     # Remove network points that are also in densification points
     mask = np.isin(stm_densification["pnt_uid"].values, stm_network_pnts["pnt_uid"].values)
     stm_densification = stm_densification.isel(space=np.where(~mask)[0])
+
+    # Make a copy of densification points
+    stm_densification_output = stm_densification.copy()
 
     # Query densification connections
     idx_dens_pnts, idx_network_pnts = _query_dens_connections(
@@ -101,18 +104,16 @@ def densification(
     )
 
     # unwrap densification arcs phase
-    phs_obs_unwrapped, ambiguities, arc_height, arc_velo, ens_coh = periodogram(
+    _, ambiguities, _, _, _ = periodogram(
         stm_densification_arcs,
         key_dphase="dd_phase",
         key_h2ph="h2ph",
         key_Btemp="Btemp",
         wavelength=wavelength,
+        **kwargs_arc_estimation,
     )
-    stm_densification_arcs["phs_obs_unwrapped"] = phs_obs_unwrapped
+
     stm_densification_arcs["ambiguities"] = ambiguities
-    stm_densification_arcs["arc_height"] = arc_height
-    stm_densification_arcs["arc_velo"] = arc_velo
-    stm_densification_arcs["ens_coh"] = ens_coh
 
     if n_connections == 1:
         stm_densification_arcs = stm_densification_arcs.drop_vars("idx_dens").rename_vars(
