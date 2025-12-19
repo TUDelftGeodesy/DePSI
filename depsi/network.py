@@ -148,10 +148,16 @@ def spatial_unwrapping(
         azimuth_refpnt = stm_pnts["azimuth"].isel(space=idx_refpnt).values
         range_refpnt = stm_pnts["range"].isel(space=idx_refpnt).values
     else:
+        # Make sure idx_refpnt is still valid after arc selection and point removal
+        mask_refpnt = (stm_pnts["azimuth"].values == azimuth_refpnt) & (stm_pnts["range"].values == range_refpnt)
+        if not np.any(mask_refpnt):
+            raise ValueError(
+                f"Reference point ({azimuth_refpnt}, {range_refpnt}) removed after arc selection. "
+                f"Please choose another reference point."
+            )
+
         # Get reference point from radar coordinates
-        idx_refpnt = np.where(
-            (stm_pnts["azimuth"].values == azimuth_refpnt) & (stm_pnts["range"].values == range_refpnt)
-        )[0][0]
+        idx_refpnt = np.where(mask_refpnt)[0][0]
 
     # Adjust the network by removing bad arcs/points using MHT
     stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adjustment(
