@@ -245,7 +245,6 @@ def _check_kriging_kwargs(kwargs):
         'cutoff',
         'variogram_model',
         'variogram_parameters',
-        'kwrgs_empirical_variogram',
         'drift_terms',
     }
     for key in kwargs.keys():
@@ -258,8 +257,15 @@ def fit_variogram(
         lags: np.ndarray = None,
         semivariances: np.ndarray = None,
         variogram_model: str = 'gaussian',
-        **kwrgs_empirical_variogram):
+        empirical_variogram_method: str = "standard",
+        empirical_variogram_nlags: int= 50,
+        empirical_variogram_cutoff=10000.0
+        ):
     """Fit a variogram model to the empirical variogram.
+
+    If the arguments `lags` or `semivariances` are None, the empirical variogram
+    can be calculated using arguments `empirical_variogram_method`,
+    `empirical_variogram_nlags`, and `empirical_variogram_cutoff`.
 
     Parameters
     ----------
@@ -274,9 +280,13 @@ def fit_variogram(
     variogram_model: str
         The variogram model to fit. Options are: 'linear', 'power', 'gaussian',
         'spherical', 'exponential', 'hole-effect'. Default is 'gaussian'.
-    kwrgs_empirical_variogram: dict
-        Additional keyword arguments to pass to the empirical variogram
-        calculation function.
+    empirical_variogram_method: str
+        The `method` argument can be one of 'standard', 'unbiased', 'unbiased_robust'.
+        Default is 'standard'.
+    empirical_variogram_nlags: int
+        The number of lags to use for the empirical variogram. Default is 50.
+    empirical_variogram_cutoff: float
+        The maximum distance to consider for the empirical variogram. Default is 10000.0.
 
     Returns
     -------
@@ -286,18 +296,14 @@ def fit_variogram(
         A tuple containing the lags, the estimated semivariances from the fitted
         model, and the empirical semivariances.
     """
-    if kwrgs_empirical_variogram:
-        _check_kriging_kwargs(kwrgs_empirical_variogram)
 
     if lags is None or semivariances is None:
-        if not kwrgs_empirical_variogram:
-            logger.info("Estimating variogram with default parameters.")
-            lags, semivariances = calculate_empirical_variogram(da)
-        else:
-            lags, semivariances = calculate_empirical_variogram(
-            da,
-            **kwrgs_empirical_variogram
-            )
+        lags, semivariances = calculate_empirical_variogram(
+        da,
+        empirical_variogram_method,
+        empirical_variogram_nlags,
+        empirical_variogram_cutoff
+        )
 
     # see equations and reference in
     # https://geostat-framework.readthedocs.io/projects/pykrige/en/stable/variogram_models.html
@@ -346,7 +352,8 @@ def fit_variogram(
 def setup_kriging_system(
         da: xr.DataArray,
         method='universal',
-        **kwargs
+        empirical_variogram_args: dict={},
+        variogram_args: dict={},
     ):
     """Kriging in space for a single time step.
 
@@ -360,9 +367,40 @@ def setup_kriging_system(
         coordinates 'x' and 'y'.
     method: str
         The kriging method to use, e.g. 'universal'. Default is 'universal'.
-    kwargs: dict
-        Additional keyword arguments to pass to the kriging method, such as
-        'variogram_model', 'variogram_parameters', etc.
+        Other methods are not implemented yet.
+        See https://geostat-framework.readthedocs.io/projects/pykrige/en/stable/generated/pykrige.uk.UniversalKriging.html#pykrige.uk.UniversalKriging
+        for more details.
+    empirical_variogram_args: dict
+        Additional keyword arguments to pass to the function
+        `calculate_empirical_variogram`. Allowed keys are: 'method', 'nlags',
+        'cutoff'. If it left empty, default parameters will be used as
+        {"method":"standard", "nlags": 50, "cutoff"=10000.0}. The `method`
+        argument can be one of 'standard', 'unbiased', 'unbiased_robust'.
+        Default is 'standard'. See the documentation of
+        `calculate_empirical_variogram` for more details.
+    variogram_args: dict
+        Additional keyword arguments to pass to the kriging method. Valid keys are:
+        'variogram_model', 'variogram_parameters', 'drift_terms'.
+
+        The `variogram_model` can be one of: 'linear', 'power', 'gaussian',
+        'spherical', 'exponential', 'hole-effect'. Default is 'gaussian'.
+
+        The variogram parameters can be provided as a dictionary, for example,
+        # linear
+            {'slope': slope, 'nugget': nugget}
+        # power
+            {'scale': scale, 'exponent': exponent, 'nugget': nugget}
+        # gaussian, spherical, exponential and hole-effect:
+            {'sill': s, 'range': r, 'nugget': n}
+            # OR
+            {'psill': p, 'range': r, 'nugget': n}
+        If `variogram_parameters` are not provided, they will be estimated from
+        the empirical variogram using the specified values in `empirical_variogram_args`.
+
+        The `drift_terms` argument is only used for universal kriging. Supported drift
+        terms are currently 'regional_linear', 'point_log', 'external_Z',
+        'specified', and 'functional'. Default is 'regional_linear', which activates
+        a first-order drift model.
 
     Returns
     -------
@@ -377,20 +415,21 @@ def setup_kriging_system(
     if 'x' not in da.coords or 'y' not in da.coords:
         raise ValueError("DataArray must have coordinates 'x' and 'y'.")
 
-    if kwargs:
-        _check_kriging_kwargs(kwargs)
+    if empirical_variogram_args:
+        _check_kriging_kwargs(empirical_variogram_args)
+
+    if variogram_args:
+        _check_kriging_kwargs(variogram_args)
 
     # Calculate empirical variogram
-    if kwrgs_empirical_variogram:= kwargs.get('kwrgs_empirical_variogram'):
-        lags, semivariances = calculate_empirical_variogram(da,**kwrgs_empirical_variogram)
-    else:
+    if not empirical_variogram_args:
         logger.info("Estimating variogram with default parameters.")
-        lags, semivariances = calculate_empirical_variogram(da)
+    lags, semivariances = calculate_empirical_variogram(da, **empirical_variogram_args)
 
     # Check if variogram parameters are provided
     # if not, estimate them
-    variogram_model = kwargs.get('variogram_model', 'gaussian')
-    variogram_parameters = kwargs.get('variogram_parameters', None)
+    variogram_model = variogram_args.get('variogram_model', 'gaussian')
+    variogram_parameters = variogram_args.get('variogram_parameters', None)
     if variogram_parameters is None:
         variogram_parameters, _ = fit_variogram(
             da, lags, semivariances, variogram_model
@@ -407,7 +446,7 @@ def setup_kriging_system(
             variogram_model=variogram_model,
             variogram_parameters=variogram_parameters,
             exact_values=False,  #  If True, results would be input values at input locations
-            drift_terms=kwargs.get('drift_terms', 'regional_linear') # this activates drift of order 1 by default
+            drift_terms=variogram_args.get('drift_terms', 'regional_linear') # this activates drift of order 1 by default
         )
 
         # Adjust some variables
@@ -424,7 +463,9 @@ def solve_kriging_per_single_time(
         grid: xr.Dataset | xr.DataArray,
         method='universal',
         n_nearest_neighbors: int | None = None,
-        **kwargs
+        kriging_backend: str = 'vectorized',
+        empirical_variogram_args: dict={},
+        variogram_args: dict={},
     ):
     """Kriging in space for a single time step.
 
@@ -441,12 +482,48 @@ def solve_kriging_per_single_time(
         'x' and 'y'.
     method: str
         The kriging method to use, e.g. 'universal'. Default is 'universal'.
+        Other methods are not implemented yet.
     n_nearest_neighbors: int | None
         The number of nearest neighbors to use for interpolation. If None, all
         points in the DataArray are used for interpolation.
-    kwargs: dict
-        Additional keyword arguments to pass to the kriging method, such as
-        'variogram_model', 'variogram_parameters', etc.
+    kriging_backend: str
+        Specifies which approach to use in kriging. Specifying "vectorized" will solve
+        the entire kriging problem at once in a vectorized operation. This approach is
+        faster but also can consume a significant amount of memory for large grids
+        and/or large datasets. Specifying "loop" will loop through each point at which
+        the kriging system is to be solved. This approach is slower but also less
+        memory-intensive. Default is "vectorized".
+    empirical_variogram_args: dict
+        Additional keyword arguments to pass to the function
+        `calculate_empirical_variogram`. Allowed keys are: 'method', 'nlags',
+        'cutoff'. If it left empty, default parameters will be used as
+        {"method":"standard", "nlags": 50, "cutoff"=10000.0}. The `method`
+        argument can be one of 'standard', 'unbiased', 'unbiased_robust'.
+        Default is 'standard'. See the documentation of
+        `calculate_empirical_variogram` for more details.
+    variogram_args: dict
+        Additional keyword arguments to pass to the kriging method. Valid keys
+        are: 'variogram_model', 'variogram_parameters', 'drift_terms'.
+
+        The `variogram_model` can be one of: 'linear', 'power', 'gaussian',
+        'spherical', 'exponential', 'hole-effect'. Default is 'gaussian'.
+
+        The variogram parameters can be provided as a dictionary, for example, #
+        linear
+            {'slope': slope, 'nugget': nugget}
+        # power
+            {'scale': scale, 'exponent': exponent, 'nugget': nugget}
+        # gaussian, spherical, exponential and hole-effect:
+            {'sill': s, 'range': r, 'nugget': n} # OR {'psill': p, 'range': r,
+            'nugget': n}
+        If `variogram_parameters` are not provided, they will be estimated from
+        the empirical variogram using the specified values in
+        `empirical_variogram_args`.
+
+        The `drift_terms` argument is only used for universal kriging. Supported
+        drift terms are currently 'regional_linear', 'point_log', 'external_Z',
+        'specified', and 'functional'. Default is 'regional_linear', which
+        activates a first-order drift model.
 
     Returns
     -------
@@ -456,7 +533,7 @@ def solve_kriging_per_single_time(
         The associated variance (sigmasq) for the interpolated values.
     """
     # setup kriging system
-    kriging_obj = setup_kriging_system(da, method=method, **kwargs)
+    kriging_obj = setup_kriging_system(da, method, empirical_variogram_args, variogram_args)
 
     # Check if grid has x, y coords
     if 'x' not in grid.coords or 'y' not in grid.coords:
@@ -477,7 +554,7 @@ def solve_kriging_per_single_time(
             interpolation_style,
             grid.coords['x'],  # shape (N,)
             grid.coords['y'],  # shape (M,)
-            backend=kwargs.get('backend', 'vectorized'),
+            backend=kriging_backend,
         )
         return zvalues.data, sigmasq.data  # numpy.ndarray
     else:
@@ -548,9 +625,15 @@ def solve_kriging(
         coordinates 'x' and 'y'.
     method: str
         The kriging method to use, e.g. 'universal'. Default is 'universal'.
+        Other methods are not implemented yet.
+        see https://geostat-framework.readthedocs.io/projects/pykrige/en/stable/generated/pykrige.uk.UniversalKriging.html#pykrige.uk.UniversalKriging
+        for more details.
     kwargs: dict
-        Additional keyword arguments to pass to the kriging method, such as
-        'variogram_model', 'variogram_parameters', etc.
+        Additional keyword arguments to pass to the function
+        `solve_kriging_per_single_time`. Allowed keys are:
+        "n_nearest_neighbors", "kriging_backend", "empirical_variogram_args",
+        "variogram_args", See the documentation of
+        `solve_kriging_per_single_time` for more details.
 
     Returns
     -------
@@ -635,7 +718,8 @@ def estimate_atmosphere_phase(
         stm: xr.Dataset,
         psc_phase_residuals="psc_phase_residuals",
         atmosphere_mother: int | str="atmosphere_mother",
-        **kwargs
+        unmodeled_displacement_args: dict={},
+        kriging_args: dict={},
     ) -> xr.Dataset:
     """Estimate the atmosphere phase.
 
@@ -651,13 +735,20 @@ def estimate_atmosphere_phase(
         the PSC phase residuals. Default is "psc_phase_residuals".
     atmosphere_mother: int | str. A string indicating the name of the variable in the stm Dataset
         that contains the atmosphere mother or an integer indicating the time index of the atmosphere.
-    kwargs: dict
-        Additional keyword arguments for the `estimate_unmodeled_displacement` function and
-        the `solve_kriging` function. It can contain:
-        - unmodeled_displacement_kwargs: dict
-            Keyword arguments for the `estimate_unmodeled_displacement` function.
-        - kriging_kwargs: dict
-            Keyword arguments for the `solve_kriging` function.
+    unmodeled_displacement_args: dict
+        Keyword arguments for the `estimate_unmodeled_displacement` function.
+        The allowed keys are: `filter_length`, `sampling_rate`, `filter_type`.
+        For example: {"filter_length": 1, "sampling_rate": 1000, "filter_type":
+        "gaussian"}. See the documentation of `estimate_unmodeled_displacement`
+        for more details. The argument `unmodeled_displacement_args` can be
+        left empty. Then default parameters i.e. {"filter_length": 1,
+        "sampling_rate": 1000, "filter_type": "gaussian"} will be used.
+    kriging_args: dict
+        Additional keyword arguments to pass to the function
+        `solve_kriging_per_single_time`. Allowed keys are:
+        "n_nearest_neighbors", "kriging_backend", "empirical_variogram_args",
+        "variogram_args", See the documentation of
+        `solve_kriging_per_single_time` for more details.
 
     Returns
     -------
@@ -665,11 +756,10 @@ def estimate_atmosphere_phase(
         The STM with the predicted atmospheric phase.
     """
     # Step 1: Apply temporal filtering to extract high-frequency atmospheric signal
-    unmodeled_displacement_kwargs = kwargs.get('unmodeled_displacement_kwargs', {})
     unmodeled_disp = estimate_unmodeled_displacement(
         psc_phase_residuals=stm[psc_phase_residuals],
         baseline_years=stm["time"],
-        **unmodeled_displacement_kwargs,
+        **unmodeled_displacement_args,
     )
 
     # Add results to stm
@@ -689,11 +779,10 @@ def estimate_atmosphere_phase(
     stm["atmosphere_estimates"] = stm[psc_phase_residuals] - stm["unmodeled_disp"] + atmosphere_mother
 
     # Step 2: Apply spatial kriging to predict atmospheric phase per epoch
-    kriging_kwargs = kwargs.get('kriging_kwargs', {})
     predicted_atmosphere = solve_kriging(
         ps_atmosphere=stm["atmosphere_estimates"],
         grid=xr.Dataset(coords=stm.isel(time=0).coords),
-        **kriging_kwargs
+        **kriging_args
     )
 
     stm["atmosphere_predicted"] = predicted_atmosphere["predicted"]
