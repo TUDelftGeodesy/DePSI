@@ -356,13 +356,14 @@ class TestFitVariogram:
             variogram_model="gaussian",
             empirical_variogram_method="unbiased_robust",
             empirical_variogram_nlags=30,
-            empirical_variogram_cutoff=5000
+            empirical_variogram_cutoff=5000,
         )
 
         # test default values
         assert lags.shape[0] < 30
         assert lags.max() < 5000
         assert_allclose(empirical_var[0], 0.3839, atol=1e-3)
+
 
 class TestSetupKrigingSystem:
     def test_setup_kriging_system_default(self, get_test_data):
@@ -392,9 +393,7 @@ class TestSetupKrigingSystem:
         assert isinstance(krige_obj, pykrige.uk.UniversalKriging)
         assert krige_obj.variogram_model == "power"
         assert len(krige_obj.variogram_model_parameters) == 3
-        assert_almost_equal(
-            krige_obj.variogram_model_parameters, list(variogram_args["variogram_parameters"].values())
-        )
+        assert_almost_equal(krige_obj.variogram_model_parameters, list(variogram_args["variogram_parameters"].values()))
         assert not krige_obj.regional_linear_drift
 
 
@@ -514,17 +513,17 @@ class TestEstimateAtmospherePhase:
         results = estimate_atmosphere_phase(
             stm,
             unmodeled_displacement_args={
-            "filter_length": 2,
-            "sampling_rate": 1,
-            "filter_type": "triangle",
-        },
+                "filter_length": 2,
+                "sampling_rate": 1,
+                "filter_type": "triangle",
+            },
             kriging_args={
                 "variogram_args": {
-            "variogram_model": "power",
-            "variogram_parameters": {"scale": 0.5, "exponent": 1.5, "nugget": 0.1},
-            "drift_terms": None,
-            }
-        }
+                    "variogram_model": "power",
+                    "variogram_parameters": {"scale": 0.5, "exponent": 1.5, "nugget": 0.1},
+                    "drift_terms": None,
+                }
+            },
         )
 
         assert isinstance(results, xr.Dataset)

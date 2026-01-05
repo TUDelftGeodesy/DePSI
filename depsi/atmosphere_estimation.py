@@ -20,13 +20,7 @@ from scipy.spatial.distance import pdist
 logger = getLogger(__name__)
 
 
-def _get_signal_window_with_zero_padding(
-    type,
-    timespan,
-    filter_length,
-    sampling_rate
-) -> np.ndarray:
-
+def _get_signal_window_with_zero_padding(type, timespan, filter_length, sampling_rate) -> np.ndarray:
     # Determine window of size to cover the full range of time differences
     window_size = int(timespan) | 1  # Ensure window size is an odd integer
 
@@ -43,12 +37,12 @@ def _get_signal_window_with_zero_padding(
 
 
 def estimate_unmodeled_displacement(
-        psc_phase_residuals: xr.DataArray,
-        baseline_years: xr.DataArray,
-        filter_length: int = 1,
-        sampling_rate: int = 1000,
-        filter_type='gaussian',
-    ) -> xr.DataArray:
+    psc_phase_residuals: xr.DataArray,
+    baseline_years: xr.DataArray,
+    filter_length: int = 1,
+    sampling_rate: int = 1000,
+    filter_type="gaussian",
+) -> xr.DataArray:
     """Apply a low-pass filter to the time series to estimate the unmodeled deformation.
 
     Parameters
@@ -72,9 +66,7 @@ def estimate_unmodeled_displacement(
     """
     # Check if baseline_years size is equal to psc_phase_residuals size
     if baseline_years.size != psc_phase_residuals["time"].size:
-        raise ValueError(
-            "The size of baseline_years must match the time dimension of psc_phase_residuals."
-        )
+        raise ValueError("The size of baseline_years must match the time dimension of psc_phase_residuals.")
     # Check baseline_years is monotonic
     is_monotonic_increasing = np.all(np.diff(baseline_years.values) >= 0)
     is_monotonic_decreasing = np.all(np.diff(baseline_years.values) <= 0)
@@ -91,30 +83,23 @@ def estimate_unmodeled_displacement(
             "Adjust the filter_length or sampling_rate."
         )
 
-    window_size = int(timespan) | 1 # Ensure window size is an odd integer
+    window_size = int(timespan) | 1  # Ensure window size is an odd integer
 
-    if filter_type == 'block':
+    if filter_type == "block":
         window = _get_signal_window_with_zero_padding(
-            type='boxcar',
-            timespan=timespan,
-            filter_length=filter_length,
-            sampling_rate=sampling_rate
+            type="boxcar", timespan=timespan, filter_length=filter_length, sampling_rate=sampling_rate
         )
 
-    elif filter_type == 'triangle':
+    elif filter_type == "triangle":
         window = _get_signal_window_with_zero_padding(
-            type='triang',
-            timespan=timespan,
-            filter_length=filter_length,
-            sampling_rate=sampling_rate
+            type="triang", timespan=timespan, filter_length=filter_length, sampling_rate=sampling_rate
         )
-    elif filter_type == 'gaussian':
+    elif filter_type == "gaussian":
         std_dev = filter_length * sampling_rate / 6  # ±3σ covers the window
         window = signal.windows.gaussian(window_size, std=std_dev)
     else:
         raise NotImplementedError(
-            f"Filter type {filter_type} is not implemented. "
-            "Available types are: 'block', 'triangle', 'gaussian'."
+            f"Filter type {filter_type} is not implemented. Available types are: 'block', 'triangle', 'gaussian'."
         )
 
     # normalize the window
@@ -131,16 +116,16 @@ def estimate_unmodeled_displacement(
 
     # Apply the low-pass filter and return the non-linear deformation
     def apply_filter(data):
-        return np.einsum('ij,j->i', weight_matrix, data)
+        return np.einsum("ij,j->i", weight_matrix, data)
 
     unmodeled_disp = xr.apply_ufunc(
         apply_filter,
         psc_phase_residuals,
-        input_core_dims=[['time']],
-        output_core_dims=[['time']],
+        input_core_dims=[["time"]],
+        output_core_dims=[["time"]],
         vectorize=True,
-        dask='parallelized',
-        output_dtypes=[psc_phase_residuals.dtype]
+        dask="parallelized",
+        output_dtypes=[psc_phase_residuals.dtype],
     )
     return unmodeled_disp.transpose(*psc_phase_residuals.dims)  # align dims order
 
@@ -163,16 +148,13 @@ def calculate_variogram_cloud(da: xr.DataArray, cutoff: float = 10000.0):
         The variances corresponding to the pairwise distances.
     """
     # Check if there x, y coords
-    if 'x' not in da.coords or 'y' not in da.coords:
+    if "x" not in da.coords or "y" not in da.coords:
         raise ValueError("DataArray must have coordinates 'x' and 'y'.")
 
-    pairwise_distances = pdist(
-        np.column_stack((da.coords['x'].values, da.coords['y'].values)),
-        metric='euclidean'
-    )
+    pairwise_distances = pdist(np.column_stack((da.coords["x"].values, da.coords["y"].values)), metric="euclidean")
 
     z_values = da.values.flatten()[:, None]
-    variances = pdist(z_values, metric='sqeuclidean')
+    variances = pdist(z_values, metric="sqeuclidean")
 
     # apply cutoff
     mask = pairwise_distances < cutoff
@@ -190,17 +172,12 @@ def _calculate_binned_variances(variances, method: str = "standard"):
         return np.mean(variances)
     elif method == "unbiased":
         ch = 0.457 + 0.494 / len(variances) + 0.045 / len(variances) ** 2
-        return 1 / ch * np.mean(variances ** 0.25) ** 4
+        return 1 / ch * np.mean(variances**0.25) ** 4
     elif method == "unbiased_robust":
-        return 1 / 0.457 * np.median(variances ** 0.25) ** 4
+        return 1 / 0.457 * np.median(variances**0.25) ** 4
 
 
-def calculate_empirical_variogram(
-        da: xr.DataArray,
-        method: str = "standard",
-        nlags: int= 50,
-        cutoff=10000.0
-    ):
+def calculate_empirical_variogram(da: xr.DataArray, method: str = "standard", nlags: int = 50, cutoff=10000.0):
     """Calculate the empirical variogram of a DataArray.
 
     Parameters
@@ -240,12 +217,12 @@ def calculate_empirical_variogram(
 
 def _check_kriging_kwargs(kwargs):
     valid_keys = {
-        'method',
-        'nlags',
-        'cutoff',
-        'variogram_model',
-        'variogram_parameters',
-        'drift_terms',
+        "method",
+        "nlags",
+        "cutoff",
+        "variogram_model",
+        "variogram_parameters",
+        "drift_terms",
     }
     for key in kwargs.keys():
         if key not in valid_keys:
@@ -253,14 +230,14 @@ def _check_kriging_kwargs(kwargs):
 
 
 def fit_variogram(
-        da: xr.DataArray,
-        lags: np.ndarray = None,
-        semivariances: np.ndarray = None,
-        variogram_model: str = 'gaussian',
-        empirical_variogram_method: str = "standard",
-        empirical_variogram_nlags: int= 50,
-        empirical_variogram_cutoff=10000.0
-        ):
+    da: xr.DataArray,
+    lags: np.ndarray = None,
+    semivariances: np.ndarray = None,
+    variogram_model: str = "gaussian",
+    empirical_variogram_method: str = "standard",
+    empirical_variogram_nlags: int = 50,
+    empirical_variogram_cutoff: float = 10000.0,
+):
     """Fit a variogram model to the empirical variogram.
 
     If the arguments `lags` or `semivariances` are None, the empirical variogram
@@ -296,13 +273,9 @@ def fit_variogram(
         A tuple containing the lags, the estimated semivariances from the fitted
         model, and the empirical semivariances.
     """
-
     if lags is None or semivariances is None:
         lags, semivariances = calculate_empirical_variogram(
-        da,
-        empirical_variogram_method,
-        empirical_variogram_nlags,
-        empirical_variogram_cutoff
+            da, empirical_variogram_method, empirical_variogram_nlags, empirical_variogram_cutoff
         )
 
     # see equations and reference in
@@ -324,37 +297,33 @@ def fit_variogram(
     # see reference in
     # https://github.com/GeoStat-Framework/PyKrige/blob/e02baad442ac99b22f038b09b6290e7abacc17ae/src/pykrige/core.py#L582
     estimated_model_parameters = pykrige.core._calculate_variogram_model(
-        lags,
-        semivariances,
-        variogram_model,
-        variogram_function,
-        weight = False
+        lags, semivariances, variogram_model, variogram_function, weight=False
     )
 
     # Prepare the parameters
     variogram_parameters = {}
     if variogram_model == "linear":
-        variogram_parameters['slope'] = estimated_model_parameters[0]
-        variogram_parameters['nugget'] = estimated_model_parameters[1]
+        variogram_parameters["slope"] = estimated_model_parameters[0]
+        variogram_parameters["nugget"] = estimated_model_parameters[1]
     elif variogram_model == "power":
-        variogram_parameters['scale'] = estimated_model_parameters[0]
-        variogram_parameters['exponent'] = estimated_model_parameters[1]
-        variogram_parameters['nugget'] = estimated_model_parameters[2]
+        variogram_parameters["scale"] = estimated_model_parameters[0]
+        variogram_parameters["exponent"] = estimated_model_parameters[1]
+        variogram_parameters["nugget"] = estimated_model_parameters[2]
     else:
-        variogram_parameters['sill'] = estimated_model_parameters[0] + estimated_model_parameters[2]
-        variogram_parameters['range'] = estimated_model_parameters[1]
-        variogram_parameters['nugget'] = estimated_model_parameters[2]
+        variogram_parameters["sill"] = estimated_model_parameters[0] + estimated_model_parameters[2]
+        variogram_parameters["range"] = estimated_model_parameters[1]
+        variogram_parameters["nugget"] = estimated_model_parameters[2]
 
     estimated_semivariances = variogram_function(estimated_model_parameters, lags)
     return variogram_parameters, (lags, estimated_semivariances, semivariances)
 
 
 def setup_kriging_system(
-        da: xr.DataArray,
-        method='universal',
-        empirical_variogram_args: dict={},
-        variogram_args: dict={},
-    ):
+    da: xr.DataArray,
+    method="universal",
+    empirical_variogram_args: dict = None,
+    variogram_args: dict = None,
+):
     """Kriging in space for a single time step.
 
     Make sure that coordinates 'x' and 'y' are present in the DataArray and they
@@ -412,41 +381,42 @@ def setup_kriging_system(
         raise ValueError("DataArray must be 2D with coordinates 'x' and 'y'.")
 
     # Check if there x, y coords
-    if 'x' not in da.coords or 'y' not in da.coords:
+    if "x" not in da.coords or "y" not in da.coords:
         raise ValueError("DataArray must have coordinates 'x' and 'y'.")
-
-    if empirical_variogram_args:
-        _check_kriging_kwargs(empirical_variogram_args)
-
-    if variogram_args:
-        _check_kriging_kwargs(variogram_args)
 
     # Calculate empirical variogram
     if not empirical_variogram_args:
         logger.info("Estimating variogram with default parameters.")
+        empirical_variogram_args = {}
+
+    _check_kriging_kwargs(empirical_variogram_args)
+
     lags, semivariances = calculate_empirical_variogram(da, **empirical_variogram_args)
 
     # Check if variogram parameters are provided
     # if not, estimate them
-    variogram_model = variogram_args.get('variogram_model', 'gaussian')
-    variogram_parameters = variogram_args.get('variogram_parameters', None)
+    if not variogram_args:
+        variogram_args = {}
+
+    _check_kriging_kwargs(variogram_args)
+
+    variogram_model = variogram_args.get("variogram_model", "gaussian")
+    variogram_parameters = variogram_args.get("variogram_parameters", None)
     if variogram_parameters is None:
-        variogram_parameters, _ = fit_variogram(
-            da, lags, semivariances, variogram_model
-        )
+        variogram_parameters, _ = fit_variogram(da, lags, semivariances, variogram_model)
 
     # Create a kriging instance
-    if method == 'universal':
+    if method == "universal":
         # see input arguments in
         # https://github.com/GeoStat-Framework/PyKrige/blob/e02baad442ac99b22f038b09b6290e7abacc17ae/src/pykrige/uk.py#L220
         kriging_obj = pykrige.uk.UniversalKriging(
-            da.coords['x'],
-            da.coords['y'],
+            da.coords["x"],
+            da.coords["y"],
             da,
             variogram_model=variogram_model,
             variogram_parameters=variogram_parameters,
             exact_values=False,  #  If True, results would be input values at input locations
-            drift_terms=variogram_args.get('drift_terms', 'regional_linear') # this activates drift of order 1 by default
+            drift_terms=variogram_args.get("drift_terms", "regional_linear"),  # this activates drift of order 1
         )
 
         # Adjust some variables
@@ -459,14 +429,14 @@ def setup_kriging_system(
 
 
 def solve_kriging_per_single_time(
-        da: xr.DataArray,
-        grid: xr.Dataset | xr.DataArray,
-        method='universal',
-        n_nearest_neighbors: int | None = None,
-        kriging_backend: str = 'vectorized',
-        empirical_variogram_args: dict={},
-        variogram_args: dict={},
-    ):
+    da: xr.DataArray,
+    grid: xr.Dataset | xr.DataArray,
+    method="universal",
+    n_nearest_neighbors: int | None = None,
+    kriging_backend: str = "vectorized",
+    empirical_variogram_args: dict = None,
+    variogram_args: dict = None,
+):
     """Kriging in space for a single time step.
 
     Make sure that coordinates 'x' and 'y' are present in the DataArray and they
@@ -536,15 +506,15 @@ def solve_kriging_per_single_time(
     kriging_obj = setup_kriging_system(da, method, empirical_variogram_args, variogram_args)
 
     # Check if grid has x, y coords
-    if 'x' not in grid.coords or 'y' not in grid.coords:
+    if "x" not in grid.coords or "y" not in grid.coords:
         raise ValueError("Grid must have coordinates 'x' and 'y'.")
 
     # if there is "space" in dimension,
     # style is points, otherwise it is a grid
-    if 'space' in grid.dims:
-        interpolation_style = 'points'
+    if "space" in grid.dims:
+        interpolation_style = "points"
     else:
-        interpolation_style = 'grid'
+        interpolation_style = "grid"
 
     if n_nearest_neighbors is None:
         # Calculates a kriged grid and the associated variance
@@ -552,13 +522,13 @@ def solve_kriging_per_single_time(
         # all grid points are used for interpolation, more efficient
         zvalues, sigmasq = kriging_obj.execute(
             interpolation_style,
-            grid.coords['x'],  # shape (N,)
-            grid.coords['y'],  # shape (M,)
+            grid.coords["x"],  # shape (N,)
+            grid.coords["y"],  # shape (M,)
             backend=kriging_backend,
         )
         return zvalues.data, sigmasq.data  # numpy.ndarray
     else:
-        if 'space' not in grid.dims:
+        if "space" not in grid.dims:
             raise NotImplementedError(
                 "Kriging with nearest neighbors is not implemented for grid interpolation. "
                 "Because this method can be very slow and memory intensive for a large grid. "
@@ -571,14 +541,11 @@ def solve_kriging_per_single_time(
             )
 
         # Find the nearest neighbors
-        tree = KDTree(np.stack((da.coords['x'], da.coords['y']), axis=1))
-        _, indices = tree.query(
-            np.stack((grid.coords['x'], grid.coords['y']), axis=1),
-            k=n_nearest_neighbors
-        )
+        tree = KDTree(np.stack((da.coords["x"], da.coords["y"]), axis=1))
+        _, indices = tree.query(np.stack((grid.coords["x"], grid.coords["y"]), axis=1), k=n_nearest_neighbors)
 
-        neighbor_x = np.take(da.coords['x'].values, indices)
-        neighbor_y = np.take(da.coords['y'].values, indices)
+        neighbor_x = np.take(da.coords["x"].values, indices)
+        neighbor_y = np.take(da.coords["y"].values, indices)
         neighbor_z = np.take(da.values, indices)
 
         def _apply_kriging_one_point(index):
@@ -589,11 +556,11 @@ def solve_kriging_per_single_time(
             kriging_obj.Z = neighbor_z[index]
 
             zvalues, sigmasq = kriging_obj.execute(
-                'points',
-                grid.coords['x'].data[index],
-                grid.coords['y'].data[index],
-                backend='loop'  # use 'loop' backend for single point
-                )
+                "points",
+                grid.coords["x"].data[index],
+                grid.coords["y"].data[index],
+                backend="loop",  # use 'loop' backend for single point
+            )
             return np.concatenate([zvalues, sigmasq])
 
         # Loop over each point in grid and apply krige
@@ -607,12 +574,7 @@ def solve_kriging_per_single_time(
         return zvalues, sigmasq
 
 
-def solve_kriging(
-    ps_atmosphere: xr.DataArray,
-    grid: xr.Dataset | xr.DataArray ,
-    method='universal',
-    **kwargs
-):
+def solve_kriging(ps_atmosphere: xr.DataArray, grid: xr.Dataset | xr.DataArray, method="universal", **kwargs):
     """Kriging in space to estimate the atmosphere signal time series.
 
     Parameters
@@ -642,50 +604,39 @@ def solve_kriging(
         variance (sigmasq) for each time step.
     """
     # Check if ps_atmosphere has time dimension
-    if 'time' not in ps_atmosphere.dims:
+    if "time" not in ps_atmosphere.dims:
         raise ValueError(
-            "ps_atmosphere must have a 'time' dimension. "
-            "Otherwise, use `krige_per_single_time` function directly."
+            "ps_atmosphere must have a 'time' dimension. Otherwise, use `krige_per_single_time` function directly."
         )
 
     # Check if ps_atmosphere has 'x' and 'y' coordinates
-    if 'x' not in ps_atmosphere.coords or 'y' not in ps_atmosphere.coords:
+    if "x" not in ps_atmosphere.coords or "y" not in ps_atmosphere.coords:
         raise ValueError("ps_atmosphere must have coordinates 'x' and 'y'.")
 
     # Remove "time" because we will apply kriging per time step
     input_core_dims = list(ps_atmosphere.sizes)
-    if 'time' in input_core_dims:
-        input_core_dims.remove('time')
+    if "time" in input_core_dims:
+        input_core_dims.remove("time")
 
-    coords_no_time = {
-        k: v for k, v in ps_atmosphere.coords.items() if 'time' not in v.dims
-    }
+    coords_no_time = {k: v for k, v in ps_atmosphere.coords.items() if "time" not in v.dims}
 
-    # Check if grid has 'x' and 'y' coordinates
-    if 'x' not in grid.coords or 'y' not in grid.coords:
+    # Check if grid has "x" and "y" coordinates
+    if "x" not in grid.coords or "y" not in grid.coords:
         raise ValueError("Grid must have coordinates 'x' and 'y'.")
 
     # Check if 'time' in grid dims
-    if 'time' in grid.dims:
+    if "time" in grid.dims:
         raise ValueError("Grid must not have 'time' dimension.")
 
     # Check if `input_core_dims` are not chunked
     if ps_atmosphere.chunks is not None:
         chunk_sizes = dict(zip(list(ps_atmosphere.sizes), ps_atmosphere.chunks, strict=False))
-        if any(len(chunk_sizes[dim]) !=1 for dim in input_core_dims):
-            raise ValueError(
-                "ps_atmosphere must not be chunked in the core dimensions "
-                f"{input_core_dims}."
-            )
+        if any(len(chunk_sizes[dim]) != 1 for dim in input_core_dims):
+            raise ValueError(f"ps_atmosphere must not be chunked in the core dimensions {input_core_dims}.")
 
     def apply_kriging_per_single_time(data: np.ndarray):
         """Apply kriging for a single time step."""
-        da = xr.DataArray(
-            data=data,
-            coords=coords_no_time,
-            dims=input_core_dims
-        )
-
+        da = xr.DataArray(data=data, coords=coords_no_time, dims=input_core_dims)
         predicted, sigmasq = solve_kriging_per_single_time(da, grid, method=method, **kwargs)
         return predicted, sigmasq
 
@@ -693,34 +644,27 @@ def solve_kriging(
         apply_kriging_per_single_time,
         ps_atmosphere,
         input_core_dims=[input_core_dims],
-        output_core_dims=[list(grid.sizes)[::-1], list(grid.sizes)[::-1]], # result has shape (y, x)
+        output_core_dims=[list(grid.sizes)[::-1], list(grid.sizes)[::-1]],  # result has shape (y, x)
         dask="parallelized",
         vectorize=True,
         output_dtypes=[ps_atmosphere.dtype, ps_atmosphere.dtype],
-        dask_gufunc_kwargs = {"output_sizes": dict(grid.sizes)},  # this is needed when grid has "x" and "y" coordinates
+        dask_gufunc_kwargs={"output_sizes": dict(grid.sizes)},  # this is needed when grid has "x" and "y" coordinates
     )
 
     # Update time values
-    predicted = predicted.assign_coords(
-        time = ps_atmosphere["time"].data
-    )
-    sigmasq = sigmasq.assign_coords(
-        time = ps_atmosphere["time"].data
-    )
+    predicted = predicted.assign_coords(time=ps_atmosphere["time"].data)
+    sigmasq = sigmasq.assign_coords(time=ps_atmosphere["time"].data)
 
-    return xr.Dataset({
-        'predicted': predicted,
-        'sigmasq': sigmasq
-    })
+    return xr.Dataset({"predicted": predicted, "sigmasq": sigmasq})
 
 
 def estimate_atmosphere_phase(
-        stm: xr.Dataset,
-        psc_phase_residuals="psc_phase_residuals",
-        atmosphere_mother: int | str="atmosphere_mother",
-        unmodeled_displacement_args: dict={},
-        kriging_args: dict={},
-    ) -> xr.Dataset:
+    stm: xr.Dataset,
+    psc_phase_residuals="psc_phase_residuals",
+    atmosphere_mother: int | str = "atmosphere_mother",
+    unmodeled_displacement_args: dict = None,
+    kriging_args: dict = None,
+) -> xr.Dataset:
     """Estimate the atmosphere phase.
 
     This function applies a temporal filter to extract the high-frequency
@@ -756,6 +700,8 @@ def estimate_atmosphere_phase(
         The STM with the predicted atmospheric phase.
     """
     # Step 1: Apply temporal filtering to extract high-frequency atmospheric signal
+    if not unmodeled_displacement_args:
+        unmodeled_displacement_args = {}
     unmodeled_disp = estimate_unmodeled_displacement(
         psc_phase_residuals=stm[psc_phase_residuals],
         baseline_years=stm["time"],
@@ -768,9 +714,7 @@ def estimate_atmosphere_phase(
     # Get atmosphere mother
     if isinstance(atmosphere_mother, str):
         if atmosphere_mother not in stm:
-            raise ValueError(
-                f"atmosphere_mother '{atmosphere_mother}' not found in stm Dataset."
-            )
+            raise ValueError(f"atmosphere_mother '{atmosphere_mother}' not found in stm Dataset.")
         atmosphere_mother = stm[atmosphere_mother]
     else:
         atmosphere_mother = stm.isel(time=atmosphere_mother)[psc_phase_residuals]
@@ -779,10 +723,10 @@ def estimate_atmosphere_phase(
     stm["atmosphere_estimates"] = stm[psc_phase_residuals] - stm["unmodeled_disp"] + atmosphere_mother
 
     # Step 2: Apply spatial kriging to predict atmospheric phase per epoch
+    if not kriging_args:
+        kriging_args = {}
     predicted_atmosphere = solve_kriging(
-        ps_atmosphere=stm["atmosphere_estimates"],
-        grid=xr.Dataset(coords=stm.isel(time=0).coords),
-        **kriging_args
+        ps_atmosphere=stm["atmosphere_estimates"], grid=xr.Dataset(coords=stm.isel(time=0).coords), **kriging_args
     )
 
     stm["atmosphere_predicted"] = predicted_atmosphere["predicted"]
