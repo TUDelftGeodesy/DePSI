@@ -7,9 +7,10 @@ import numpy as np
 import sarxarray
 
 from depsi.arc_estimation import periodogram
+from depsi.atmosphere_estimation import estimate_atmosphere_phase
 from depsi.classification import network_stm_selection, ps_selection
 from depsi.io import read_slc_stack
-from depsi.network import form_network
+from depsi.network import form_network, spatial_integration
 from depsi.point_quality import detect_side_lobes
 from depsi.transformations import radar_to_latlonh
 from depsi.utils import add_stm_time_deltas, crop_slc_spacetime, stm_compute_single_time_differences
@@ -33,6 +34,7 @@ first_date = datetime(2020, 1, 1)
 last_date = datetime(2025, 9, 1)
 
 mother_epoch = "auto"
+reference_point_index = None
 
 # PS selection method
 ps_selection_method = "nmad"
@@ -56,6 +58,22 @@ min_network_links = 16
 network_partition_number = 8
 network_dphase_method = "subtract"
 min_periodogram_iterations = 10
+arc_quality_threshold = 0.5  # ensemble coherence
+
+# atmosphere
+atmo_unmodeled_displacement_filter_length = 1
+atmo_unmodeled_displacement_sampling_rate = 1000
+atmo_unmodeled_displacement_filter_type = "gaussian"
+
+atmo_kriging_n_nearest_neighbours = None
+atmo_kriging_backend = "vectorized"
+
+atmo_empirical_variogram_method = "standard"
+atmo_empirical_variogram_nlags = 50
+atmo_empirical_variogram_cutoff_distance = 10000.0
+
+atmo_variogram_model = "gaussian"
+atmo_variogram_drift_terms = "regional_linear"
 
 
 # 1. Project setup
@@ -124,7 +142,7 @@ non_mother[mother_epoch_index] = False
 stm_without_mother_epoch = stm.isel(time=non_mother)
 
 stm_network_pnts = network_stm_selection(
-    stm=stm,
+    stm=stm_without_mother_epoch,
     min_dist=min_point_distance,
     crs=network_crs,
     azimuth_spacing=metadata["azimuth_pixel_spacing"],
@@ -138,7 +156,7 @@ stm_network_pnts = network_stm_selection(
 stm_network_arcs = form_network(
     stm_network_pnts,
     key_phase='sd_phase',
-    key_h2ph='sd_h2ph',
+    key_h2ph='h2ph',
     key_Btemp='temporal_baseline',
     max_length=max_arc_length,
     key_xcrds="lon",
@@ -151,9 +169,9 @@ stm_network_arcs = form_network(
 
 _, ambiguities, _, _, ens_coh = periodogram(
     stm_network_arcs,
-    key_dphase='sd_phase',
-    key_h2ph='sd_h2ph',
-    key_Btemp='temporal_baseline',
+    key_dphase='d_phase',
+    key_h2ph='h2ph',
+    key_Btemp='Btemp',
     wavelength=metadata["wavelength"],
     min_steps=min_periodogram_iterations,
             )
@@ -162,10 +180,102 @@ stm_network_arcs["temp_coh"] = ens_coh
 
 stm_network_arcs = stm_network_arcs.compute()
 
+stm_arcs_output, stm_pnts_output, idx_ref = spatial_integration(
+    stm_network_pnts,
+    stm_network_arcs,
+    key_arc_quality="temp_coh",
+    threshold_arc_quality=arc_quality_threshold,
+    idx_refpnt=reference_point_index,
+)
+
+import pdb; pdb.set_trace()
 
 # 4. Atmosphere estimation
 
+stm_atmo_corrected = estimate_atmosphere_phase(
+    stm_estimation=stm_pnts_output,
+    stm_output=stm,
+    psc_phase_residuals="phase_residuals",
+    atmosphere_mother="mother_atmosphere",
+    unmodeled_displacement_args={
+        "filter_length": atmo_unmodeled_displacement_filter_length,
+        "sampling_rate": atmo_unmodeled_displacement_sampling_rate,
+        "filter_type": atmo_unmodeled_displacement_filter_type,
+    },
+    kriging_args={
+        "n_nearest_neighbors": atmo_kriging_n_nearest_neighbours,
+        "kriging_backend": atmo_kriging_backend,
+        "empirical_variogram_args": {
+            "method": atmo_empirical_variogram_method,
+            "nlags": atmo_empirical_variogram_nlags,
+            "cutoff": atmo_empirical_variogram_cutoff_distance,
+        },
+        "variogram_args": {
+            "variogram_model": atmo_variogram_model,
+            "variogram_parameters": None,  # to be estimated from the empirical variogram
+            "drift_terms": atmo_variogram_drift_terms,
+        },
+    }
+)
+
 # 3b. Network construction
+stm_atmo_corrected["sd_phase_minus_atmo"] = (
+    (
+            stm_atmo_corrected["phase_minus_atmo"] -
+            stm_atmo_corrected["phase_minus_atmo"].sel(time=stm_atmo_corrected.ps_sd_mother) +
+            np.pi
+    ) % (2 * np.pi) -
+    np.pi
+)
+
+stm_atmo_corr_without_mother_epoch = stm_atmo_corrected.isel(time=non_mother)
+
+stm_network_pnts = network_stm_selection(
+    stm=stm_atmo_corr_without_mother_epoch,
+    min_dist=min_point_distance,
+    crs=network_crs,
+    azimuth_spacing=metadata["azimuth_pixel_spacing"],
+    range_spacing=metadata["range_pixel_spacing"],
+    sortby_var="time_selection_" + ps_selection_method,
+    x_var=network_x_crds,
+    y_var=network_y_crds,
+    include_index=None
+)
+
+stm_network_arcs = form_network(
+    stm_network_pnts,
+    key_phase='sd_phase_minus_atmo',
+    key_h2ph='h2ph',
+    key_Btemp='temporal_baseline',
+    max_length=max_arc_length,
+    key_xcrds="lon",
+    key_ycrds="lat",
+    network_method=network_formation_method,
+    min_links=min_network_links,
+    num_partitions=network_partition_number,
+    dphase_method=network_dphase_method,
+)
+
+_, ambiguities, _, _, ens_coh = periodogram(
+    stm_network_arcs,
+    key_dphase='d_phase',
+    key_h2ph='h2ph',
+    key_Btemp='Btemp',
+    wavelength=metadata["wavelength"],
+    min_steps=min_periodogram_iterations,
+            )
+stm_network_arcs["ambiguities"] = ambiguities
+stm_network_arcs["temp_coh"] = ens_coh
+
+stm_network_arcs = stm_network_arcs.compute()
+
+stm_arcs_output, stm_firstordernetwork, idx_ref = spatial_integration(
+    stm_network_pnts,
+    stm_network_arcs,
+    key_arc_quality="temp_coh",
+    threshold_arc_quality=arc_quality_threshold,
+    idx_refpnt=reference_point_index,
+)
 
 # 5. Densification
 
