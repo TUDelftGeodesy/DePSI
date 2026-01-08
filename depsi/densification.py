@@ -12,6 +12,7 @@ def densification(
     stm_densification: xr.Dataset,
     stm_network_pnts: xr.Dataset,
     wavelength: float,
+    idx_ref_network: int | None = None,
     n_connections: int = 1,
     key_xcoord: str = "azimuth",
     key_ycoord: str = "range",
@@ -31,6 +32,11 @@ def densification(
         Dataset containing network points.
     wavelength : float
         Wavelength used for phase unwrapping and ambiguity estimation.
+    idx_ref_network : int or None, optional
+        Index of the reference point in the network points (default is None).
+        The phase of this point will be used to calculate the unwrapped phases of densification points.
+        If None, this function will look for the "idx_ref_network" attribute in stm_network_pnts.
+        If not found, an error will be raised.
     n_connections : int, optional
         Number of nearest neighbors to connect each densification point to (default is 1).
     key_xcoord : str, optional
@@ -39,8 +45,10 @@ def densification(
         Name of the coordinate representing the y-axis (default is 'range').
     key_h2ph : str, optional
         Name of the data variable containing height-to-phase values (default is 'h2ph_values').
+        Assuming the same key in densification and network points.
     key_sdphase : str, optional
         Name of the data variable containing phase data (default is 'sd_phase').
+        Assuming the same key in densification and network points.
     key_btemp : str, optional
         Name of the data variable containing time baselines for arc estimation (default is 'years').
     phase_diff_method : str, optional
@@ -59,6 +67,13 @@ def densification(
         stm_densification = generate_pnt_uids(stm_densification)
     if "pnt_uid" not in stm_network_pnts:
         stm_network_pnts = generate_pnt_uids(stm_network_pnts)
+
+    # Determine reference index
+    if idx_ref_network is None:
+        if "idx_ref_network" in stm_network_pnts.attrs:
+            idx_ref_network = stm_network_pnts.attrs["idx_ref_network"]
+        else:
+            raise ValueError("Reference index for network points not provided and not found in attributes.")
 
     # Check number of connections
     if n_connections > 1:
@@ -128,6 +143,15 @@ def densification(
         - stm_densification_arcs["ambiguities"].values
     )
     stm_densification_output["ambiguities"] = (("space", "time"), estimated_ambiguities)
+
+    # Compute double-difference unwrapped phase
+    ref_phase = stm_network_pnts[key_sdphase].isel(space=idx_ref_network).values
+    unwrapped_phase_densification = (
+        stm_densification_output[key_sdphase].values
+        + estimated_ambiguities * 2 * np.pi
+        - np.tile(ref_phase, (stm_densification_output.sizes["space"], 1))
+    )
+    stm_densification_output["unwrapped_phase"] = (("space", "time"), unwrapped_phase_densification)
 
     # Attach network points to the output
     # Join in space dimension, keep all data variables
