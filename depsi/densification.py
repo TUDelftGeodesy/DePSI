@@ -119,7 +119,7 @@ def densification(
     )
 
     # unwrap densification arcs phase
-    _, ambiguities, _, _, _ = periodogram(
+    _, ambiguities, _, _, temporal_coh_arc = periodogram(
         stm_densification_arcs,
         key_dphase="dd_phase",
         key_h2ph="h2ph",
@@ -156,6 +156,9 @@ def densification(
     # Attach network points to the output
     # Join in space dimension, keep all data variables
     stm_densification_output = xr.concat([stm_network_pnts, stm_densification_output], dim="space", data_vars="all")
+
+    # Local temporal coherence with one arc connection is the same as arc temporal coherence
+    stm_densification_output["local_temp_coh"] = (("space",), temporal_coh_arc)
 
     return stm_densification_output
 
