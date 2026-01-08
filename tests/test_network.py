@@ -214,7 +214,7 @@ class TestNetworkUnwrap:
             (9, [0, 4, 8], [5, 10, 15], [1, -100, 1]),  # Three errors, one large, but should be corrected
         ],
     )
-    def test_spatial_unwrap(self, id_ref, idx_err_space, idx_err_time, error_values):
+    def test_spatial_integration(self, id_ref, idx_err_space, idx_err_time, error_values):
         """Test spatial unwrapping based on arc ambiguities.
 
         Build points with true value of ambiguities.
@@ -252,6 +252,7 @@ class TestNetworkUnwrap:
                 "azimuth": ("space", np.round(rng.normal(0, 10, (Npoints))).astype(int)),
                 "range": ("space", np.round(rng.normal(0, 10, (Npoints))).astype(int)),
             },
+            attrs={"wavelength": 0.056},  # Wavelength in meters
         )
 
         # Construct arcs based on true ambiguities
@@ -280,7 +281,9 @@ class TestNetworkUnwrap:
             ambigs_errors[idx_s, idx_t] += err
         stm_arcs["ambiguities"] = (("space", "time"), ambigs + ambigs_errors)
 
-        stm_arcs_output, stm_pnts_output, id_ref_output = spatial_integration(stm_pnts, stm_arcs, idx_refpnt=id_ref)
+        stm_arcs_output, stm_pnts_output = spatial_integration(
+            stm_pnts, stm_arcs, idx_refpnt=id_ref, key_sdphase="phase"
+        )
 
         # Verify output dimensions, no points should be rejected
         assert stm_pnts_output.sizes["space"] == stm_pnts.sizes["space"]
@@ -293,11 +296,23 @@ class TestNetworkUnwrap:
             0,
         )
 
+        # Check that the unwrapped phase is correct
+        ref_phase = stm_pnts["phase"].isel(space=id_ref).values
+        relative_ambiguities = stm_pnts["ambiguities_true"].values - np.tile(
+            stm_pnts["ambiguities_true"].isel(space=id_ref).values, (stm_pnts.sizes["space"], 1)
+        )  # true ambiguities relative to reference point
+        unwrapped_phase_expected = (
+            stm_pnts["phase"].values
+            + relative_ambiguities * 2 * np.pi
+            - np.tile(ref_phase, (stm_pnts.sizes["space"], 1))
+        )
+        assert np.allclose(stm_pnts_output["unwrapped_phase"].values, unwrapped_phase_expected)
+
         # Check that the reference point index remains the same
-        assert id_ref_output == id_ref
+        assert stm_pnts_output.attrs["idx_refpnt"] == id_ref
 
     @pytest.mark.parametrize("idx_ref", [0, 5, 10, 16])
-    def test_spatial_unwrap_ref_pnt_removed(self, idx_ref):
+    def test_spatial_integration_ref_pnt_removed(self, idx_ref):
         """Raise error when reference point is removed"""
         # Set up test parameters
         rng = np.random.default_rng(42)
@@ -325,6 +340,7 @@ class TestNetworkUnwrap:
                 "azimuth": ("space", np.round(rng.normal(0, 10, (Npoints))).astype(int)),
                 "range": ("space", np.round(rng.normal(0, 10, (Npoints))).astype(int)),
             },
+            attrs={"wavelength": 0.056},
         )
 
         # Construct arcs based on true ambiguities
@@ -354,8 +370,8 @@ class TestNetworkUnwrap:
         stm_arcs["ambiguities"] = (("space", "time"), ambigs)
 
         with pytest.raises(ValueError):
-            stm_arcs_output, stm_pnts_output, id_ref_output = spatial_integration(
-                stm_pnts, stm_arcs, idx_refpnt=idx_ref
+            stm_arcs_output, stm_pnts_output = spatial_integration(
+                stm_pnts, stm_arcs, idx_refpnt=idx_ref, key_sdphase="phase"
             )
 
     @pytest.mark.parametrize(

@@ -38,6 +38,8 @@ TT1_THRES = 1.0
 def spatial_integration(
     stm_pnts: xr.Dataset,
     stm_arcs: xr.Dataset,
+    wavelength: float | None = None,
+    key_sdphase: str = "sd_phase",
     key_arc_quality: str = "temp_coh",
     threshold_arc_quality: float = 0.5,
     idx_refpnt: int | None = None,
@@ -62,6 +64,7 @@ def spatial_integration(
     3. Select a reference point which assumes zero phase (hence zero ambiguity)
     4. Adjust the network by removing arcs/points which potentially cause errors using Multi-Hypothesis Testing (MHT)
     5. Adjust the ambiguities per time epoch to make sure spatial solutions give zero residuals.
+    6. Estimate point ambiguities and unwrapped phases w.r.t. the reference point.
 
     Parameters
     ----------
@@ -76,6 +79,12 @@ def spatial_integration(
         relevant functions in "depsi.arc_estimation" module for this purpose. Arc estimation adds the variable
         "ambiguities" to stm_arcs, which are the estimated arc ambiguities. It also adds quality variables such as
         "temp_coh" (ensemble coherence), which are used to select arcs for spatial integration.
+    wavelength : float or None, optional
+        Wavelength used for unwrapped phase estimation. Unit in meters.
+        If None, the function will look for the "wavelength" attribute in stm_pnts.
+    key_sdphase : str, optional
+        Key of the single difference phase variable in stm_pnts, by default "sd_phase"
+        This phase is used to compute unwrapped phases after ambiguity estimation.
     key_arc_quality : str, optional
         Key of the arc quality variable in stm_arcs, by default "temp_coh"
     threshold_arc_quality : float, optional
@@ -128,6 +137,13 @@ def spatial_integration(
 
     if sparse_mode:
         raise NotImplementedError("Sparse mode is not implemented yet for spatial_integration.")
+
+    # If wavelength is None, try to get it from stm_pnts attributes
+    if wavelength is None:
+        if "wavelength" in stm_pnts.attrs:
+            wavelength = stm_pnts.attrs["wavelength"]
+        else:
+            raise ValueError("Wavelength not provided and not found in stm_pnts attributes.")
 
     # If idx_refpnt is specified
     # Get radar coordinates of the reference point before any shape change
@@ -185,7 +201,23 @@ def spatial_integration(
         arc_estimation_method,
     )
 
-    return stm_arcs_output, stm_pnts_output, idx_refpnt
+    # Assign idx_refpnt as attribute to stm_pnts_output
+    stm_pnts_output = stm_pnts_output.assign_attrs({"idx_refpnt": idx_refpnt})
+
+    # Add unwrapped phase to stm_pnts_output
+    # Unwrapped phase is w.r.t. the reference point
+    # Therefore the sd_phase of the reference point is subtracted
+    unwrapped_phase_pnts = (
+        stm_pnts_output[key_sdphase].data
+        + stm_pnts_output["ambiguities"].data * 2 * np.pi
+        - np.tile(
+            stm_pnts_output[key_sdphase].isel(space=idx_refpnt).data,
+            (stm_pnts_output.sizes["space"], 1),
+        )
+    )
+    stm_pnts_output["unwrapped_phase"] = (("space", "time"), unwrapped_phase_pnts)
+
+    return stm_arcs_output, stm_pnts_output
 
 
 def form_network(
