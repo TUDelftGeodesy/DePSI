@@ -47,7 +47,7 @@ def spatial_integration(
     sparse_mode: bool = False,
     ensure_network_while_mht: bool = False,
     arc_estimation_method: Literal["periodogram"] = "periodogram",
-) -> tuple[xr.Dataset, xr.Dataset, int]:
+) -> tuple[xr.Dataset, xr.Dataset]:
     """Spatially integrate the ambiguities of network arcs to points.
 
     This function estimates the integer ambiguities of the points from arc ambiguities. It assumes a network
@@ -102,8 +102,11 @@ def spatial_integration(
 
     Returns
     -------
-    xr.Dataset, xr.Dataset, int
-        Updated Space-Time Matrix of arcs, points, and index of the reference point in updated points.
+    xr.Dataset, xr.Dataset
+        Updated Space-Time Matrix of arcs and updated Space-Time Matrix of points.
+        For arcs, the "ambiguities" variable contains the adjusted arc ambiguities after spatial integration.
+        For points, the "ambiguities" variable contains the estimated point ambiguities, and "unwrapped_phase"
+        contains the unwrapped phase w.r.t. the reference point.
 
     References
     ----------
