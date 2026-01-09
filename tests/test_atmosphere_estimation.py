@@ -2,6 +2,7 @@ import numpy as np
 import pykrige
 import pytest
 import xarray as xr
+from numpy.random import default_rng
 from numpy.testing import assert_allclose, assert_almost_equal
 from scipy import signal
 from scipy.optimize import curve_fit
@@ -17,21 +18,32 @@ from depsi.atmosphere_estimation import (
     solve_kriging_per_single_time,
 )
 
+# Create a random number generator for consistent random data
+rng = default_rng(seed=42)
+
 
 @pytest.fixture
 def get_test_data():
     return xr.DataArray(
         np.array(
             [
-                0.51615017,  0.49838693,  1.14898968,  0.73637701,  0.98923508,
-                0.29524828, -0.03234519,  0.36147726,  1.42115834,  0.82486138
+                0.51615017,
+                0.49838693,
+                1.14898968,
+                0.73637701,
+                0.98923508,
+                0.29524828,
+                -0.03234519,
+                0.36147726,
+                1.42115834,
+                0.82486138,
             ]
         ),
-        dims=('space',),
+        dims=("space",),
         coords={
-            'x': ('space', np.array([ 13.9,  69.5, 166.8, 180.7, 194.6, 194.6, 194.6, 208.5, 208.5, 222.4])),
-            'y': ('space', np.array([ 8524, 13224, 13084, 13448,  6356,  6804,  8924,  2288, 11804, 5792])),
-        }
+            "x": ("space", np.array([13.9, 69.5, 166.8, 180.7, 194.6, 194.6, 194.6, 208.5, 208.5, 222.4])),
+            "y": ("space", np.array([8524, 13224, 13084, 13448, 6356, 6804, 8924, 2288, 11804, 5792])),
+        },
     )
 
 
@@ -40,7 +52,7 @@ def _calculate_weigths(baseline_years, filter_length, sampling_rate, filter_type
     timespan = baseline_scaled.max() - baseline_scaled.min() + 1
 
     # Create a window of size `timespan` to cover the full range of time differences
-    window_size = int(timespan) + 1 # Ensure window size is an odd integer
+    window_size = int(timespan) + 1  # Ensure window size is an odd integer
     window = np.zeros(window_size)
 
     # Determine the core window size based on the filter length and sampling rate
@@ -48,17 +60,17 @@ def _calculate_weigths(baseline_years, filter_length, sampling_rate, filter_type
     start = (window_size - core_window_size) // 2
     end = start + core_window_size
 
-    if filter_type == 'block':
+    if filter_type == "block":
         window[start:end] = signal.windows.boxcar(core_window_size)
-    elif filter_type == 'triangle':
+    elif filter_type == "triangle":
         window[start:end] = signal.windows.triang(core_window_size)
-    elif filter_type == 'gaussian':
+    elif filter_type == "gaussian":
         std_dev = filter_length * sampling_rate / 6
         window = signal.windows.gaussian(window_size, std=std_dev)
     else:
         raise NotImplementedError(f"Method '{filter_type}' is not implemented.")
     window = window / window.sum()
-    time_diffs = (baseline_scaled.values[:, None] - baseline_scaled.values[None, :])
+    time_diffs = baseline_scaled.values[:, None] - baseline_scaled.values[None, :]
     center_index = window_size // 2
     weight_indices = np.clip(center_index + np.round(time_diffs).astype(int), 0, window_size - 1)
     weight_matrix = window[weight_indices]
@@ -69,8 +81,8 @@ def _calculate_weigths(baseline_years, filter_length, sampling_rate, filter_type
 class TestEstimateUnmodeledDisplacement:
     def test_estimate_unmodeled_displacement_block(self):
         """Test the block filter_type for estimating non-linear deformation."""
-        psc_phase_residuals = xr.DataArray(np.random.rand(5, 10), dims=('space', 'time'))
-        baseline_years = xr.DataArray(np.sort(np.random.rand(10)), dims='time')
+        psc_phase_residuals = xr.DataArray(rng.random((5, 10)), dims=("space", "time"))
+        baseline_years = xr.DataArray(np.sort(rng.random(10)), dims="time")
         filter_length = 1
         sampling_rate = 2
 
@@ -80,20 +92,20 @@ class TestEstimateUnmodeledDisplacement:
             baseline_years=baseline_years,
             filter_length=filter_length,
             sampling_rate=sampling_rate,
-            filter_type='block'
+            filter_type="block",
         )
         actual = result.isel(space=0).data
 
         # Expected
-        weight_matrix = _calculate_weigths(baseline_years, filter_length, sampling_rate, 'block')
+        weight_matrix = _calculate_weigths(baseline_years, filter_length, sampling_rate, "block")
         expected = np.sum(weight_matrix * psc_phase_residuals.isel(space=0).values[None, :], axis=1)
 
         assert_almost_equal(actual, expected)
 
     def test_estimate_unmodeled_displacement_triangle(self):
         """Test the triangle filter_type for estimating non-linear deformation."""
-        psc_phase_residuals = xr.DataArray(np.random.rand(5, 10), dims=('space', 'time'))
-        baseline_years = xr.DataArray(np.sort(np.random.rand(10)), dims='time')
+        psc_phase_residuals = xr.DataArray(rng.random((5, 10)), dims=("space", "time"))
+        baseline_years = xr.DataArray(np.sort(rng.random(10)), dims="time")
         filter_length = 1
         sampling_rate = 2
 
@@ -103,20 +115,20 @@ class TestEstimateUnmodeledDisplacement:
             baseline_years=baseline_years,
             filter_length=filter_length,
             sampling_rate=sampling_rate,
-            filter_type='triangle'
+            filter_type="triangle",
         )
         actual = result.isel(space=0).data
 
         # Expected
-        weight_matrix = _calculate_weigths(baseline_years, filter_length, sampling_rate, 'triangle')
+        weight_matrix = _calculate_weigths(baseline_years, filter_length, sampling_rate, "triangle")
         expected = np.sum(weight_matrix * psc_phase_residuals.isel(space=0).values[None, :], axis=1)
 
         assert_almost_equal(actual, expected)
 
     def test_estimate_unmodeled_displacement_gaussian(self):
         """Test the gaussian filter_type for estimating non-linear deformation."""
-        psc_phase_residuals = xr.DataArray(np.random.rand(5, 10), dims=('space', 'time'))
-        baseline_years = xr.DataArray(np.sort(np.random.rand(10)), dims='time')
+        psc_phase_residuals = xr.DataArray(rng.random((5, 10)), dims=("space", "time"))
+        baseline_years = xr.DataArray(np.sort(rng.random(10)), dims="time")
         filter_length = 1
         sampling_rate = 2
 
@@ -125,21 +137,21 @@ class TestEstimateUnmodeledDisplacement:
             psc_phase_residuals=psc_phase_residuals,
             baseline_years=baseline_years,
             filter_length=filter_length,
-            sampling_rate = sampling_rate,
-            filter_type='gaussian'
+            sampling_rate=sampling_rate,
+            filter_type="gaussian",
         )
         actual = result.isel(space=0).data
 
         # Expected
-        weight_matrix = _calculate_weigths(baseline_years, filter_length, sampling_rate, 'gaussian')
+        weight_matrix = _calculate_weigths(baseline_years, filter_length, sampling_rate, "gaussian")
         expected = np.sum(weight_matrix * psc_phase_residuals.isel(space=0).values[None, :], axis=1)
 
         assert_almost_equal(actual, expected)
 
     def test_estimate_unmodeled_displacement_invalid_method(self):
         """Test that an error is raised for an invalid filter_type."""
-        psc_phase_residuals = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
-        baseline_years = xr.DataArray(np.sort(np.random.rand(10)), dims='time')
+        psc_phase_residuals = xr.DataArray(rng.random((10, 5)), dims=("time", "space"))
+        baseline_years = xr.DataArray(np.sort(rng.random(10)), dims="time")
 
         with pytest.raises(NotImplementedError):
             estimate_unmodeled_displacement(
@@ -147,13 +159,13 @@ class TestEstimateUnmodeledDisplacement:
                 baseline_years=baseline_years,
                 filter_length=1,
                 sampling_rate=2,
-                filter_type='invalid_method'
+                filter_type="invalid_method",
             )
 
     def test_estimate_unmodeled_displacement_mismatched_sizes(self):
         """Test that an error is raised for mismatched sizes of psc_phase_residuals and baseline_years."""
-        psc_phase_residuals = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
-        baseline_years = xr.DataArray(np.arange(5), dims='time')
+        psc_phase_residuals = xr.DataArray(rng.random((10, 5)), dims=("time", "space"))
+        baseline_years = xr.DataArray(np.arange(5), dims="time")
 
         with pytest.raises(ValueError):
             estimate_unmodeled_displacement(
@@ -161,13 +173,13 @@ class TestEstimateUnmodeledDisplacement:
                 baseline_years=baseline_years,
                 filter_length=1,
                 sampling_rate=2,
-                filter_type='block'
+                filter_type="block",
             )
 
     def test_estimate_unmodeled_displacement_non_monotonic_years(self):
         """Test that an error is raised for non-monotonic baseline_years."""
-        psc_phase_residuals = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
-        baseline_years = xr.DataArray(np.array([0, 2, 1, 3]), dims='time')
+        psc_phase_residuals = xr.DataArray(rng.random((10, 5)), dims=("time", "space"))
+        baseline_years = xr.DataArray(np.array([0, 2, 1, 3]), dims="time")
 
         with pytest.raises(ValueError):
             estimate_unmodeled_displacement(
@@ -175,21 +187,21 @@ class TestEstimateUnmodeledDisplacement:
                 baseline_years=baseline_years,
                 filter_length=1,
                 sampling_rate=2,
-                filter_type='block'
+                filter_type="block",
             )
 
     def test_estimate_unmodeled_displacement_large_sampling_rate(self):
         """Test that an error is raised for non-monotonic baseline_years."""
-        psc_phase_residuals = xr.DataArray(np.random.rand(10, 5), dims=('time', 'space'))
-        baseline_years = xr.DataArray(np.sort(np.random.rand(10)), dims='time')
+        psc_phase_residuals = xr.DataArray(rng.random((10, 5)), dims=("time", "space"))
+        baseline_years = xr.DataArray(np.sort(rng.random(10)), dims="time")
 
         with pytest.raises(ValueError):
             estimate_unmodeled_displacement(
                 psc_phase_residuals=psc_phase_residuals,
                 baseline_years=baseline_years,
                 filter_length=2,
-                sampling_rate = 10,
-                filter_type='block'
+                sampling_rate=10,
+                filter_type="block",
             )
 
 
@@ -202,7 +214,7 @@ class TestCalculateVariogramCloud:
 
         # full matrix
         distances = np.hypot(x - x[:, np.newaxis], y - y[:, np.newaxis])
-        variances = (z - z[:, np.newaxis])**2
+        variances = (z - z[:, np.newaxis]) ** 2
 
         # select upper triangle
         mask = np.triu(np.ones(distances.shape), k=1).astype(bool)
@@ -221,15 +233,15 @@ class TestCalculateVariogramCloud:
 class TestCalculateEmpiricalVariogram:
     def test_calculate_empirical_variogram_standard(self):
         da = xr.DataArray(
-            np.random.rand(5),
-            dims=('space',),
+            rng.random(5),
+            dims=("space",),
             coords={
-                'x': ('space', np.arange(5)),
-                'y': ('space', np.arange(5)),
-            }
+                "x": ("space", np.arange(5)),
+                "y": ("space", np.arange(5)),
+            },
         )
 
-        actual_lags, actual_variances = calculate_empirical_variogram(da, method='standard')
+        actual_lags, actual_variances = calculate_empirical_variogram(da, method="standard")
 
         distances, variances = calculate_variogram_cloud(da)
         nlags = 50
@@ -247,15 +259,15 @@ class TestCalculateEmpiricalVariogram:
 
     def test_calculate_empirical_variogram_unbiased(self):
         da = xr.DataArray(
-            np.random.rand(5),
-            dims=('space',),
+            rng.random(5),
+            dims=("space",),
             coords={
-                'x': ('space', np.arange(5)),
-                'y': ('space', np.arange(5)),
-            }
+                "x": ("space", np.arange(5)),
+                "y": ("space", np.arange(5)),
+            },
         )
 
-        actual_lags, actual_variances = calculate_empirical_variogram(da, method='unbiased')
+        actual_lags, actual_variances = calculate_empirical_variogram(da, method="unbiased")
 
         distances, variances = calculate_variogram_cloud(da)
         nlags = 50
@@ -272,18 +284,17 @@ class TestCalculateEmpiricalVariogram:
         assert_almost_equal(actual_lags, expected_lags)
         assert_almost_equal(actual_variances, expected_variances)
 
-
     def test_calculate_empirical_variogram_unbiased_robust(self):
         da = xr.DataArray(
-            np.random.rand(5),
-            dims=('space',),
+            rng.random(5),
+            dims=("space",),
             coords={
-                'x': ('space', np.arange(5)),
-                'y': ('space', np.arange(5)),
-            }
+                "x": ("space", np.arange(5)),
+                "y": ("space", np.arange(5)),
+            },
         )
 
-        actual_lags, actual_variances = calculate_empirical_variogram(da, method='unbiased_robust')
+        actual_lags, actual_variances = calculate_empirical_variogram(da, method="unbiased_robust")
 
         distances, variances = calculate_variogram_cloud(da)
         nlags = 50
@@ -304,7 +315,7 @@ class TestFitVariogram:
     def test_fit_variogram_gaussian(self, get_test_data):
         da = get_test_data
 
-        _, lags_variances = fit_variogram(da, variogram_model='gaussian')
+        _, lags_variances = fit_variogram(da, variogram_model="gaussian")
         lags, estimated_semivariances, semivariances = lags_variances
         actual_residual = semivariances - estimated_semivariances
 
@@ -312,7 +323,7 @@ class TestFitVariogram:
             return psill * (1.0 - np.exp(-(h**2.0) / (range_ * 4.0 / 7.0) ** 2.0)) + nugget
 
         lags, semivariances = calculate_empirical_variogram(da)
-        initial_guess = [0.4, 2000, 0.15] # psill, range, nugget
+        initial_guess = [0.4, 2000, 0.15]  # psill, range, nugget
         popt, _ = curve_fit(gaussian_model, lags, semivariances, p0=initial_guess, bounds=(0, np.inf))
         estimated_semivariances = gaussian_model(lags, *popt)
         expected_residual = semivariances - estimated_semivariances
@@ -322,7 +333,7 @@ class TestFitVariogram:
     def test_fit_variogram_gaussian_params(self, get_test_data):
         da = get_test_data
 
-        params, _ = fit_variogram(da, variogram_model='gaussian')
+        params, _ = fit_variogram(da, variogram_model="gaussian")
         assert len(params) == 3
         assert "sill" in params
         assert "range" in params
@@ -331,7 +342,7 @@ class TestFitVariogram:
     def test_fit_variogram_without_kwrags(self, get_test_data):
         da = get_test_data
 
-        _, (lags, _, _) = fit_variogram(da, variogram_model='gaussian')
+        _, (lags, _, _) = fit_variogram(da, variogram_model="gaussian")
 
         # test default values
         assert lags.shape[0] < 50
@@ -341,11 +352,11 @@ class TestFitVariogram:
         da = get_test_data
 
         kwrgs_empirical_variogram = {
-            'method': 'unbiased_robust',
-            'nlags': 30,
-            'cutoff': 5000,
+            "method": "unbiased_robust",
+            "nlags": 30,
+            "cutoff": 5000,
         }
-        _, (lags, _, empirical_var) = fit_variogram(da, variogram_model='gaussian', **kwrgs_empirical_variogram)
+        _, (lags, _, empirical_var) = fit_variogram(da, variogram_model="gaussian", **kwrgs_empirical_variogram)
 
         # test default values
         assert lags.shape[0] < 30
@@ -356,7 +367,7 @@ class TestFitVariogram:
         da = get_test_data
 
         with pytest.raises(ValueError):
-            fit_variogram(da, variogram_model='gaussian', nnlags=30)
+            fit_variogram(da, variogram_model="gaussian", nnlags=30)
 
 
 class TestSetupKrigingSystem:
@@ -365,7 +376,7 @@ class TestSetupKrigingSystem:
         krige_obj = setup_kriging_system(da)
 
         assert isinstance(krige_obj, pykrige.uk.UniversalKriging)
-        assert krige_obj.variogram_model == 'gaussian'
+        assert krige_obj.variogram_model == "gaussian"
         assert len(krige_obj.variogram_model_parameters) == 3
         assert krige_obj.variogram_model_parameters[2] > 0  # nugget
         assert krige_obj.regional_linear_drift
@@ -379,30 +390,22 @@ class TestSetupKrigingSystem:
         da = get_test_data
         kwargs = {
             "variogram_model": "power",
-            "variogram_parameters":
-                {
-                    "scale": 0.5,
-                    "exponent": 1.5,
-                    "nugget": 0.1
-                },
+            "variogram_parameters": {"scale": 0.5, "exponent": 1.5, "nugget": 0.1},
             "drift_terms": None,
         }
         krige_obj = setup_kriging_system(da, **kwargs)
 
         assert isinstance(krige_obj, pykrige.uk.UniversalKriging)
-        assert krige_obj.variogram_model == 'power'
+        assert krige_obj.variogram_model == "power"
         assert len(krige_obj.variogram_model_parameters) == 3
-        assert_almost_equal(
-            krige_obj.variogram_model_parameters,
-            list(kwargs["variogram_parameters"].values())
-        )
+        assert_almost_equal(krige_obj.variogram_model_parameters, list(kwargs["variogram_parameters"].values()))
         assert not krige_obj.regional_linear_drift
 
     def test_setup_kriging_system_invalid_kwrags(self, get_test_data):
         da = get_test_data
 
         with pytest.raises(ValueError):
-            setup_kriging_system(da, vario_model='gaussian')
+            setup_kriging_system(da, vario_model="gaussian")
 
 
 class TestSolveKrigingPerSingleTime:
@@ -411,7 +414,7 @@ class TestSolveKrigingPerSingleTime:
         x_min, x_max = da.x.min(), da.x.max()
         y_min, y_max = da.y.min(), da.y.max()
 
-        grid_resolution = 500 # in meter
+        grid_resolution = 500  # in meter
         x_grid = np.arange(x_min, x_max + grid_resolution, grid_resolution)
         y_grid = np.arange(y_min, y_max + grid_resolution, grid_resolution)
         grid = xr.Dataset(coords={"x": x_grid, "y": y_grid})
@@ -424,7 +427,7 @@ class TestSolveKrigingPerSingleTime:
 
     def test_solve_kriging_per_single_time_points(self, get_test_data):
         da = get_test_data
-        points = xr.Dataset(coords = da.coords)
+        points = xr.Dataset(coords=da.coords)
 
         zvalues, _ = solve_kriging_per_single_time(da, points)
 
@@ -433,7 +436,7 @@ class TestSolveKrigingPerSingleTime:
 
     def test_solve_kriging_per_single_time_n_neighbours(self, get_test_data):
         da = get_test_data
-        points = xr.Dataset(coords = da.coords)
+        points = xr.Dataset(coords=da.coords)
 
         zvalues, _ = solve_kriging_per_single_time(da, points, n_nearest_neighbors=5)
 
@@ -445,7 +448,7 @@ class TestSolveKrigingPerSingleTime:
         x_min, x_max = da.x.min(), da.x.max()
         y_min, y_max = da.y.min(), da.y.max()
 
-        grid_resolution = 500 # in meter
+        grid_resolution = 500  # in meter
         x_grid = np.arange(x_min, x_max + grid_resolution, grid_resolution)
         y_grid = np.arange(y_min, y_max + grid_resolution, grid_resolution)
         grid = xr.Dataset(coords={"x": x_grid, "y": y_grid})
@@ -470,7 +473,7 @@ class TestSolveKriging:
 
     def test_solve_kriging_chunked_space(self, get_test_data):
         da = get_test_data
-        da.chunk({'space': 5})
+        da.chunk({"space": 5})
 
         with pytest.raises(ValueError) as excinfo:
             solve_kriging(da, da)
@@ -480,17 +483,17 @@ class TestSolveKriging:
         da = get_test_data
         points = xr.Dataset(coords=da.coords)
 
-        da = xr.concat([da]*3, dim='time')
+        da = xr.concat([da] * 3, dim="time")
         da = da.assign_coords(time=np.array([1, 2, 3]))
 
         results = solve_kriging(da, points)
         assert isinstance(results, xr.Dataset)
-        assert 'predicted' in results and 'sigmasq' in results
+        assert "predicted" in results and "sigmasq" in results
         assert len(results.time) == len(da.time)
 
     def test_solve_kriging_with_time_in_grid(self, get_test_data):
         da = get_test_data
-        da = xr.concat([da]*3, dim='time')
+        da = xr.concat([da] * 3, dim="time")
         da = da.assign_coords(time=np.array([1, 2, 3]))
 
         points = xr.Dataset(coords=da.coords)
@@ -503,30 +506,26 @@ class TestSolveKriging:
 class TestEstimateAtmospherePhase:
     def test_estimate_atmosphere_phase_defaults(self, get_test_data):
         da = get_test_data
-        da = xr.concat([da]*20, dim='time')
-        da = da.assign_coords(time=np.sort(np.random.rand(20) * 10))
+        da = xr.concat([da] * 20, dim="time")
+        da = da.assign_coords(time=np.sort(rng.random(20) * 10))
         stm = da.to_dataset(name="psc_phase_residuals")
-        stm["atmosphere_mother"] = (
-            ("time", "space"), np.random.rand(len(da.time), len(da.space))
-        )
+        stm["atmosphere_mother"] = (("time", "space"), rng.random((len(da.time), len(da.space))))
 
         results = estimate_atmosphere_phase(stm)
         assert isinstance(results, xr.Dataset)
-        assert 'psc_phase_residuals' in results
-        assert 'atmosphere_mother' in results
-        assert 'unmodeled_disp' in results
-        assert 'atmosphere_estimates' in results
-        assert 'atmosphere_predicted' in results
-        assert 'atmosphere_sigmasq' in results
+        assert "psc_phase_residuals" in results
+        assert "atmosphere_mother" in results
+        assert "unmodeled_disp" in results
+        assert "atmosphere_estimates" in results
+        assert "atmosphere_predicted" in results
+        assert "atmosphere_sigmasq" in results
 
     def test_estimate_atmosphere_phase_kwargs(self, get_test_data):
         da = get_test_data
-        da = xr.concat([da]*20, dim="time")
-        da = da.assign_coords(time=np.sort(np.random.rand(20) * 10))
+        da = xr.concat([da] * 20, dim="time")
+        da = da.assign_coords(time=np.sort(rng.random(20) * 10))
         stm = da.to_dataset(name="psc_phase_residuals")
-        stm["atmosphere_mother"] = (
-            ("time", "space"), np.random.rand(len(da.time), len(da.space))
-        )
+        stm["atmosphere_mother"] = (("time", "space"), rng.random((len(da.time), len(da.space))))
 
         kwargs = {
             "unmodeled_displacement_kwargs": {
@@ -536,11 +535,7 @@ class TestEstimateAtmospherePhase:
             },
             "kriging_kwargs": {
                 "variogram_model": "power",
-                "variogram_parameters": {
-                    "scale": 0.5,
-                    "exponent": 1.5,
-                    "nugget": 0.1
-                },
+                "variogram_parameters": {"scale": 0.5, "exponent": 1.5, "nugget": 0.1},
                 "drift_terms": None,
             },
         }
@@ -548,9 +543,9 @@ class TestEstimateAtmospherePhase:
         results = estimate_atmosphere_phase(stm, **kwargs)
 
         assert isinstance(results, xr.Dataset)
-        assert 'psc_phase_residuals' in results
-        assert 'atmosphere_mother' in results
-        assert 'unmodeled_disp' in results
-        assert 'atmosphere_estimates' in results
-        assert 'atmosphere_predicted' in results
-        assert 'atmosphere_sigmasq' in results
+        assert "psc_phase_residuals" in results
+        assert "atmosphere_mother" in results
+        assert "unmodeled_disp" in results
+        assert "atmosphere_estimates" in results
+        assert "atmosphere_predicted" in results
+        assert "atmosphere_sigmasq" in results
