@@ -715,6 +715,12 @@ def compute_phase_difference(
         The values of the target STM.
     method: Literal["subtract", "conjmult"]
         The method to calculate the phase difference. Can be either "subtract" or "conjmult".
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the phase differences between ``value_target`` and ``value_source``,
+        computed according to the selected method.
     """
     if method == "subtract":
         d_phase = value_target - value_source

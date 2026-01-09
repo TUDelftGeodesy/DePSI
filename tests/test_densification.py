@@ -103,7 +103,7 @@ def make_stm_pnt_densification(npoints_dens, ntime):
     phase_height = h2ph * m2ph * np.tile(pnt_height_true, (ntime, 1)).T
     phase_vel = m2ph * np.tile(time, (npoints_dens, 1)) * np.tile(pnt_vel_true, (ntime, 1)).T
     phase_true = phase_height + phase_vel
-    phase = (np.mod(phase_true + np.pi, 2 * np.pi)) - np.pi  # wrpap the phase to [-pi, pi]
+    phase = (np.mod(phase_true + np.pi, 2 * np.pi)) - np.pi  # wrap the phase to [-pi, pi]
     sd_phase = phase - np.tile(phase[:, 0], (ntime, 1)).T  # reference to first epoch
     ambiguities_true = np.round((phase_true - phase) / (2 * np.pi)).astype(int)
 
@@ -161,7 +161,7 @@ def test_densification(npoints_net, npoints_dens, ntime):
     unw_phase = stm_densified["unwrapped_phase"].data
     true_phase = stm_densified["phase_true"].data
     # Reference phase from network points
-    # Refernce phase are also true phase therefore it needs to be single-differenced
+    # Reference phase are also true phase therefore it needs to be single-differenced
     reference_phase = stm_network_pnts["phase_true"].data[stm_densified.attrs["idx_refpnt"], :]
     sd_reference_phase = reference_phase - reference_phase[0]
     # Get true double-difference phase
@@ -220,7 +220,7 @@ def test_densification_missing_idx_refpnt():
     stm_network_pnts = make_stm_network_pnts(npoints_net, ntime)
     stm_pnt_densification = make_stm_pnt_densification(npoints_dens, ntime)
 
-    # Remove wavelength attribute
+    # Remove idx_refpnt attribute
     stm_network_pnts.attrs.pop("idx_refpnt")
 
     with pytest.raises(ValueError):

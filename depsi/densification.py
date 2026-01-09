@@ -11,7 +11,7 @@ from depsi.utils import compute_phase_difference, generate_pnt_uids
 def densification(
     stm_densification: xr.Dataset,
     stm_network_pnts: xr.Dataset,
-    wavelength: float = None,
+    wavelength: float | None = None,
     idx_refpnt: int | None = None,
     n_connections: int = 1,
     key_xcoord: str = "azimuth",
@@ -72,7 +72,7 @@ def densification(
     # Get wavelength from stm_network_pnts if not provided
     if wavelength is None:
         if "wavelength" in stm_network_pnts.attrs:
-            wavelength = stm_network_pnts.attrs.get("wavelength", None)
+            wavelength = stm_network_pnts.attrs["wavelength"]
         else:
             raise ValueError("Wavelength is not provided and not found in the network STM attributes.")
 
