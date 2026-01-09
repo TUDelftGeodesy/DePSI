@@ -38,7 +38,6 @@ TT1_THRES = 1.0
 def spatial_integration(
     stm_pnts: xr.Dataset,
     stm_arcs: xr.Dataset,
-    wavelength: float | None = None,
     key_sdphase: str = "sd_phase",
     key_arc_quality: str = "temp_coh",
     threshold_arc_quality: float = 0.5,
@@ -79,9 +78,6 @@ def spatial_integration(
         relevant functions in "depsi.arc_estimation" module for this purpose. Arc estimation adds the variable
         "ambiguities" to stm_arcs, which are the estimated arc ambiguities. It also adds quality variables such as
         "temp_coh" (ensemble coherence), which are used to select arcs for spatial integration.
-    wavelength : float or None, optional
-        Wavelength used for unwrapped phase estimation. Unit in meters.
-        If None, the function will look for the "wavelength" attribute in stm_pnts.
     key_sdphase : str, optional
         Key of the single difference phase variable in stm_pnts, by default "sd_phase"
         This phase is used to compute unwrapped phases after ambiguity estimation.
@@ -137,13 +133,6 @@ def spatial_integration(
 
     if sparse_mode:
         raise NotImplementedError("Sparse mode is not implemented yet for spatial_integration.")
-
-    # If wavelength is None, try to get it from stm_pnts attributes
-    if wavelength is None:
-        if "wavelength" in stm_pnts.attrs:
-            wavelength = stm_pnts.attrs["wavelength"]
-        else:
-            raise ValueError("Wavelength not provided and not found in stm_pnts attributes.")
 
     # If idx_refpnt is specified
     # Get radar coordinates of the reference point before any shape change
