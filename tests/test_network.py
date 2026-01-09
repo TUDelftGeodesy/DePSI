@@ -370,9 +370,7 @@ class TestNetworkUnwrap:
         stm_arcs["ambiguities"] = (("space", "time"), ambigs)
 
         with pytest.raises(ValueError):
-            stm_arcs_output, stm_pnts_output = spatial_integration(
-                stm_pnts, stm_arcs, idx_refpnt=idx_ref, key_sdphase="phase"
-            )
+            spatial_integration(stm_pnts, stm_arcs, idx_refpnt=idx_ref, key_sdphase="phase")
 
     @pytest.mark.parametrize(
         ["idx_source", "idx_target", "n_points", "idx_refpnt"],
