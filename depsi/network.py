@@ -337,6 +337,7 @@ def form_network(
             "h2ph": (["space", "time"], h2ph),
         },
         coords={"source": (["space"], source_idx), "target": (["space"], target_idx), "uid": (["space"], uid)},
+        attrs=stm.attrs,
     )
 
     return arcs
