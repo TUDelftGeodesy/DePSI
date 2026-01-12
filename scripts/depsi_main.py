@@ -9,9 +9,17 @@ import sarxarray
 from depsi.arc_estimation import periodogram
 from depsi.atmosphere_estimation import estimate_atmosphere_phase
 from depsi.classification import network_stm_selection, ps_selection
-from depsi.io import read_slc_stack
+from depsi.densification import densification
+from depsi.io import (
+    export_to_csv,
+    export_to_skygeo_portal,
+    export_convex_hull_to_shapefile,
+    export_to_shapefile,
+    read_slc_stack
+)
 from depsi.network import form_network, spatial_integration
-from depsi.point_quality import detect_side_lobes
+from depsi.point_quality import compute_spatiotemporal_consistency, detect_side_lobes
+from depsi.post_processing import stm_point_filter
 from depsi.transformations import radar_to_latlonh
 from depsi.utils import add_stm_time_deltas, crop_slc_spacetime, stm_compute_single_time_differences
 
@@ -25,6 +33,9 @@ aoi_file = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/sh
 
 # metadata
 metadata_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037.res'
+satellite = "s1"
+track = 37
+direction = "dsc"
 
 # STM save path
 stm_save_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_stm.zarr'
@@ -59,6 +70,8 @@ network_partition_number = 8
 network_dphase_method = "subtract"
 min_periodogram_iterations = 10
 arc_quality_threshold = 0.5  # ensemble coherence
+model_type = "linear"
+model_parameter_layer_names = ()
 
 # atmosphere
 atmo_unmodeled_displacement_filter_length = 1
@@ -74,6 +87,38 @@ atmo_empirical_variogram_cutoff_distance = 10000.0
 
 atmo_variogram_model = "gaussian"
 atmo_variogram_drift_terms = "regional_linear"
+
+# Densification
+n_densification_connections = 1
+
+# Spatio-temporal consistency
+stc_min_dist = 50  # meters
+stc_max_dist = 200  # meters
+
+# output settings
+filter_dict = {"h": [-2000, 2000]}
+output_types = ["csv_web_portal"]  # csv, csv_web_portal, shapefile, convex_hull
+
+# csv export
+csv_save_path = "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037.csv"
+csv_ts_proj = "los"
+csv_point_annotation_label = f"nl_amsterdam_{satellite}_{direction}_t{track:0>3d}"
+
+# csv web portal export
+csv_web_save_path = (
+    "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_portal.csv"
+)
+csv_web_ts_proj = "los"
+csv_web_point_annotation_label = f"nl_amsterdam_{satellite}_{direction}_t{track:0>3d}"
+
+# shapefile export
+shape_save_path = "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037.shp"
+shape_projection = "RD"  # RD or WGS84
+shape_point_annotation_label = f"nl_amsterdam_{satellite}_{direction}_t{track:0>3d}"
+
+# convex hull export
+chull_save_path = "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_chull.shp"
+chull_projection = "RD"  # RD or WGS84
 
 
 # 1. Project setup
@@ -134,6 +179,9 @@ latlonh = radar_to_latlonh(
     elevation=stm.h.values,
     metadata=metadata,
 )
+stm["lat"] = latlonh[:, 0].flatten()
+stm["lon"] = latlonh[:, 1].flatten()
+stm["h"] = latlonh[:, 2].flatten()
 
 # 3a. Network construction
 mother_epoch_index = np.where(stm.time.values == stm.sel(time=stm.ps_sd_mother).time.values)[0][0]
@@ -278,11 +326,81 @@ stm_arcs_output, stm_firstordernetwork, idx_ref = spatial_integration(
 )
 
 # 5. Densification
+stm_densified = densification(
+    stm_atmo_corrected,
+    stm_firstordernetwork,
+    wavelength=metadata["wavelength"],
+    idx_refpnt=idx_ref,
+    n_connections=n_densification_connections,
+    key_sdphase="sd_phase_minus_atmo"
+)
 
 # 6b. Geocoding
+latlonh = radar_to_latlonh(
+    azimuth_coords=stm_densified.azimuth.values,
+    range_coords=stm_densified.range.values,
+    elevation=stm_densified.h.values,
+    metadata=metadata,
+)
+stm_densified["lat"] = latlonh[:, 0].flatten()
+stm_densified["lon"] = latlonh[:, 1].flatten()
+stm_densified["h"] = latlonh[:, 2].flatten()
 
 # 7. STC Calculation
+stm_densified = compute_spatiotemporal_consistency(
+    stm_densified,
+    min_dist=stc_min_dist,
+    max_dist=stc_max_dist,
+    x_crd_layer_name="lon",
+    y_crd_layer_name="lat",
+    coordinate_type="geographic"
+)
 
 # 8. Scatterer filtering
+for layer in filter_dict.keys():
+    stm_densified = stm_point_filter(
+        stm=stm_densified,
+        layer_to_filter=layer,
+        vmin=filter_dict[layer][0],
+        vmax=filter_dict[layer][1],
+        return_removed=False
+    )
 
 # 9. Output generation
+if "csv" in output_types:
+    export_to_csv(
+        stm=stm_densified,
+        save_path=csv_save_path,
+        model_parameter_layer_names=model_parameter_layer_names,
+        ts_proj=csv_ts_proj,
+        point_annotation_label=csv_point_annotation_label,
+    )
+
+if "csv_web_portal" in output_types:
+    export_to_skygeo_portal(
+        stm=stm_densified,
+        save_path=csv_web_save_path,
+        ts_proj=csv_web_ts_proj,
+        point_annotation_label=csv_web_point_annotation_label,
+        satellite=satellite,
+        asc_dsc=direction,
+        azimuth_spacing=metadata["azimuth_pixel_spacing"],
+        range_spacing=metadata["range_pixel_spacing"],
+    )
+
+if "shapefile" in output_types:
+    export_to_shapefile(
+        stm=stm_densified,
+        save_path=shape_save_path,
+        projection=shape_projection,
+        model_parameter_layer_names=model_parameter_layer_names,
+        point_annotation_label=shape_point_annotation_label,
+    )
+
+if "convex_hull" in output_types:
+    export_convex_hull_to_shapefile(
+        stm=stm_densified,
+        save_path=chull_save_path,
+        projection=chull_projection,
+    )
+
