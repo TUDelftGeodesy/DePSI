@@ -1,4 +1,4 @@
-"""deformation models."""
+"""Definition of models used in deformation analysis."""
 
 import numpy as np
 

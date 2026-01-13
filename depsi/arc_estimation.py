@@ -6,7 +6,7 @@ import numpy as np
 import xarray as xr
 from scipy.optimize import curve_fit
 
-import depsi.deformation_models as dm
+import depsi.model_definition as md
 import depsi.stats as est
 from depsi.utils import get_distance, wrap_phase
 
@@ -720,9 +720,9 @@ def arc_estimation_xarray_input(
     )
 
     # Compute different columns for the A matrices and construct to one A matrix
-    A_cr = dm.a_cross_range(cr2ph_arc)
-    A_lin = dm.a_linear(years)
-    A_temp = dm.a_temperature(temp)
+    A_cr = md.a_cross_range(cr2ph_arc)
+    A_lin = md.a_linear(years)
+    A_temp = md.a_temperature(temp)
     A_arc = np.column_stack((A_cr, A_temp, A_lin))
 
     # Define the observation vector for the arc, which is based on the 'unwrapped' phase based on the filter
@@ -1165,9 +1165,9 @@ def arc_estimation_control_network(
 
         # Contruct the A matrices for functional model
         # Compute different columns for the A matrices and construct to one A matrix
-        A_cr = dm.a_cross_range(cr2ph_arc)
-        A_lin = dm.a_linear(years)
-        A_temp = dm.a_temperature(temp)
+        A_cr = md.a_cross_range(cr2ph_arc)
+        A_lin = md.a_linear(years)
+        A_temp = md.a_temperature(temp)
         A_arc = np.column_stack((A_cr, A_temp, A_lin))
 
         # Define the observation vector for the arc, which is based on the 'unwrapped' phase based on the filter
