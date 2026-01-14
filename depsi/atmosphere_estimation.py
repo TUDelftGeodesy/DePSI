@@ -131,11 +131,11 @@ def estimate_unmodeled_displacement(
     weight_matrix /= np.sum(weight_matrix, axis=1, keepdims=True)
 
     # Apply the low-pass filter and return the non-linear deformation
-    def apply_filter(data):
+    def _apply_filter(data):
         return np.einsum("ij,j->i", weight_matrix, data)
 
     unmodeled_disp = xr.apply_ufunc(
-        apply_filter,
+        _apply_filter,
         psc_phase_residuals,
         input_core_dims=[["time"]],
         output_core_dims=[["time"]],
