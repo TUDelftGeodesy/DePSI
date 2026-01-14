@@ -66,13 +66,21 @@ def estimate_model_params(
         All estimated parameters are assumed to only have "space" dimension.
         In case a model has multiple parameters, they will be splitted into separate variables.
     """
-    # Default model components
+    # Get model list with a standard order as in MODEL_NAMES_PARAMS
     if models is None:
+        # Default model components
         models = [
             "linear",
             "height",
         ]
     else:
+        # Check models should be in the keys of MODEL_NAMES_PARAMS
+        for model in models:
+            if model not in MODEL_NAMES_PARAMS.keys():
+                raise NotImplementedError(
+                    f"Model '{model}' is not supported. Available models are: {list(MODEL_NAMES_PARAMS.keys())}"
+                )
+
         # Reorder models according to MODEL_NAMES_PARAMS
         ordered_models = []
         for model_name in MODEL_NAMES_PARAMS.keys():
@@ -87,13 +95,6 @@ def estimate_model_params(
         else:
             raise ValueError("Wavelength must be provided either as an argument or in the dataset attributes.")
     m2ph = -4 * np.pi / wavelength
-
-    # Check models should be in the keys of MODEL_NAMES_PARAMS
-    for model in models:
-        if model not in MODEL_NAMES_PARAMS.keys():
-            raise NotImplementedError(
-                f"Model '{model}' is not supported. Available models are: {list(MODEL_NAMES_PARAMS.keys())}"
-            )
 
     # Prepare space-time arguments
     # These are args with (space, time) dimensions, and "time" as the core dimension
