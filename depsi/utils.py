@@ -693,3 +693,32 @@ def generate_pnt_uids(stm: xr.Dataset, ensure_unique: bool = True, overwrite: bo
     stm_output = stm_output.assign_coords({"pnt_uid": (["space"], uid)})
 
     return stm_output
+
+
+def convert_geographic_coords_to_euclidean(
+    lon: np.ndarray | list,
+    lat: np.ndarray | list,
+    target_crs: str = "EPSG:28992",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert geographic coordinates (lon, lat) to projected Euclidean coordinates (x, y).
+
+    Parameters
+    ----------
+    lon: np.ndarray | list
+        Longitudes in degrees.
+    lat: np.ndarray | list
+        Latitudes in degrees.
+    target_crs: str, optional
+        Target coordinate reference system in EPSG format. Default is
+        "EPSG:28992" (Amersfoort / RD New).
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        Tuple containing:
+        - x: Projected x coordinates in meters.
+        - y: Projected y coordinates in meters.
+    """
+    transformer = pyproj.Transformer.from_crs("EPSG:4326", target_crs, always_xy=True)
+    x, y = transformer.transform(lon, lat)
+    return np.array(x), np.array(y)

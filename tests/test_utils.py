@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.utils import generate_pnt_uids
+from depsi.utils import convert_geographic_coords_to_euclidean, generate_pnt_uids
 
 
 class TestGeneratePntUids:
@@ -88,3 +88,18 @@ class TestGeneratePntUids:
         # Attempt to generate unique point identifiers and expect a ValueError
         with pytest.raises(ValueError):
             _ = generate_pnt_uids(stm)
+
+
+def test_convert_geographic_coords_to_euclidean():
+    """Test the conversion of geographic coordinates to Euclidean coordinates."""
+    # Create a sample STM dataset with latitude and longitude coordinates
+    latitudes = np.array([34.0, 34.1, 34.2])
+    longitudes = np.array([-118.0, -118.1, -118.2])
+    stm = xr.Dataset(coords={"latitude": ("space", latitudes), "longitude": ("space", longitudes)})
+
+    # Convert geographic coordinates to Euclidean coordinates
+    x, y = convert_geographic_coords_to_euclidean(stm["longitude"], stm["latitude"])
+
+    # Assert that the output coordinates have the correct shape
+    assert x.shape == (3,)
+    assert y.shape == (3,)
