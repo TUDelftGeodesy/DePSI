@@ -152,9 +152,11 @@ def calculate_variogram_cloud(da: xr.DataArray, cutoff: float = 10000.0):
     Parameters
     ----------
     da: xr.DataArray
-        The DataArray containing the data to calculate the variogram cloud.
+        The DataArray containing the variable of interest (including 'x' and 'y'
+        coordinates) to calculate the variogram cloud.
     cutoff: float
-        The maximum distance to consider for the variogram cloud. Default is 10000.0.
+        The maximum distance to consider for the variogram cloud. Default is
+        10000.0.
 
     Returns
     -------
