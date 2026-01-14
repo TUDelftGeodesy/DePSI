@@ -701,6 +701,7 @@ def solve_kriging(
 
 def estimate_atmosphere_phase(
     stm: xr.Dataset,
+    prediction_coords: xr.Dataset | xr.DataArray = None,
     psc_phase_residuals="psc_phase_residuals",
     atmosphere_mother: int | str = "atmosphere_mother",
     unmodeled_displacement_args: dict = None,
@@ -716,17 +717,24 @@ def estimate_atmosphere_phase(
     ----------
     stm: xr.Dataset
         The STM with unwrapped phases.
-    psc_phase_residuals: str. The name of the variable in the stm Dataset that contains
+    prediction_coords: xr.Dataset | xr.DataArray
+        The prediction coordinates on which to interpolate the atmosphere phase.
+        It should have coordinates 'x' and 'y'. If None, the coordinates from
+        the stm Dataset will be used.
+    psc_phase_residuals: str
+        The name of the variable in the stm Dataset that contains
         the PSC phase residuals. Default is "psc_phase_residuals".
-    atmosphere_mother: int | str. A string indicating the name of the variable in the stm Dataset
-        that contains the atmosphere mother or an integer indicating the time index of the atmosphere.
+    atmosphere_mother: int | str
+        A string indicating the name of the variable in the stm Dataset
+        that contains the atmosphere mother or an integer indicating the time
+        index of the atmosphere.
     unmodeled_displacement_args: dict
         Keyword arguments for the `estimate_unmodeled_displacement` function.
         The allowed keys are: `filter_length`, `sampling_rate`, `filter_type`.
         For example: {"filter_length": 1, "sampling_rate": 1000, "filter_type":
         "gaussian"}. See the documentation of `estimate_unmodeled_displacement`
-        for more details. The argument `unmodeled_displacement_args` can be
-        left empty. Then default parameters i.e. {"filter_length": 1,
+        for more details. The argument `unmodeled_displacement_args` can be left
+        empty. Then default parameters i.e. {"filter_length": 1,
         "sampling_rate": 1000, "filter_type": "gaussian"} will be used.
     kriging_args: dict
         Additional keyword arguments to pass to the function
@@ -738,7 +746,8 @@ def estimate_atmosphere_phase(
     Returns
     -------
     xr.Dataset
-        The STM with the predicted atmospheric phase.
+        The predicted atmosphere phase and the associated variance (sigmasq) for
+        each time step.
     """
     # Step 1: Apply temporal filtering to extract high-frequency atmospheric signal
     if not unmodeled_displacement_args:
@@ -764,14 +773,18 @@ def estimate_atmosphere_phase(
     stm["atmosphere_estimates"] = stm[psc_phase_residuals] - stm["unmodeled_disp"] + atmosphere_mother
 
     # Step 2: Apply spatial kriging to predict atmospheric phase per epoch
+    if prediction_coords is None:
+        prediction_coords = xr.Dataset(coords=stm.isel(time=0).coords)
+
     if not kriging_args:
         kriging_args = {}
     predicted_atmosphere = solve_kriging(
         ps_atmosphere=stm["atmosphere_estimates"],
-        prediction_coords=xr.Dataset(coords=stm.isel(time=0).coords),
+        prediction_coords=prediction_coords,
         **kriging_args,
     )
-
-    stm["atmosphere_predicted"] = predicted_atmosphere["predicted"]
-    stm["atmosphere_sigmasq"] = predicted_atmosphere["sigmasq"]
-    return stm
+    # rename variables "predicted" to "atmosphere_predicted" and "sigmasq" to "atmosphere_sigmasq"
+    predicted_atmosphere = predicted_atmosphere.rename(
+        {"predicted": "atmosphere_predicted", "sigmasq": "atmosphere_sigmasq"}
+    )
+    return predicted_atmosphere
