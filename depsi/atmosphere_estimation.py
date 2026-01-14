@@ -496,7 +496,7 @@ def solve_kriging_per_single_time(
         Additional keyword arguments to pass to the function
         `calculate_empirical_variogram`. Allowed keys are: 'method', 'nlags',
         'cutoff'. If it left empty, default parameters will be used as
-        {"method":"standard", "nlags": 50, "cutoff"=10000.0}. The `method`
+        {"method": "standard", "nlags": 50, "cutoff": 10000.0}. The `method`
         argument can be one of 'standard', 'unbiased', 'unbiased_robust'.
         Default is 'standard'. See the documentation of
         `calculate_empirical_variogram` for more details.
