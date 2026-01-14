@@ -22,6 +22,7 @@ logger = getLogger(__name__)
 
 def _get_signal_window_with_zero_padding(type, timespan, filter_length, sampling_rate) -> np.ndarray:
     """Build a signal window with zero padding.
+
     Parameters
     ----------
     type: str
@@ -32,6 +33,7 @@ def _get_signal_window_with_zero_padding(type, timespan, filter_length, sampling
         Length of the filter (year) to apply a low-pass filter to the time series.
     sampling_rate: int
         Sampling rate of the time series.
+
     Returns
     -------
     np.ndarray
@@ -233,14 +235,22 @@ def calculate_empirical_variogram(da: xr.DataArray, method: str = "standard", nl
     return np.array(lags), np.array(semivariances)
 
 
-def _check_kriging_kwargs(kwargs):
+def _check_variogram_args(kwargs):
+    valid_keys = {
+        "variogram_model",
+        "variogram_parameters",
+        "drift_terms",
+    }
+    for key in kwargs.keys():
+        if key not in valid_keys:
+            raise ValueError(f"Invalid keyword argument: {key}")
+
+
+def _check_empirical_variogram_args(kwargs):
     valid_keys = {
         "method",
         "nlags",
         "cutoff",
-        "variogram_model",
-        "variogram_parameters",
-        "drift_terms",
     }
     for key in kwargs.keys():
         if key not in valid_keys:
@@ -408,7 +418,7 @@ def setup_kriging_system(
         logger.info("Estimating variogram with default parameters.")
         empirical_variogram_args = {}
 
-    _check_kriging_kwargs(empirical_variogram_args)
+    _check_empirical_variogram_args(empirical_variogram_args)
 
     lags, semivariances = calculate_empirical_variogram(da, **empirical_variogram_args)
 
@@ -417,7 +427,7 @@ def setup_kriging_system(
     if not variogram_args:
         variogram_args = {}
 
-    _check_kriging_kwargs(variogram_args)
+    _check_variogram_args(variogram_args)
 
     variogram_model = variogram_args.get("variogram_model", "gaussian")
     variogram_parameters = variogram_args.get("variogram_parameters", None)
