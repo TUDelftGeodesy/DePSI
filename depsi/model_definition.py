@@ -1,4 +1,14 @@
-"""Definition of models used in deformation analysis."""
+"""Definition of models used in deformation analysis.
+
+This module contains functions to define various models to describe unwrapped phase data.
+After unwrapped phase is available in a Space-Time Matrix (STM),
+the function `estimate_model_params` can be used to estimate model parameters for each point in the STM.
+This function assembles multiple model components, by calling corresponding A matrix construction functions
+to build relevant columns in the A matrix, and performs least squares estimation of model parameters.
+
+The parameters estimation is performed per point by appling the point-wise function `_estimate_model_params_one_point`
+using `xarray.apply_ufunc`, which allows efficient processing of large datasets with Dask support.
+"""
 
 import numpy as np
 import xarray as xr
