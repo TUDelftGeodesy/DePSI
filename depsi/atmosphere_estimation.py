@@ -169,7 +169,7 @@ def calculate_variogram_cloud(da: xr.DataArray, cutoff: float = 10000.0):
     """
     # Check if there x, y coords
     if "x" not in da.coords or "y" not in da.coords:
-        raise ValueError("DataArray must have coordinates 'x' and 'y'.")
+        raise ValueError("DataArray must have coordinates 'x' and 'y' in Euclidean units.")
 
     pairwise_distances = pdist(np.column_stack((da.coords["x"].values, da.coords["y"].values)), metric="euclidean")
 
@@ -276,7 +276,7 @@ def fit_variogram(
     ----------
     da: xr.DataArray
         The DataArray containing the variable of interest (including 'x' and 'y'
-        coordinates) to fit the variogram model.
+        coordinates in Euclidean units) to fit the variogram model.
     lags: np.ndarray, optional
         The lags for the empirical variogram. If None, the empirical variogram
         will be calculated.
@@ -356,13 +356,13 @@ def setup_kriging_system(
     """Kriging in space for a single time step.
 
     Make sure that coordinates 'x' and 'y' are present in the DataArray and they
-    are in metric units.
+    are in Euclidean units.
 
     Parameters
     ----------
     da: xr.DataArray
         The DataArray containing the data to be interpolated. It must have
-        coordinates 'x' and 'y'.
+        coordinates 'x' and 'y' in Euclidean units.
     method: str
         The kriging method to use, e.g. 'universal'. Default is 'universal'.
         Other methods are not implemented yet.
@@ -407,12 +407,11 @@ def setup_kriging_system(
     """
     # Check that da.data shape is 2d
     if len(da.data.shape) > 2:
-        raise ValueError("DataArray must be 2D with coordinates 'x' and 'y'.")
+        raise ValueError("DataArray must be 2D with coordinates 'x' and 'y' in Euclidean units.")
 
     # Check if there x, y coords
     if "x" not in da.coords or "y" not in da.coords:
-        raise ValueError("DataArray must have coordinates 'x' and 'y'.")
-
+        raise ValueError("DataArray must have coordinates 'x' and 'y' in Euclidean units.")
     # Calculate empirical variogram
     if not empirical_variogram_args:
         logger.info("Estimating variogram with default parameters.")
@@ -475,10 +474,10 @@ def solve_kriging_per_single_time(
     ----------
     da: xr.DataArray
         The DataArray containing the variable of interest to be interpolated. It
-        must have coordinates 'x' and 'y'.
+        must have coordinates 'x' and 'y' in Euclidean units.
     prediction_coords: xr.Dataset | xr.DataArray | None
         The prediction coordinates on which to interpolate the data. It should
-        have coordinates 'x' and 'y'.
+        have coordinates 'x' and 'y' in Euclidean units.
     method: str
         The kriging method to use, e.g. 'universal'. Default is 'universal'.
         Other methods are not implemented yet.
@@ -536,7 +535,7 @@ def solve_kriging_per_single_time(
 
     # Check if prediction_coords has x, y coords
     if "x" not in prediction_coords.coords or "y" not in prediction_coords.coords:
-        raise ValueError("Prediction coordinates must have coordinates 'x' and 'y'.")
+        raise ValueError("Prediction coordinates must have coordinates 'x' and 'y' in Euclidean units.")
 
     # if there is "space" in dimension,
     # style is points, otherwise it is a grid
@@ -613,11 +612,11 @@ def solve_kriging(
     Parameters
     ----------
     ps_atmosphere: xr.DataArray
-        The DataArray containing the atmosphere signal with coordinates 'x' and 'y'.
-        It must have a time dimension.
+        The DataArray containing the atmosphere signal with coordinates 'x' and
+        'y' in Euclidean units. It must have a time dimension.
     prediction_coords: xr.DataArray
         The prediction coordinates on which to interpolate the atmosphere
-        signal. It should have coordinates 'x' and 'y'.
+        signal. It should have coordinates 'x' and 'y' in Euclidean units.
     method: str
         The kriging method to use, e.g. 'universal'. Default is 'universal'.
         Other methods are not implemented yet.
@@ -644,7 +643,7 @@ def solve_kriging(
 
     # Check if ps_atmosphere has 'x' and 'y' coordinates
     if "x" not in ps_atmosphere.coords or "y" not in ps_atmosphere.coords:
-        raise ValueError("ps_atmosphere must have coordinates 'x' and 'y'.")
+        raise ValueError("ps_atmosphere must have coordinates 'x' and 'y' in Euclidean units.")
 
     # Remove "time" because we will apply kriging per time step
     input_core_dims = list(ps_atmosphere.sizes)
@@ -655,7 +654,7 @@ def solve_kriging(
 
     # Check if prediction_coords has "x" and "y" coordinates
     if "x" not in prediction_coords.coords or "y" not in prediction_coords.coords:
-        raise ValueError("Prediction coordinates must have coordinates 'x' and 'y'.")
+        raise ValueError("Prediction coordinates must have coordinates 'x' and 'y' in Euclidean units.")
 
     # Check if 'time' in prediction_coords dims
     if "time" in prediction_coords.dims:
