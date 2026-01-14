@@ -8,6 +8,7 @@ epoch.
 Using: https://geostat-framework.readthedocs.io/projects/pykrige/en/stable/generated/pykrige.uk.UniversalKriging.html#pykrige.uk.UniversalKriging
 """
 
+from collections.abc import Mapping
 from logging import getLogger
 
 import numpy as np
@@ -16,6 +17,8 @@ import xarray as xr
 from scipy import signal
 from scipy.spatial import KDTree
 from scipy.spatial.distance import pdist
+
+from .utils import convert_geographic_coords_to_euclidean
 
 logger = getLogger(__name__)
 
@@ -699,6 +702,58 @@ def solve_kriging(
     return xr.Dataset({"predicted": predicted, "sigmasq": sigmasq})
 
 
+def _check_coords_metadata(coords: Mapping[str, xr.DataArray], metadata: dict):
+    # check mode
+    if metadata["mode"] not in ["euclidean", "geographic"]:
+        raise ValueError("The 'mode' in metadata must be either 'euclidean' or 'geographic'.")
+
+    # check if x_label and y_label are in coords
+    if metadata["x_label"] not in coords or metadata["y_label"] not in coords:
+        raise ValueError(
+            f"The names'x_label' and 'y_label' must be in coords. "
+            f"Found coords: {list(coords.keys())}, "
+            f"In metadata, x_label: {metadata['x_label']}, y_label: {metadata['y_label']}."
+        )
+
+
+def _fix_coords(ds: xr.Dataset | xr.DataArray, coords_metadata: dict) -> xr.Dataset:
+    """Fix the coordinates of a Dataset based on the provided metadata.
+
+    This function renames the coordinates of the Dataset to 'x' and 'y' based
+    on the provided metadata. It also converts geographic coordinates to
+    Euclidean if specified in the metadata.
+
+    Parameters
+    ----------
+    ds: xr.Dataset
+        The input Dataset with original coordinates.
+    coords_metadata: dict
+        The metadata for the coordinates. It should contain:
+        - 'mode': either 'euclidean' or 'geographic'.
+        - 'x_label': the name of the x coordinate in the original Dataset.
+        - 'y_label': the name of the y coordinate in the original Dataset.
+
+    Returns
+    -------
+    xr.Dataset
+        The Dataset with fixed coordinates 'x' and 'y' in Euclidean mode.
+    """
+    # check the metadata
+    _check_coords_metadata(ds.coords, coords_metadata)
+
+    x, y = ds.coords[coords_metadata["x_label"]].values, ds.coords[coords_metadata["y_label"]].values
+
+    # convert geographic to euclidean if needed
+    if coords_metadata["mode"] == "geographic":
+        x, y = convert_geographic_coords_to_euclidean(x, y)
+
+    if "space" in ds.dims:
+        ds = ds.assign_coords({"x": ("space", x), "y": ("space", y)})
+    else:
+        ds = ds.assign_coords(x=x, y=y)
+    return ds
+
+
 def estimate_atmosphere_phase(
     stm: xr.Dataset,
     prediction_coords: xr.Dataset | xr.DataArray = None,
@@ -706,6 +761,8 @@ def estimate_atmosphere_phase(
     atmosphere_mother: int | str = "atmosphere_mother",
     unmodeled_displacement_args: dict = None,
     kriging_args: dict = None,
+    stm_coords_metadata: Mapping[str, str] = {"mode": "euclidean", "x_label": "x", "y_label": "y"},
+    prediction_coords_metadata: Mapping[str, str] = {"mode": "euclidean", "x_label": "x", "y_label": "y"},
 ) -> xr.Dataset:
     """Estimate the atmosphere phase.
 
@@ -722,8 +779,9 @@ def estimate_atmosphere_phase(
         It should have coordinates 'x' and 'y'. If None, the coordinates from
         the stm Dataset will be used.
     psc_phase_residuals: str
-        The name of the variable in the stm Dataset that contains
-        the PSC phase residuals. Default is "psc_phase_residuals".
+        The name of the variable in the stm Dataset that contains the PSC phase
+        residuals. Default is "psc_phase_residuals". This variable is used to
+        estimate the unmodeled displacement and in kriging variogram.
     atmosphere_mother: int | str
         A string indicating the name of the variable in the stm Dataset
         that contains the atmosphere mother or an integer indicating the time
@@ -742,6 +800,17 @@ def estimate_atmosphere_phase(
         "n_nearest_neighbors", "kriging_backend", "empirical_variogram_args",
         "variogram_args", See the documentation of
         `solve_kriging_per_single_time` for more details.
+    stm_coords_metadata: dict = {"mode": "euclidean", "x_label": "x", "y_label": "y"},
+        The metadata for the stm coordinates.
+        The mode can be "euclidean" or "geographic". If "geographic",
+        the coordinates are assumed to be in degrees (latitude and longitude),
+        and we convert them to metric units using an appropriate projection.
+        Default is "euclidean".
+    prediction_coords_metadata: dict = {"mode": "euclidean", "x_label": "x", "y_label": "y"},
+        The metadata for the prediction coordinates. The mode can be "euclidean"
+        or "geographic". If "geographic", the coordinates are assumed to be in
+        degrees (latitude and longitude), and we convert them to metric units
+        using an appropriate projection. Default is "euclidean".
 
     Returns
     -------
@@ -749,6 +818,15 @@ def estimate_atmosphere_phase(
         The predicted atmosphere phase and the associated variance (sigmasq) for
         each time step.
     """
+    # Check prediction coordinates
+    if prediction_coords is None:
+        prediction_coords = xr.Dataset(coords=stm.isel(time=0).coords)
+        prediction_coords_metadata = stm_coords_metadata
+
+    # Fix coordinates
+    stm = _fix_coords(stm, stm_coords_metadata)
+    prediction_coords = _fix_coords(prediction_coords, prediction_coords_metadata)
+
     # Step 1: Apply temporal filtering to extract high-frequency atmospheric signal
     if not unmodeled_displacement_args:
         unmodeled_displacement_args = {}
@@ -773,9 +851,6 @@ def estimate_atmosphere_phase(
     stm["atmosphere_estimates"] = stm[psc_phase_residuals] - stm["unmodeled_disp"] + atmosphere_mother
 
     # Step 2: Apply spatial kriging to predict atmospheric phase per epoch
-    if prediction_coords is None:
-        prediction_coords = xr.Dataset(coords=stm.isel(time=0).coords)
-
     if not kriging_args:
         kriging_args = {}
     predicted_atmosphere = solve_kriging(
