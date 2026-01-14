@@ -459,7 +459,7 @@ def setup_kriging_system(
 
 def solve_kriging_per_single_time(
     da: xr.DataArray,
-    grid: xr.Dataset | xr.DataArray,
+    prediction_coords: xr.Dataset | xr.DataArray,
     method="universal",
     n_nearest_neighbors: int | None = None,
     kriging_backend: str = "vectorized",
@@ -476,9 +476,9 @@ def solve_kriging_per_single_time(
     da: xr.DataArray
         The DataArray containing the variable of interest to be interpolated. It
         must have coordinates 'x' and 'y'.
-    grid: xr.Dataset | xr.DataArray | None
-        The grid on which to interpolate the data. It should have coordinates
-        'x' and 'y'.
+    prediction_coords: xr.Dataset | xr.DataArray | None
+        The prediction coordinates on which to interpolate the data. It should
+        have coordinates 'x' and 'y'.
     method: str
         The kriging method to use, e.g. 'universal'. Default is 'universal'.
         Other methods are not implemented yet.
@@ -527,20 +527,20 @@ def solve_kriging_per_single_time(
     Returns
     -------
     zvalues: np.ndarray
-        The interpolated values at the grid points.
+        The interpolated values at the prediction coordinates.
     sigmasq: np.ndarray
         The associated variance (sigmasq) for the interpolated values.
     """
     # setup kriging system
     kriging_obj = setup_kriging_system(da, method, empirical_variogram_args, variogram_args)
 
-    # Check if grid has x, y coords
-    if "x" not in grid.coords or "y" not in grid.coords:
-        raise ValueError("Grid must have coordinates 'x' and 'y'.")
+    # Check if prediction_coords has x, y coords
+    if "x" not in prediction_coords.coords or "y" not in prediction_coords.coords:
+        raise ValueError("Prediction coordinates must have coordinates 'x' and 'y'.")
 
     # if there is "space" in dimension,
     # style is points, otherwise it is a grid
-    if "space" in grid.dims:
+    if "space" in prediction_coords.dims:
         interpolation_style = "points"
     else:
         interpolation_style = "grid"
@@ -551,13 +551,13 @@ def solve_kriging_per_single_time(
         # all grid points are used for interpolation, more efficient
         zvalues, sigmasq = kriging_obj.execute(
             interpolation_style,
-            grid.coords["x"],  # shape (N,)
-            grid.coords["y"],  # shape (M,)
+            prediction_coords.coords["x"],  # shape (N,)
+            prediction_coords.coords["y"],  # shape (M,)
             backend=kriging_backend,
         )
         return zvalues.data, sigmasq.data  # numpy.ndarray
     else:
-        if "space" not in grid.dims:
+        if "space" not in prediction_coords.dims:
             raise NotImplementedError(
                 "Kriging with nearest neighbors is not implemented for grid interpolation. "
                 "Because this method can be very slow and memory intensive for a large grid. "
@@ -571,7 +571,9 @@ def solve_kriging_per_single_time(
 
         # Find the nearest neighbors
         tree = KDTree(np.stack((da.coords["x"], da.coords["y"]), axis=1))
-        _, indices = tree.query(np.stack((grid.coords["x"], grid.coords["y"]), axis=1), k=n_nearest_neighbors)
+        _, indices = tree.query(
+            np.stack((prediction_coords.coords["x"], prediction_coords.coords["y"]), axis=1), k=n_nearest_neighbors
+        )
 
         neighbor_x = np.take(da.coords["x"].values, indices)
         neighbor_y = np.take(da.coords["y"].values, indices)
@@ -586,13 +588,13 @@ def solve_kriging_per_single_time(
 
             zvalues, sigmasq = kriging_obj.execute(
                 "points",
-                grid.coords["x"].data[index],
-                grid.coords["y"].data[index],
+                prediction_coords.coords["x"].data[index],
+                prediction_coords.coords["y"].data[index],
                 backend="loop",  # use 'loop' backend for single point
             )
             return np.concatenate([zvalues, sigmasq])
 
-        # Loop over each point in grid and apply krige
+        # Loop over each point in prediction_coords and apply krige
         zvalues = np.empty(indices.shape[0])
         sigmasq = np.empty(indices.shape[0])
 
@@ -603,7 +605,9 @@ def solve_kriging_per_single_time(
         return zvalues, sigmasq
 
 
-def solve_kriging(ps_atmosphere: xr.DataArray, grid: xr.Dataset | xr.DataArray, method="universal", **kwargs):
+def solve_kriging(
+    ps_atmosphere: xr.DataArray, prediction_coords: xr.Dataset | xr.DataArray, method="universal", **kwargs
+):
     """Kriging in space to estimate the atmosphere signal time series.
 
     Parameters
@@ -611,9 +615,9 @@ def solve_kriging(ps_atmosphere: xr.DataArray, grid: xr.Dataset | xr.DataArray, 
     ps_atmosphere: xr.DataArray
         The DataArray containing the atmosphere signal with coordinates 'x' and 'y'.
         It must have a time dimension.
-    grid: xr.DataArray
-        The grid on which to interpolate the atmosphere signal. It should have
-        coordinates 'x' and 'y'.
+    prediction_coords: xr.DataArray
+        The prediction coordinates on which to interpolate the atmosphere
+        signal. It should have coordinates 'x' and 'y'.
     method: str
         The kriging method to use, e.g. 'universal'. Default is 'universal'.
         Other methods are not implemented yet.
@@ -649,14 +653,13 @@ def solve_kriging(ps_atmosphere: xr.DataArray, grid: xr.Dataset | xr.DataArray, 
 
     coords_no_time = {k: v for k, v in ps_atmosphere.coords.items() if "time" not in v.dims}
 
-    # Check if grid has "x" and "y" coordinates
-    if "x" not in grid.coords or "y" not in grid.coords:
-        raise ValueError("Grid must have coordinates 'x' and 'y'.")
+    # Check if prediction_coords has "x" and "y" coordinates
+    if "x" not in prediction_coords.coords or "y" not in prediction_coords.coords:
+        raise ValueError("Prediction coordinates must have coordinates 'x' and 'y'.")
 
-    # Check if 'time' in grid dims
-    if "time" in grid.dims:
-        raise ValueError("Grid must not have 'time' dimension.")
-
+    # Check if 'time' in prediction_coords dims
+    if "time" in prediction_coords.dims:
+        raise ValueError("Prediction coordinates must not have 'time' dimension.")
     # Check if `input_core_dims` are not chunked
     if ps_atmosphere.chunks is not None:
         chunk_sizes = dict(zip(list(ps_atmosphere.sizes), ps_atmosphere.chunks, strict=False))
@@ -666,18 +669,23 @@ def solve_kriging(ps_atmosphere: xr.DataArray, grid: xr.Dataset | xr.DataArray, 
     def apply_kriging_per_single_time(data: np.ndarray):
         """Apply kriging for a single time step."""
         da = xr.DataArray(data=data, coords=coords_no_time, dims=input_core_dims)
-        predicted, sigmasq = solve_kriging_per_single_time(da, grid, method=method, **kwargs)
+        predicted, sigmasq = solve_kriging_per_single_time(da, prediction_coords, method=method, **kwargs)
         return predicted, sigmasq
 
     predicted, sigmasq = xr.apply_ufunc(
         apply_kriging_per_single_time,
         ps_atmosphere,
         input_core_dims=[input_core_dims],
-        output_core_dims=[list(grid.sizes)[::-1], list(grid.sizes)[::-1]],  # result has shape (y, x)
+        output_core_dims=[
+            list(prediction_coords.sizes)[::-1],
+            list(prediction_coords.sizes)[::-1],
+        ],  # result has shape (y, x)
         dask="parallelized",
         vectorize=True,
         output_dtypes=[ps_atmosphere.dtype, ps_atmosphere.dtype],
-        dask_gufunc_kwargs={"output_sizes": dict(grid.sizes)},  # this is needed when grid has "x" and "y" coordinates
+        dask_gufunc_kwargs={
+            "output_sizes": dict(prediction_coords.sizes)
+        },  # this is needed when prediction_coords has "x" and "y" coordinates
     )
 
     # Update time values
@@ -755,7 +763,9 @@ def estimate_atmosphere_phase(
     if not kriging_args:
         kriging_args = {}
     predicted_atmosphere = solve_kriging(
-        ps_atmosphere=stm["atmosphere_estimates"], grid=xr.Dataset(coords=stm.isel(time=0).coords), **kriging_args
+        ps_atmosphere=stm["atmosphere_estimates"],
+        prediction_coords=xr.Dataset(coords=stm.isel(time=0).coords),
+        **kriging_args,
     )
 
     stm["atmosphere_predicted"] = predicted_atmosphere["predicted"]
