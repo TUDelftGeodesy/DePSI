@@ -265,7 +265,8 @@ def fit_variogram(
     Parameters
     ----------
     da: xr.DataArray
-        The DataArray containing the data to fit the variogram model.
+        The DataArray containing the variable of interest (including 'x' and 'y'
+        coordinates) to fit the variogram model.
     lags: np.ndarray, optional
         The lags for the empirical variogram. If None, the empirical variogram
         will be calculated.
