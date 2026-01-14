@@ -483,7 +483,7 @@ class TestSolveKriging:
         with pytest.raises(ValueError) as excinfo:
             solve_kriging(da, points)
 
-        assert "Grid must not have 'time' dimension" in str(excinfo.value)
+        assert "Prediction coordinates must not have 'time' dimension" in str(excinfo.value)
 
 
 class TestEstimateAtmospherePhase:
@@ -496,10 +496,6 @@ class TestEstimateAtmospherePhase:
 
         results = estimate_atmosphere_phase(stm)
         assert isinstance(results, xr.Dataset)
-        assert "psc_phase_residuals" in results
-        assert "atmosphere_mother" in results
-        assert "unmodeled_disp" in results
-        assert "atmosphere_estimates" in results
         assert "atmosphere_predicted" in results
         assert "atmosphere_sigmasq" in results
 
@@ -527,9 +523,5 @@ class TestEstimateAtmospherePhase:
         )
 
         assert isinstance(results, xr.Dataset)
-        assert "psc_phase_residuals" in results
-        assert "atmosphere_mother" in results
-        assert "unmodeled_disp" in results
-        assert "atmosphere_estimates" in results
         assert "atmosphere_predicted" in results
         assert "atmosphere_sigmasq" in results

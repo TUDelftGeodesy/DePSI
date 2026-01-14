@@ -660,6 +660,7 @@ def solve_kriging(
     # Check if 'time' in prediction_coords dims
     if "time" in prediction_coords.dims:
         raise ValueError("Prediction coordinates must not have 'time' dimension.")
+
     # Check if `input_core_dims` are not chunked
     if ps_atmosphere.chunks is not None:
         chunk_sizes = dict(zip(list(ps_atmosphere.sizes), ps_atmosphere.chunks, strict=False))
