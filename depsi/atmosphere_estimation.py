@@ -474,8 +474,8 @@ def solve_kriging_per_single_time(
     Parameters
     ----------
     da: xr.DataArray
-        The DataArray containing the data to be interpolated. It must have
-        coordinates 'x' and 'y'.
+        The DataArray containing the variable of interest to be interpolated. It
+        must have coordinates 'x' and 'y'.
     grid: xr.Dataset | xr.DataArray | None
         The grid on which to interpolate the data. It should have coordinates
         'x' and 'y'.
