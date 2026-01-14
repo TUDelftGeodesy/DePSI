@@ -21,6 +21,22 @@ logger = getLogger(__name__)
 
 
 def _get_signal_window_with_zero_padding(type, timespan, filter_length, sampling_rate) -> np.ndarray:
+    """Build a signal window with zero padding.
+    Parameters
+    ----------
+    type: str
+        Type of window to build, e.g. 'boxcar', 'triang', see `scipy.signal.windows` for more.
+    timespan: float
+        The total timespan to cover with the window.
+    filter_length: int
+        Length of the filter (year) to apply a low-pass filter to the time series.
+    sampling_rate: int
+        Sampling rate of the time series.
+    Returns
+    -------
+    np.ndarray
+        The signal window with zero padding.
+    """
     # Determine window of size to cover the full range of time differences
     window_size = int(timespan) | 1  # Ensure window size is an odd integer
 
