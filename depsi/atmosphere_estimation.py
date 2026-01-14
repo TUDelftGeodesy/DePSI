@@ -664,7 +664,11 @@ def solve_kriging(
     if ps_atmosphere.chunks is not None:
         chunk_sizes = dict(zip(list(ps_atmosphere.sizes), ps_atmosphere.chunks, strict=False))
         if any(len(chunk_sizes[dim]) != 1 for dim in input_core_dims):
-            raise ValueError(f"ps_atmosphere must not be chunked in the core dimensions {input_core_dims}.")
+            logger.warning(
+                "Rechunking ps_atmosphere to have non-chunked core dimensions for kriging. "
+                f"Current chunks: {ps_atmosphere.chunks}"
+            )
+            ps_atmosphere = ps_atmosphere.chunk({dim: -1 for dim in input_core_dims})
 
     def apply_kriging_per_single_time(data: np.ndarray):
         """Apply kriging for a single time step."""
