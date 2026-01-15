@@ -298,21 +298,14 @@ def form_network(
     source_idx = list(arcs_unzipped[0])
     target_idx = list(arcs_unzipped[1])
 
-    match dphase_method:
-        case "conjmult":
-            d_phase = compute_phase_difference(
-                stm.isel(space=source_idx)[key_complex].data,
-                stm.isel(space=target_idx)[key_complex].data,
-                method=dphase_method,
-            )
-        case "subtract":
-            d_phase = compute_phase_difference(
-                stm.isel(space=source_idx)[key_phase].data,
-                stm.isel(space=target_idx)[key_phase].data,
-                method=dphase_method,
-            )
-        case _:
-            raise NotImplementedError(f"Unknown dphase_method '{dphase_method}'.")
+    if dphase_method not in ["conjmult", "subtract"]:
+        raise NotImplementedError(f"Unknown dphase_method '{dphase_method}'.")
+    dict_key_method = {"subtract": key_phase, "conjmult": key_complex}  # mapping for selecting the correct key
+    d_phase = compute_phase_difference(
+        stm.isel(space=source_idx)[dict_key_method[dphase_method]].data,
+        stm.isel(space=target_idx)[dict_key_method[dphase_method]].data,
+        method=dphase_method,
+    )
 
     # Temporal baseline
     Btemp = stm[key_Btemp].data
