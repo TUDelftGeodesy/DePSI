@@ -315,14 +315,14 @@ class TestFitVariogram:
     def test_fit_variogram_gaussian(self, get_test_data):
         da = get_test_data
 
-        _, lags_variances = fit_variogram(da, variogram_model="gaussian")
+        _, lags_variances = fit_variogram(da, variogram_model="gaussian", empirical_variogram_method="standard")
         lags, estimated_semivariances, semivariances = lags_variances
         actual_residual = semivariances - estimated_semivariances
 
         def gaussian_model(h, psill, range_, nugget):
             return psill * (1.0 - np.exp(-(h**2.0) / (range_ * 4.0 / 7.0) ** 2.0)) + nugget
 
-        lags, semivariances = calculate_empirical_variogram(da)
+        lags, semivariances = calculate_empirical_variogram(da, method="standard")
         initial_guess = [0.4, 2000, 0.15]  # psill, range, nugget
         popt, _ = curve_fit(gaussian_model, lags, semivariances, p0=initial_guess, bounds=(0, np.inf))
         estimated_semivariances = gaussian_model(lags, *popt)
