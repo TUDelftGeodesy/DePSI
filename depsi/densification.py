@@ -103,7 +103,7 @@ def densification(
     stm_dens_pnts_output = stm_dens_pnts.copy()
 
     # Query densification connections
-    idx_dens_pnts, idx_network_pnts = _dentermine_dens_connections(
+    idx_dens_pnts, idx_network_pnts = _determine_dens_connections(
         stm_dens_pnts, stm_network_pnts, n_connections, key_xcoord, key_ycoord
     )
 
@@ -175,7 +175,7 @@ def densification(
     return stm_dens_pnts_output
 
 
-def _dentermine_dens_connections(
+def _determine_dens_connections(
     stm_dens_pnts, stm_network_pnts, n_connections, key_xcoord="azimuth", key_ycoord="range"
 ) -> tuple[np.ndarray, np.ndarray]:
     """Determine densification connections between densification points and network points using KDTree.
