@@ -87,6 +87,10 @@ def densification(
             )
 
     # Check number of connections
+    if n_connections % 2 == 0:
+        raise ValueError("n_connections should be an odd number.")
+    if n_connections < 1:
+        raise ValueError("n_connections should be at least 1.")
     if n_connections > 1:
         raise NotImplementedError("Currently only n_connections=1 is supported.")
 

@@ -228,3 +228,21 @@ def test_densification_missing_idx_refpnt():
             stm_pnt_densification,
             stm_network_pnts,
         )
+
+
+@pytest.mark.parametrize("n_connections", [-1, 4])
+def test_densification_wrong_n_connections(n_connections):
+    """Value error raised when n_connections is not a positive odd number."""
+    ntime = 5
+    npoints_net = 11
+    npoints_dens = 5
+
+    stm_network_pnts = make_stm_network_pnts(npoints_net, ntime)
+    stm_pnt_densification = make_stm_pnt_densification(npoints_dens, ntime)
+
+    with pytest.raises(ValueError):
+        _ = densification(
+            stm_pnt_densification,
+            stm_network_pnts,
+            n_connections=n_connections,
+        )
