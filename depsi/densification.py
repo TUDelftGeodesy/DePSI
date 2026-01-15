@@ -9,7 +9,7 @@ from depsi.utils import compute_phase_difference, generate_pnt_uids
 
 
 def densification(
-    stm_densification: xr.Dataset,
+    stm_dens_pnts: xr.Dataset,
     stm_network_pnts: xr.Dataset,
     wavelength: float | None = None,
     idx_refpnt: int | None = None,
@@ -25,7 +25,7 @@ def densification(
 
     Parameters
     ----------
-    stm_densification : xarray.Dataset
+    stm_dens_pnts : xarray.Dataset
         Dataset containing densification points.
     stm_network_pnts : xarray.Dataset
         Dataset containing network points.
@@ -61,8 +61,8 @@ def densification(
         the densification points.
     """
     # Make pnt_uid if not present
-    if "pnt_uid" not in stm_densification:
-        stm_densification = generate_pnt_uids(stm_densification)
+    if "pnt_uid" not in stm_dens_pnts:
+        stm_dens_pnts = generate_pnt_uids(stm_dens_pnts)
     if "pnt_uid" not in stm_network_pnts:
         stm_network_pnts = generate_pnt_uids(stm_network_pnts)
 
@@ -91,33 +91,33 @@ def densification(
     if n_connections > 1:
         raise NotImplementedError("Currently only n_connections=1 is supported.")
 
-    # Make sure stm_densification and stm_network_pnts have the same time coordinates
-    if not np.array_equal(stm_densification["time"].data, stm_network_pnts["time"].data):
-        raise ValueError("stm_densification and stm_network_pnts must have the same 'time' coordinates.")
+    # Make sure stm_dens_pnts and stm_network_pnts have the same time coordinates
+    if not np.array_equal(stm_dens_pnts["time"].data, stm_network_pnts["time"].data):
+        raise ValueError("stm_dens_pnts and stm_network_pnts must have the same 'time' coordinates.")
 
     # Remove network points that are also in densification points
-    mask = np.isin(stm_densification["pnt_uid"].data, stm_network_pnts["pnt_uid"].data)
-    stm_densification = stm_densification.isel(space=np.where(~mask)[0])
+    mask = np.isin(stm_dens_pnts["pnt_uid"].data, stm_network_pnts["pnt_uid"].data)
+    stm_dens_pnts = stm_dens_pnts.isel(space=np.where(~mask)[0])
 
     # Make a copy of densification points
-    stm_densification_output = stm_densification.copy()
+    stm_dens_pnts_output = stm_dens_pnts.copy()
 
     # Query densification connections
     idx_dens_pnts, idx_network_pnts = _query_dens_connections(
-        stm_densification, stm_network_pnts, n_connections, key_xcoord, key_ycoord
+        stm_dens_pnts, stm_network_pnts, n_connections, key_xcoord, key_ycoord
     )
 
     # form densification arcs
     h2ph = (
-        stm_densification[key_h2ph].isel(space=idx_dens_pnts).data
+        stm_dens_pnts[key_h2ph].isel(space=idx_dens_pnts).data
         + stm_network_pnts.isel(space=idx_network_pnts)[key_h2ph].data
     ) / 2  # take the mean for arc h2ph
     dd_phase = compute_phase_difference(
         stm_network_pnts.isel(space=idx_network_pnts)[key_sdphase].data,
-        stm_densification[key_sdphase].isel(space=idx_dens_pnts).data,
+        stm_dens_pnts[key_sdphase].isel(space=idx_dens_pnts).data,
         "subtract",
     )  # double difference phase, method should be subtract otherwise ambiguity check fails
-    Btemp = stm_densification[key_btemp].data  # time baselines
+    Btemp = stm_dens_pnts[key_btemp].data  # time baselines
     stm_densification_arcs = xr.Dataset(
         coords={
             "idx_dens": (("space",), idx_dens_pnts),
@@ -154,35 +154,35 @@ def densification(
         stm_network_pnts.isel(space=stm_densification_arcs["idx_network"])["ambiguities"].data
         + stm_densification_arcs["ambiguities"].data
     )
-    stm_densification_output["ambiguities"] = (("space", "time"), estimated_ambiguities)
+    stm_dens_pnts_output["ambiguities"] = (("space", "time"), estimated_ambiguities)
 
     # Compute double-difference unwrapped phase
     ref_phase = stm_network_pnts[key_sdphase].isel(space=idx_refpnt).data
     unwrapped_phase_densification = (
-        stm_densification_output[key_sdphase].data
+        stm_dens_pnts_output[key_sdphase].data
         + estimated_ambiguities * 2 * np.pi
-        - np.tile(ref_phase, (stm_densification_output.sizes["space"], 1))
+        - np.tile(ref_phase, (stm_dens_pnts_output.sizes["space"], 1))
     )
-    stm_densification_output["unwrapped_phase"] = (("space", "time"), unwrapped_phase_densification)
+    stm_dens_pnts_output["unwrapped_phase"] = (("space", "time"), unwrapped_phase_densification)
 
     # Local temporal coherence with one arc connection is the same as arc temporal coherence
-    stm_densification_output["local_temp_coh"] = (("space",), temporal_coh_arc.data)
+    stm_dens_pnts_output["local_temp_coh"] = (("space",), temporal_coh_arc.data)
 
     # Attach network points to the output
     # Join in space dimension, keep all data variables
-    stm_densification_output = xr.concat([stm_network_pnts, stm_densification_output], dim="space", data_vars="all")
+    stm_dens_pnts_output = xr.concat([stm_network_pnts, stm_dens_pnts_output], dim="space", data_vars="all")
 
-    return stm_densification_output
+    return stm_dens_pnts_output
 
 
 def _query_dens_connections(
-    stm_densification, stm_network_pnts, n_connections, key_xcoord="azimuth", key_ycoord="range"
+    stm_dens_pnts, stm_network_pnts, n_connections, key_xcoord="azimuth", key_ycoord="range"
 ) -> tuple[np.ndarray, np.ndarray]:
     """Query densification connections between densification points and network points using KDTree.
 
     Parameters
     ----------
-    stm_densification : xarray.Dataset
+    stm_dens_pnts : xarray.Dataset
         Dataset containing densification points.
     stm_network_pnts : xarray.Dataset
         Dataset containing network points.
@@ -199,7 +199,7 @@ def _query_dens_connections(
         Tuple containing arrays of indices for densification points and network points.
     """
     coords_network = np.stack((stm_network_pnts[key_xcoord].data, stm_network_pnts[key_ycoord].data), axis=-1)
-    coords_densification = np.stack((stm_densification[key_xcoord].data, stm_densification[key_ycoord].data), axis=-1)
+    coords_densification = np.stack((stm_dens_pnts[key_xcoord].data, stm_dens_pnts[key_ycoord].data), axis=-1)
     tree = KDTree(coords_network)
 
     distances, indices = tree.query(coords_densification, k=1)
@@ -208,7 +208,7 @@ def _query_dens_connections(
         indices = indices[:, np.newaxis]  # Make it 2D for uniformity
 
     # Build densification arcs from indices
-    idx_dens_pnts = np.repeat(np.arange(stm_densification.sizes["space"]), indices.shape[1])  # Point to densify
+    idx_dens_pnts = np.repeat(np.arange(stm_dens_pnts.sizes["space"]), indices.shape[1])  # Point to densify
     idx_network_pnts = indices.flatten()  # Network point
 
     return idx_dens_pnts, idx_network_pnts
