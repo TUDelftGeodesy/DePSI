@@ -112,8 +112,8 @@ def densification(
         + stm_network_pnts.isel(space=idx_network_pnts)[key_h2ph].data
     ) / 2  # take the mean for arc h2ph
     dd_phase = compute_phase_difference(
-        stm_densification[key_sdphase].isel(space=idx_dens_pnts).data,
         stm_network_pnts.isel(space=idx_network_pnts)[key_sdphase].data,
+        stm_densification[key_sdphase].isel(space=idx_dens_pnts).data,
         phase_diff_method,
     )  # double difference phase
     Btemp = stm_densification[key_btemp].data  # time baselines
@@ -147,11 +147,11 @@ def densification(
         stm_densification_arcs = stm_densification_arcs.drop_vars("idx_dens")
 
     # Calculate estimated ambiguities for densification points
-    # Because arc ambiguities = network ambiguities - densification ambiguities
-    # => densification ambiguities = network ambiguities - arc ambiguities
+    # Because arc ambiguities = densification ambiguities - network ambiguities
+    # => densification ambiguities = network ambiguities + arc ambiguities
     estimated_ambiguities = (
         stm_network_pnts.isel(space=stm_densification_arcs["idx_network"])["ambiguities"].data
-        - stm_densification_arcs["ambiguities"].data
+        + stm_densification_arcs["ambiguities"].data
     )
     stm_densification_output["ambiguities"] = (("space", "time"), estimated_ambiguities)
 
