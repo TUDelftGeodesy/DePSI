@@ -11,7 +11,6 @@ from depsi.utils import compute_phase_difference, generate_pnt_uids
 def densification(
     stm_dens_pnts: xr.Dataset,
     stm_network_pnts: xr.Dataset,
-    wavelength: float | None = None,
     idx_refpnt: int | None = None,
     n_connections: int = 1,
     key_xcoord: str = "azimuth",
@@ -29,9 +28,6 @@ def densification(
         Dataset containing densification points.
     stm_network_pnts : xarray.Dataset
         Dataset containing network points.
-    wavelength : float, optional
-        Wavelength in meters. If not provided, it will be read from the
-        'wavelength' attribute of stm_network_pnts.
     idx_refpnt : int or None, optional
         Index of the reference point in the network points (default is None).
         The phase of this point will be used to calculate the unwrapped phases of densification points.
@@ -67,11 +63,13 @@ def densification(
         stm_network_pnts = generate_pnt_uids(stm_network_pnts)
 
     # Get wavelength from stm_network_pnts if not provided
-    if wavelength is None:
-        if "wavelength" in stm_network_pnts.attrs:
-            wavelength = stm_network_pnts.attrs["wavelength"]
-        else:
-            raise ValueError("Wavelength is not provided and not found in the network STM attributes.")
+    if "wavelength" not in stm_network_pnts.attrs:
+        raise ValueError(
+            "Wavelength is not provided and not found in the network STM attributes."
+            "Please make sure it is provided as an attribute of stm_network_pnts."
+            "For example: stm_network_pnts = stm_network_pnts.assign_attrs({'wavelength': wavelength})"
+        )
+    wavelength = stm_network_pnts.attrs["wavelength"]
 
     # Determine reference index
     if idx_refpnt is None:
@@ -128,6 +126,7 @@ def densification(
             "h2ph": (("space", "time"), h2ph),
             "dd_phase": (("space", "time"), dd_phase),
         },
+        attrs={"wavelength": wavelength},
     )
 
     # unwrap densification arcs phase
@@ -136,7 +135,6 @@ def densification(
         key_dphase="dd_phase",
         key_h2ph="h2ph",
         key_Btemp="Btemp",
-        wavelength=wavelength,
         **kwargs_arc_estimation,
     )
 
