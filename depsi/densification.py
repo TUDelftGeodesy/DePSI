@@ -51,7 +51,7 @@ def densification(
         Name of the data variable containing phase data (default is 'sd_phase').
         Assuming the same key in densification and network points.
     key_btemp : str, optional
-        Name of the data variable containing time baselines for arc estimation (default is 'years').
+        Name of the data variable containing temporal baselines for arc estimation (default is 'years').
     phase_diff_method : str, optional
         Method for computing phase differences (default is 'subtract').
     **kwargs_arc_estimation :
@@ -60,8 +60,8 @@ def densification(
     Returns
     -------
     xarray.Dataset
-        Densified points with estimated ambiguities, including both network points and
-        densification points with computed ambiguity estimates.
+        Densified points with estimated ambiguities, including both the original network points and
+        the densification points.
     """
     # Make pnt_uid if not present
     if "pnt_uid" not in stm_densification:

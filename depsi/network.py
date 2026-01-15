@@ -63,7 +63,7 @@ def spatial_integration(
     3. Select a reference point which assumes zero phase (hence zero ambiguity)
     4. Adjust the network by removing arcs/points which potentially cause errors using Multi-Hypothesis Testing (MHT)
     5. Adjust the ambiguities per time epoch to make sure spatial solutions give zero residuals.
-    6. Estimate point ambiguities and unwrapped phases w.r.t. the reference point.
+    6. Calculate point ambiguities and unwrapped phases w.r.t. the reference point.
 
     Parameters
     ----------
