@@ -184,7 +184,7 @@ def calculate_variogram_cloud(da: xr.DataArray, cutoff: float = 10000.0):
     return pairwise_distances[mask], variances[mask]
 
 
-def _calculate_binned_variances(variances, method: str = "standard"):
+def _calculate_binned_variances(variances, method: str = "unbiased_robust"):
     """Calculate the binned variances based on the method specified.
 
     standard: Returns Experimental variogram.
@@ -200,8 +200,26 @@ def _calculate_binned_variances(variances, method: str = "standard"):
         return 1 / 0.457 * np.median(variances**0.25) ** 4
 
 
-def calculate_empirical_variogram(da: xr.DataArray, method: str = "standard", nlags: int = 50, cutoff=10000.0):
+def calculate_empirical_variogram(da: xr.DataArray, method: str = "unbiased_robust", nlags: int = 50, cutoff=10000.0):
     """Calculate the empirical variogram of a DataArray.
+
+    Method can be one of:
+    standard: Returns Experimental variogram.
+    unbiased: Returns unbiased variogram mentioned in (Cressie-Hawkins, 1980).
+    unbiased_robust: Returns unbiased robust variogram mentioned in (Cressie, 1993).
+
+    In all cases, we use a least-squares fit to estimate the variogram model.
+    However, a least-squares fit only gives the maximum likelihood solution in
+    case the data is Gaussian distributed. With the `standard` method, the
+    empirical variogram is not, since the variogram values are squared values
+    (hence, all positive). Probably they have a Chi-square distribution. Hence,
+    this is a biased estimate. This is resolved by the `unbiased` method.
+    Furthermore, because of the squaring, the estimates are relatively sensitive
+    to outliers (also described by the Chi-square distribution). To address
+    this, the `unbiased_robust` method use a median operator. Hence, the
+    `unbiased` and `unbiased_robust` binning methods are ways to make the
+    empirical variograms more 'Gaussian distributed', allowing to use a
+    least-squares estimation to get the optimal model.
 
     Parameters
     ----------
@@ -209,7 +227,7 @@ def calculate_empirical_variogram(da: xr.DataArray, method: str = "standard", nl
         The DataArray containing the data to calculate the empirical variogram.
     method: str
         The method to use for calculating the empirical variogram. Options are:
-        'standard', 'unbiased', 'unbiased_robust'. Default is 'standard'.
+        'standard', 'unbiased', 'unbiased_robust'. Default is 'unbiased_robust'.
     nlags: int
         The number of lags to use for the empirical variogram. Default is 50.
     cutoff: float
@@ -265,7 +283,7 @@ def fit_variogram(
     lags: np.ndarray = None,
     semivariances: np.ndarray = None,
     variogram_model: str = "gaussian",
-    empirical_variogram_method: str = "standard",
+    empirical_variogram_method: str = "unbiased_robust",
     empirical_variogram_nlags: int = 50,
     empirical_variogram_cutoff: float = 10000.0,
 ):
@@ -290,8 +308,9 @@ def fit_variogram(
         The variogram model to fit. Options are: 'linear', 'power', 'gaussian',
         'spherical', 'exponential', 'hole-effect'. Default is 'gaussian'.
     empirical_variogram_method: str
-        The `method` argument can be one of 'standard', 'unbiased', 'unbiased_robust'.
-        Default is 'standard'.
+        The `method` argument can be one of 'standard', 'unbiased',
+        'unbiased_robust'. Default is 'unbiased_robust'. See the documentation
+        of `calculate_empirical_variogram`.
     empirical_variogram_nlags: int
         The number of lags to use for the empirical variogram. Default is 50.
     empirical_variogram_cutoff: float
@@ -375,9 +394,9 @@ def setup_kriging_system(
         Additional keyword arguments to pass to the function
         `calculate_empirical_variogram`. Allowed keys are: 'method', 'nlags',
         'cutoff'. If it left empty, default parameters will be used as
-        {"method":"standard", "nlags": 50, "cutoff"=10000.0}. The `method`
+        {"method":"unbiased_robust", "nlags": 50, "cutoff"=10000.0}. The `method`
         argument can be one of 'standard', 'unbiased', 'unbiased_robust'.
-        Default is 'standard'. See the documentation of
+        Default is 'unbiased_robust'. See the documentation of
         `calculate_empirical_variogram` for more details.
     variogram_args: dict
         Additional keyword arguments to pass to the kriging method. Valid keys are:
@@ -498,9 +517,9 @@ def solve_kriging_per_single_time(
         Additional keyword arguments to pass to the function
         `calculate_empirical_variogram`. Allowed keys are: 'method', 'nlags',
         'cutoff'. If it left empty, default parameters will be used as
-        {"method": "standard", "nlags": 50, "cutoff": 10000.0}. The `method`
+        {"method": "unbiased_robust", "nlags": 50, "cutoff": 10000.0}. The `method`
         argument can be one of 'standard', 'unbiased', 'unbiased_robust'.
-        Default is 'standard'. See the documentation of
+        Default is 'unbiased_robust'. See the documentation of
         `calculate_empirical_variogram` for more details.
     variogram_args: dict
         Additional keyword arguments to pass to the kriging method. Valid keys
