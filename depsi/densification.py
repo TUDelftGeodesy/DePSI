@@ -39,7 +39,7 @@ def densification(
         If None, this function will look for the "idx_refpnt" attribute in stm_network_pnts.
         If not found, an error will be raised.
     n_connections : int, optional
-        Number of nearest neighbors to connect each densification point to (default is 1).
+        Number of nearest neighbors to connect each densification point to (default is 1). Should be an odd number.
     key_xcoord : str, optional
         Name of the coordinate representing the x-axis (default is 'azimuth').
     key_ycoord : str, optional
