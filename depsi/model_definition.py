@@ -137,7 +137,7 @@ def estimate_model_params(
     for i, param_name in enumerate(param_names):
         stm_out[param_name] = params[i]
 
-    return stm_out
+    return stm_out, param_names
 
 
 def _estimate_model_params_one_point(

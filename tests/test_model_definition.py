@@ -53,15 +53,20 @@ def test_estimate_model_params_linear_height(n_space, n_time):
     stm = stm_linear_height(n_space, n_time)
 
     # Estimate model parameters
-    stm_out = estimate_model_params(
+    stm_out, param_names = estimate_model_params(
         stm,
         models=["height", "linear"],
         key_unw_phase="unw_phase",
         key_h2ph="h2ph",
         key_time="time",
-    ).compute()
+    )
+
+    # Check if all expected parameters are present
+    expected_param_names = ["pnt_offset", "pnt_velocity", "pnt_height"]
+    assert set(param_names) == set(expected_param_names)
 
     # Check if estimated parameters are close to true values
+    stm_out = stm_out.compute()
     np.testing.assert_allclose(
         stm_out["pnt_offset"].values,
         stm["true_offset"].values,
