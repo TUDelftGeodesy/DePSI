@@ -721,7 +721,7 @@ def arc_estimation_xarray_input(
 
     # Compute different columns for the A matrices and construct to one A matrix
     A_cr = md.a_cross_range(cr2ph_arc)
-    A_lin = md.a_linear(years)
+    A_lin = md.a_linear(years, m2ph)
     A_temp = md.a_temperature(temp)
     A_arc = np.column_stack((A_cr, A_temp, A_lin))
 
@@ -1166,7 +1166,7 @@ def arc_estimation_control_network(
         # Contruct the A matrices for functional model
         # Compute different columns for the A matrices and construct to one A matrix
         A_cr = md.a_cross_range(cr2ph_arc)
-        A_lin = md.a_linear(years)
+        A_lin = md.a_linear(years, m2ph)
         A_temp = md.a_temperature(temp)
         A_arc = np.column_stack((A_cr, A_temp, A_lin))
 

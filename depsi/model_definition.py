@@ -6,7 +6,7 @@ the function `estimate_model_params` can be used to estimate model parameters fo
 This function assembles multiple model components, by calling corresponding A matrix construction functions
 to build relevant columns in the A matrix, and performs least squares estimation of model parameters.
 
-The parameters estimation is performed per point by appling the point-wise function `_estimate_model_params_one_point`
+The parameters estimation is performed per point by applying the point-wise function `_estimate_model_params_one_point`
 using `xarray.apply_ufunc`, which allows efficient processing of large datasets with Dask support.
 """
 
