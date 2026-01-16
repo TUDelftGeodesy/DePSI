@@ -695,6 +695,46 @@ def generate_pnt_uids(stm: xr.Dataset, ensure_unique: bool = True, overwrite: bo
     return stm_output
 
 
+def compute_phase_difference(
+    value_source: np.ndarray,
+    value_target: np.ndarray,
+    method: Literal["subtract", "conjmult"],
+) -> np.ndarray:
+    """Calculate the phase difference between two STMs.
+
+    When method is "subtract", the expected input values are phases, and the phase difference is calculated
+    by simple subtraction.
+    When method is "conjmult", the expected input values are complex values, and the phase difference is
+    calculated by conjugate multiplication of the complex values, then taking the angle of the result.
+
+    Parameters
+    ----------
+    value_source: np.ndarray
+        The values of the source STM.
+    value_target: np.ndarray
+        The values of the target STM.
+    method: Literal["subtract", "conjmult"]
+        The method to calculate the phase difference. Can be either "subtract" or "conjmult".
+
+    Returns
+    -------
+    np.ndarray
+        Array containing the phase differences between ``value_target`` and ``value_source``,
+        computed according to the selected method.
+    """
+    if method == "subtract":
+        d_phase = value_target - value_source
+    elif method == "conjmult":
+        # check that the input values are complex
+        if not np.iscomplexobj(value_source) or not np.iscomplexobj(value_target):
+            raise ValueError("Input values must be complex when using 'conjmult' method.")
+        d_phase = np.angle(value_target * value_source.conj())
+    else:
+        raise NotImplementedError(f"Unknown difference method {method}, known are subtract and conjmult")
+
+    return d_phase
+
+
 def convert_geographic_coords_to_euclidean(
     lon: np.ndarray | list,
     lat: np.ndarray | list,
