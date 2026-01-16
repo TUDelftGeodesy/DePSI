@@ -69,7 +69,7 @@ def make_stm_network_pnts(npoints_net, ntime):
         key_ycrds="range",
         key_phase="sd_phase",
         key_h2ph="h2ph",
-        key_Btemp="time",
+        key_Btemporal="time",
         network_method="redundant",
         max_length=arc_length_max,
     )
@@ -143,7 +143,7 @@ def test_densification(npoints_net, npoints_dens, ntime):
         n_connections=1,
         key_xcoord="azimuth",
         key_ycoord="range",
-        key_btemp="time",
+        key_Btemporal="time",
         key_h2ph="h2ph",
         key_sdphase="sd_phase",
     )

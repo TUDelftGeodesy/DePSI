@@ -663,7 +663,7 @@ def arc_estimation_xarray_input(
     print(f"idx pnt j: {int(stm_pnt_j['space'].values)}")
 
     dates = stm_pnt_i["time"].values
-    years = stm_pnt_i["years_since_first_img"].values
+    Btemporal = stm_pnt_i["years_since_first_img"].values
     temp = stm_pnt_i["temperature"].values
 
     # Extract information of the two points of the arc
@@ -721,7 +721,7 @@ def arc_estimation_xarray_input(
 
     # Compute different columns for the A matrices and construct to one A matrix
     A_cr = md.a_cross_range(cr2ph_arc)
-    A_lin = md.a_linear(years, m2ph)
+    A_lin = md.a_linear(Btemporal, m2ph)
     A_temp = md.a_temperature(temp)
     A_arc = np.column_stack((A_cr, A_temp, A_lin))
 
@@ -764,8 +764,8 @@ def arc_estimation_xarray_input(
     arc_obs = np.append(re_arc, im_arc)
 
     # Combine all the independent variables in one independent variable
-    x_data = (bkps, years, temp, cr2ph_arc)  # used in phase estimation
-    X_data = (years, temp, cr2ph_arc)  # used in curve fit
+    x_data = (bkps, Btemporal, temp, cr2ph_arc)  # used in phase estimation
+    X_data = (Btemporal, temp, cr2ph_arc)  # used in curve fit
 
     # Create arrays with initial values
     x0_2_p = np.zeros(3 * len(bkps) + 3)  # Create empty array for the bounds
@@ -833,7 +833,7 @@ def arc_estimation_xarray_input(
         print(f"Encountered error: {e}")
 
         # Fill everything with nans
-        ts_length = len(years)
+        ts_length = len(Btemporal)
 
         for key in [
             "unwrap_phases_arc",
@@ -951,7 +951,7 @@ def arc_estimation_control_network(
     bounds,
     m2ph,
     n_max_iter,
-    years,
+    Btemporal,
     dates,
     temp,
     sd_complex,
@@ -988,7 +988,7 @@ def arc_estimation_control_network(
         Conversion factor from meters to phase.
     n_max_iter : np.ndarray
         The maximum nr of iterations for non-linear lsq per arc
-    years : numpy.ndarray
+    Btemporal : numpy.ndarray
         Array of decimal years corresponding to the time series epochs.
     dates : numpy.ndarray
         Array of date indices or timestamps corresponding to the time series.
@@ -1166,7 +1166,7 @@ def arc_estimation_control_network(
         # Contruct the A matrices for functional model
         # Compute different columns for the A matrices and construct to one A matrix
         A_cr = md.a_cross_range(cr2ph_arc)
-        A_lin = md.a_linear(years, m2ph)
+        A_lin = md.a_linear(Btemporal, m2ph)
         A_temp = md.a_temperature(temp)
         A_arc = np.column_stack((A_cr, A_temp, A_lin))
 
@@ -1209,8 +1209,8 @@ def arc_estimation_control_network(
         arc_obs = np.append(re_arc, im_arc)
 
         # Combine all the independent variables in one independent variable
-        x_data = bkps, years, temp, cr2ph_arc
-        xx_data = years, temp, cr2ph_arc
+        x_data = bkps, Btemporal, temp, cr2ph_arc
+        xx_data = Btemporal, temp, cr2ph_arc
 
         # Create initial value arrays
         x0_2_p = np.zeros(3 * len(bkps) + 3)  # Create empty array for the bounds
@@ -1396,7 +1396,7 @@ def periodogram(
     stm: xr.Dataset,
     key_dphase: str,
     key_h2ph: str,
-    key_Btemp: str,
+    key_Btemporal: str,
     std_obs: float = 1.0,
     std_height: float = 50.0,
     std_vel: float = 0.02,
@@ -1423,7 +1423,7 @@ def periodogram(
         Key for the wrapped differential phase data variable in the STM.
     key_h2ph : str
         Key for the height-to-phase conversion factor in the STM.
-    key_Btemp : str
+    key_Btemporal : str
         Key for the temporal baseline in the STM.
         The value should be in decimal years.
     std_obs : float, optional
@@ -1473,12 +1473,12 @@ def periodogram(
     m2ph = -4 * np.pi / wavelength
 
     # Make sure year time only contains the time dimension
-    assert (len(stm[key_Btemp].dims) == 1) and (
-        "time" in stm[key_Btemp].dims
+    assert (len(stm[key_Btemporal].dims) == 1) and (
+        "time" in stm[key_Btemporal].dims
     ), "year time should and only should contain the 'time' dimension."
 
     # Load year time in memory
-    Btemp = stm[key_Btemp].values
+    Btemporal = stm[key_Btemporal].values
 
     # Set up functional and stochastic model for all arcs
     # Here we use the same h2ph (average over all arcs) for all arcs and correct the effect later
@@ -1487,7 +1487,7 @@ def periodogram(
 
     # Design matrix B, size n_obs x n_params
     # In B, h2ph should also be multiplied by m2ph since it did not when it was created
-    B = np.stack([h2ph_approx * m2ph, Btemp * m2ph]).T
+    B = np.stack([h2ph_approx * m2ph, Btemporal * m2ph]).T
 
     # Stochastic model Qyy, size n_obs x n_obs
     # This is the covariance matrix of the observations

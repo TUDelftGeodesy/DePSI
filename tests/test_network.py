@@ -76,7 +76,7 @@ def arcs_random(stm_random):
     # Fully connected arcs
     # Defaul method is redundant
     # No max_length, so all points are connected
-    arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemp="time")
+    arcs = form_network(stm_random, key_phase="phase", key_h2ph="h2ph", key_Btemporal="time")
 
     # Most arcs have quality 0.9
     # Except the last two have quality 0.0
@@ -95,7 +95,7 @@ class TestNetworkFormation:
             stm_random_grid,
             key_phase="phase",
             key_h2ph="h2ph",
-            key_Btemp="time",
+            key_Btemporal="time",
             key_xcrds="x",
             key_ycrds="y",
             max_length=25,
@@ -120,7 +120,7 @@ class TestNetworkFormation:
             stm_random,
             key_phase="phase",
             key_h2ph="h2ph",
-            key_Btemp="time",
+            key_Btemporal="time",
             network_method="delaunay",
             max_length=0.05,
             dphase_method="subtract",
@@ -136,7 +136,7 @@ class TestNetworkFormation:
             stm_random,
             key_phase="phase",
             key_h2ph="h2ph",
-            key_Btemp="time",
+            key_Btemporal="time",
             network_method="delaunay",
             max_length=0.05,
             dphase_method="conjmult",
@@ -151,7 +151,7 @@ class TestNetworkFormation:
                 stm_random,
                 key_phase="phase",
                 key_h2ph="h2ph",
-                key_Btemp="time",
+                key_Btemporal="time",
                 network_method="unknown",
                 dphase_method="subtract",
             )
@@ -160,7 +160,7 @@ class TestNetworkFormation:
                 stm_random,
                 key_phase="phase",
                 key_h2ph="h2ph",
-                key_Btemp="time",
+                key_Btemporal="time",
                 network_method="delaunay",
                 dphase_method="unknown",
             )
@@ -263,7 +263,7 @@ class TestNetworkUnwrap:
             key_ycrds="range",
             key_phase="phase",
             key_h2ph="h2ph",
-            key_Btemp="time",
+            key_Btemporal="time",
             network_method="redundant",
             max_length=30,
         )
@@ -351,7 +351,7 @@ class TestNetworkUnwrap:
             key_ycrds="range",
             key_phase="phase",
             key_h2ph="h2ph",
-            key_Btemp="time",
+            key_Btemporal="time",
             network_method="redundant",
             max_length=30,
         )
