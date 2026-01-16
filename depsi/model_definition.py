@@ -74,7 +74,7 @@ def estimate_model_params(
             "height",
         ]
     else:
-        # model should not be empty
+        # model list should not be empty
         if len(models) == 0:
             raise ValueError("At least one model must be specified.")
         # Check models should be in the keys of MODEL_NAMES_PARAMS
