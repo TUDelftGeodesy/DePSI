@@ -88,25 +88,17 @@ def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     assert np.allclose(results[3].values, arcs["velo"].values, atol=std_vel)
 
 
-@pytest.mark.parametrize(
-    "wavelength, error",
-    [
-        (None, ValueError),  # fail case: no wavelength provided
-        (1, TypeError),  # fail case: wavelength is not a float
-    ],
-)
-def test_periodogram_no_wavelength(wavelength, error):
+def test_periodogram_no_wavelength():
     arcs = get_arcs_stm(13, 4, -1e-3, 1e-4, -1, 1)
     arcs.attrs.pop("wavelength", None)  # remove wavelength to test without it
 
     # This should raise an error because wavelength is required
-    with pytest.raises(error):
+    with pytest.raises(ValueError):
         _ = periodogram(
             stm=arcs,
             key_dphase="phs_obs_wrapped",
             key_Btemp="years",
             key_h2ph="h2ph_values",
-            wavelength=wavelength,
         )
 
 

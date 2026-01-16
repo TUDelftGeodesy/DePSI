@@ -16,7 +16,7 @@ from sklearn.neighbors import BallTree
 from depsi.arc_estimation import arc_estimation_control_network
 from depsi.constants import EARTH_RADIUS
 from depsi.stats import pretest
-from depsi.utils import get_distance
+from depsi.utils import compute_phase_difference, get_distance
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,7 @@ TT1_THRES = 1.0
 def spatial_integration(
     stm_pnts: xr.Dataset,
     stm_arcs: xr.Dataset,
+    key_sdphase: str = "sd_phase",
     key_arc_quality: str = "temp_coh",
     threshold_arc_quality: float = 0.5,
     idx_refpnt: int | None = None,
@@ -46,7 +47,7 @@ def spatial_integration(
     sparse_mode: bool = False,
     ensure_network_while_mht: bool = False,
     arc_estimation_method: Literal["periodogram"] = "periodogram",
-) -> tuple[xr.Dataset, xr.Dataset, int]:
+) -> tuple[xr.Dataset, xr.Dataset]:
     """Spatially integrate the ambiguities of network arcs to points.
 
     This function estimates the integer ambiguities of the points from arc ambiguities. It assumes a network
@@ -62,6 +63,7 @@ def spatial_integration(
     3. Select a reference point which assumes zero phase (hence zero ambiguity)
     4. Adjust the network by removing arcs/points which potentially cause errors using Multi-Hypothesis Testing (MHT)
     5. Adjust the ambiguities per time epoch to make sure spatial solutions give zero residuals.
+    6. Calculate point ambiguities and unwrapped phases w.r.t. the reference point.
 
     Parameters
     ----------
@@ -76,6 +78,9 @@ def spatial_integration(
         relevant functions in "depsi.arc_estimation" module for this purpose. Arc estimation adds the variable
         "ambiguities" to stm_arcs, which are the estimated arc ambiguities. It also adds quality variables such as
         "temp_coh" (ensemble coherence), which are used to select arcs for spatial integration.
+    key_sdphase : str, optional
+        Key of the single difference phase variable in stm_pnts, by default "sd_phase"
+        This phase is used to compute unwrapped phases after ambiguity estimation.
     key_arc_quality : str, optional
         Key of the arc quality variable in stm_arcs, by default "temp_coh"
     threshold_arc_quality : float, optional
@@ -97,8 +102,11 @@ def spatial_integration(
 
     Returns
     -------
-    xr.Dataset, xr.Dataset, int
-        Updated Space-Time Matrix of arcs, points, and index of the reference point in updated points.
+    xr.Dataset, xr.Dataset
+        Updated Space-Time Matrix of arcs and updated Space-Time Matrix of points.
+        For arcs, the "ambiguities" variable contains the adjusted arc ambiguities after spatial integration.
+        For points, the "ambiguities" variable contains the estimated point ambiguities, and "unwrapped_phase"
+        contains the unwrapped phase w.r.t. the reference point.
 
     References
     ----------
@@ -185,7 +193,23 @@ def spatial_integration(
         arc_estimation_method,
     )
 
-    return stm_arcs_output, stm_pnts_output, idx_refpnt
+    # Assign idx_refpnt as attribute to stm_pnts_output
+    stm_pnts_output = stm_pnts_output.assign_attrs({"idx_refpnt": idx_refpnt})
+
+    # Add unwrapped phase to stm_pnts_output
+    # Unwrapped phase is w.r.t. the reference point
+    # Therefore the sd_phase of the reference point is subtracted
+    unwrapped_phase_pnts = (
+        stm_pnts_output[key_sdphase].data
+        + stm_pnts_output["ambiguities"].data * 2 * np.pi
+        - np.tile(
+            stm_pnts_output[key_sdphase].isel(space=idx_refpnt).data,
+            (stm_pnts_output.sizes["space"], 1),
+        )
+    )
+    stm_pnts_output["unwrapped_phase"] = (("space", "time"), unwrapped_phase_pnts)
+
+    return stm_arcs_output, stm_pnts_output
 
 
 def form_network(
@@ -273,7 +297,15 @@ def form_network(
     arcs_unzipped = list(zip(*arcs, strict=False))
     source_idx = list(arcs_unzipped[0])
     target_idx = list(arcs_unzipped[1])
-    d_phase = _compute_phase_difference(stm, source_idx, target_idx, key_phase, key_complex, method=dphase_method)
+
+    if dphase_method not in ["conjmult", "subtract"]:
+        raise NotImplementedError(f"Unknown dphase_method '{dphase_method}'.")
+    dict_key_method = {"subtract": key_phase, "conjmult": key_complex}  # mapping for selecting the correct key
+    d_phase = compute_phase_difference(
+        stm.isel(space=source_idx)[dict_key_method[dphase_method]].data,
+        stm.isel(space=target_idx)[dict_key_method[dphase_method]].data,
+        method=dphase_method,
+    )
 
     # Temporal baseline
     Btemp = stm[key_Btemp].data
@@ -298,6 +330,7 @@ def form_network(
             "h2ph": (["space", "time"], h2ph),
         },
         coords={"source": (["space"], source_idx), "target": (["space"], target_idx), "uid": (["space"], uid)},
+        attrs=stm.attrs,
     )
 
     return arcs
@@ -1794,30 +1827,6 @@ def construct_control_network_test_arcs(
             print("Network does not meet the requirements. Recomputing the network with updated failed_arcs...")
 
     return results_control_network, ref_pnt, arcs_updated_network
-
-
-def _compute_phase_difference(
-    stm,
-    source_idx,
-    target_idx,
-    key_phase: str,
-    key_complex: str,
-    method: Literal["subtract", "conjmult"],
-) -> np.ndarray:
-    """Calculate the phase difference between two points.
-
-    The method can either be "subtract" or "conjmult".
-    """
-    if method == "subtract":
-        d_phase = stm[key_phase].isel(space=target_idx).data - stm[key_phase].isel(space=source_idx).data
-    elif method == "conjmult":
-        complex_source = stm[key_complex].isel(space=source_idx).data
-        complex_target = stm[key_complex].isel(space=target_idx).data
-        d_phase = np.angle(complex_target * complex_source.conj())
-    else:
-        raise NotImplementedError(f"Unknown difference method {method}, known are subtract and conjmult")
-
-    return d_phase
 
 
 def _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt, sparse_mode: bool = False):

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.utils import generate_pnt_uids
+from depsi.utils import compute_phase_difference, convert_geographic_coords_to_euclidean, generate_pnt_uids
 
 
 class TestGeneratePntUids:
@@ -88,3 +88,45 @@ class TestGeneratePntUids:
         # Attempt to generate unique point identifiers and expect a ValueError
         with pytest.raises(ValueError):
             _ = generate_pnt_uids(stm)
+
+
+class TestComputePhaseDifference:
+    def test_compute_phase_difference(self):
+        rng = np.random.default_rng(seed=42)
+        complex = rng.uniform(-1, 1, (17, 3)) + 1j * rng.uniform(-1, 1, (17, 3))
+        phase = np.angle(complex)
+
+        # Phase difference between same phases should be zero
+        assert np.allclose(compute_phase_difference(phase, phase, method="subtract"), 0.0)
+
+        # Phase difference between complex and itself should be zero
+        assert np.allclose(compute_phase_difference(complex, complex, method="conjmult"), 0.0)
+
+        # Phase difference between complex and its negative should be pi or -pi
+        assert np.allclose(np.abs(compute_phase_difference(complex, -complex, method="conjmult")), np.pi)
+
+    def test_compute_phase_difference_errors(self):
+        rng = np.random.default_rng(seed=42)
+        complex = rng.uniform(-1, 1, (17, 3)) + 1j * rng.uniform(-1, 1, (17, 3))
+        phase = np.angle(complex)
+
+        with pytest.raises(NotImplementedError):
+            _ = compute_phase_difference(phase, phase, method="invalid_method")
+
+        with pytest.raises(ValueError):
+            _ = compute_phase_difference(phase, phase, method="conjmult")  # conjmult requires complex inputs
+
+
+def test_convert_geographic_coords_to_euclidean():
+    """Test the conversion of geographic coordinates to Euclidean coordinates."""
+    # Create a sample STM dataset with latitude and longitude coordinates
+    latitudes = np.array([34.0, 34.1, 34.2])
+    longitudes = np.array([-118.0, -118.1, -118.2])
+    stm = xr.Dataset(coords={"latitude": ("space", latitudes), "longitude": ("space", longitudes)})
+
+    # Convert geographic coordinates to Euclidean coordinates
+    x, y = convert_geographic_coords_to_euclidean(stm["longitude"], stm["latitude"])
+
+    # Assert that the output coordinates have the correct shape
+    assert x.shape == (3,)
+    assert y.shape == (3,)

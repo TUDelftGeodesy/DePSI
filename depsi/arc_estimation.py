@@ -1397,7 +1397,6 @@ def periodogram(
     key_dphase: str,
     key_h2ph: str,
     key_Btemp: str,
-    wavelength: float = None,
     std_obs: float = 1.0,
     std_height: float = 50.0,
     std_vel: float = 0.02,
@@ -1427,11 +1426,6 @@ def periodogram(
     key_Btemp : str
         Key for the temporal baseline in the STM.
         The value should be in decimal years.
-    wavelength : float, optional
-        Wavelength of the sensor in meters, by default None.
-        This value is used to calculate the height-to-phase conversion factor (m2ph).
-        If not provided, function will look into stm.attrs for the "wavelength" key.
-        If not found, a ValueError will be raised.
     std_obs : float, optional
         A-poriori standard deviation of the observations in rads, by default 1.0.
         This value is used to construct the stochastic model (Qyy) of the observations.
@@ -1469,13 +1463,13 @@ def periodogram(
         - Temporal coherence: unitless float number, norm of the complex coherence, scalar, dtype np.float64.
     """
     # Compute m2ph (meters to phase) conversion factor from wavelength
-    if wavelength is None:
-        if "wavelength" in stm.attrs:
-            wavelength = stm.attrs.get("wavelength", None)
-        else:
-            raise ValueError("Wavelength is not provided and not found in the STM attributes.")
-    elif not isinstance(wavelength, float):
-        raise TypeError(f"Wavelength should be a float value in meters. Got {wavelength} instead.")
+    if "wavelength" not in stm.attrs:
+        raise ValueError(
+            "Wavelength is not provided and not found in attributes of STM."
+            "Please make sure it is provided."
+            "For example: stm = stm.assign_attrs({'wavelength': wavelength})"
+        )
+    wavelength = stm.attrs["wavelength"]
     m2ph = -4 * np.pi / wavelength
 
     # Make sure year time only contains the time dimension
