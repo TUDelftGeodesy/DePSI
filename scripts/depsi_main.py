@@ -19,7 +19,7 @@ from depsi.io import (
 )
 from depsi.network import form_network, spatial_integration
 from depsi.point_quality import compute_spatiotemporal_consistency, detect_side_lobes
-from depsi.post_processing import stm_point_filter
+from depsi.postprocessing import stm_point_filter
 from depsi.transformations import radar_to_latlonh
 from depsi.utils import add_stm_time_deltas, crop_slc_spacetime, stm_compute_single_time_differences
 
@@ -235,6 +235,12 @@ stm_arcs_output, stm_pnts_output, idx_ref = spatial_integration(
     threshold_arc_quality=arc_quality_threshold,
     idx_refpnt=reference_point_index,
 )
+# Here we should just fit a linear model to compute the phase residuals and the mother atmosphere
+# De h2ph en perpendicular baseline moet ook geschat worden
+# So we need the observed phase corrected for geometry and with the linear velocity subtracted --> the residuals are
+# either atmosphere, unmodeled deformation, or noise.
+# Is the geometric phase already removed in Doris v5?
+
 
 import pdb; pdb.set_trace()
 
