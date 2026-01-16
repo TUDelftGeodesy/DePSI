@@ -86,8 +86,16 @@ def test_estimate_model_params_linear_height(n_space, n_time):
 
 def test_estimate_model_params_invalid_model():
     """Test that an invalid model name raises a ValueError."""
+    # Invalid model name
     with pytest.raises(NotImplementedError):
         estimate_model_params(
             stm_linear_height(3, 5),
             models=["invalid_model"],
+        )
+
+    # Empty model list
+    with pytest.raises(ValueError):
+        estimate_model_params(
+            stm_linear_height(3, 5),
+            models=[],
         )
