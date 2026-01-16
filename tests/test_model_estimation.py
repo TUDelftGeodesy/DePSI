@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.model_definition import estimate_model_params
+from depsi.model_estimation import estimate_model_params
 
 # Test constants
 rng = np.random.default_rng(42)
@@ -47,16 +47,16 @@ def stm_linear_height(n_space, n_time) -> xr.Dataset:
     return stm
 
 
-@pytest.mark.parametrize(["n_space", "n_time"], [(11, 15), (41, 31)])
-def test_estimate_model_params_linear_height(n_space, n_time):
+@pytest.mark.parametrize(["n_space", "n_time", "models"], [(11, 15, None), (41, 31, ["height", "linear"])])
+def test_estimate_model_params_linear_height(n_space, n_time, models):
     """Test model parameter estimation for linear + height model."""
     stm = stm_linear_height(n_space, n_time)
 
     # Estimate model parameters
     stm_out, param_names = estimate_model_params(
         stm,
-        models=["height", "linear"],
-        key_unw_phase="unw_phase",
+        models=models,
+        key_observations="unw_phase",
         key_h2ph="h2ph",
         key_time="time",
     )
