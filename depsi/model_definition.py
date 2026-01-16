@@ -36,7 +36,7 @@ def estimate_model_params(
 
     The model estimation is performed based on unwrapped phase values and specified model components.
     The function supports multiple models, which can be combined to form a comprehensive model for each point.
-    By default, we use a model which combines a linear model (offset + velocity) and a height model.
+    By default, we use a model which combines an offset, velocity and height model.
     The estimated model parameters are added to the input STM as new variables.
 
     Parameters
