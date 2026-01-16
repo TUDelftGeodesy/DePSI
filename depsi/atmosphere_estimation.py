@@ -18,7 +18,7 @@ from scipy import signal
 from scipy.spatial import KDTree
 from scipy.spatial.distance import pdist
 
-from .utils import convert_geographic_coords_to_euclidean
+from depsi.utils import convert_geographic_coords_to_euclidean
 
 logger = getLogger(__name__)
 
