@@ -216,7 +216,7 @@ def form_network(
     stm: xr.Dataset,
     key_phase: str,
     key_h2ph: str,
-    key_Btemp: str,
+    key_Btemporal: str,
     key_complex: str = "complex",
     key_xcrds: str = "lon",
     key_ycrds: str = "lat",
@@ -238,7 +238,7 @@ def form_network(
     key_h2ph : str
         Key of the h2ph values in the STM.
         The arc h2ph will be computed as the average between source and target.
-    key_Btemp : str
+    key_Btemporal : str
         Key of the temporal baseline values in the STM.
     key_complex : str, optional
         Key of the complex values, by default "complex"
@@ -308,7 +308,7 @@ def form_network(
     )
 
     # Temporal baseline
-    Btemp = stm[key_Btemp].data
+    Btemp = stm[key_Btemporal].data
 
     # Height to phase factor
     h2ph = (stm[key_h2ph].isel(space=source_idx).data + stm[key_h2ph].isel(space=target_idx).data) / 2

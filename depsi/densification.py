@@ -17,7 +17,7 @@ def densification(
     key_ycoord: str = "range",
     key_h2ph: str = "h2ph_values",
     key_sdphase: str = "sd_phase",
-    key_btemp: str = "years",
+    key_Btemporal: str = "years",
     **kwargs_arc_estimation,
 ) -> xr.Dataset:
     """Densification ambiguity estimation w.r.t. network points.
@@ -45,7 +45,7 @@ def densification(
     key_sdphase : str, optional
         Name of the data variable containing phase data (default is 'sd_phase').
         Assuming the same key in densification and network points.
-    key_btemp : str, optional
+    key_Btemporal : str, optional
         Name of the data variable containing temporal baselines for arc estimation (default is 'years').
     **kwargs_arc_estimation :
         Additional keyword arguments to pass to the arc estimation function.
@@ -115,7 +115,7 @@ def densification(
         stm_dens_pnts[key_sdphase].isel(space=idx_dens_pnts).data,
         "subtract",
     )  # double difference phase, method should be subtract otherwise ambiguity check fails
-    Btemp = stm_dens_pnts[key_btemp].data  # time baselines
+    Btemp = stm_dens_pnts[key_Btemporal].data  # time baselines
     stm_densification_arcs = xr.Dataset(
         coords={
             "idx_dens": (("space",), idx_dens_pnts),
@@ -134,7 +134,7 @@ def densification(
         stm_densification_arcs,
         key_dphase="dd_phase",
         key_h2ph="h2ph",
-        key_Btemp="Btemp",
+        key_Btemporal="Btemp",
         **kwargs_arc_estimation,
     )
 
