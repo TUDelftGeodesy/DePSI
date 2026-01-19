@@ -21,7 +21,12 @@ from depsi.network import form_network, spatial_integration
 from depsi.point_quality import compute_spatiotemporal_consistency, detect_side_lobes
 from depsi.postprocessing import stm_point_filter
 from depsi.transformations import radar_to_latlonh
-from depsi.utils import add_stm_time_deltas, crop_slc_spacetime, stm_compute_single_time_differences
+from depsi.utils import (
+    add_stm_time_deltas,
+    convert_geographic_coords_to_euclidean,
+    crop_slc_spacetime,
+    stm_compute_single_time_differences,
+)
 
 
 # ############## INPUT VARIABLES
@@ -74,6 +79,7 @@ model_type = "linear"
 model_parameter_layer_names = ()
 
 # atmosphere
+euclidean_epsg_code_number = 28992  # 28992 is Dutch RD, for other AoIs visit https://epsg.io/ , units must be meters
 atmo_unmodeled_displacement_filter_length = 1
 atmo_unmodeled_displacement_sampling_rate = 1000
 atmo_unmodeled_displacement_filter_type = "gaussian"
@@ -183,6 +189,15 @@ stm["lat"] = latlonh[:, 0].flatten()
 stm["lon"] = latlonh[:, 1].flatten()
 stm["h"] = latlonh[:, 2].flatten()
 
+# Add Euclidean coords in preparation for atmosphere estimation (here so it is also present in the first order network)
+crd_x, crd_y = convert_geographic_coords_to_euclidean(
+    stm["lon"].values,
+    stm["lat"].values,
+    target_crs=f"EPSG:{euclidean_epsg_code_number}"
+)
+stm[f"x_euclidean_proj_epsg{euclidean_epsg_code_number}"] = crd_x
+stm[f"y_euclidean_proj_epsg{euclidean_epsg_code_number}"] = crd_y
+
 # 3a. Network construction
 mother_epoch_index = np.where(stm.time.values == stm.sel(time=stm.ps_sd_mother).time.values)[0][0]
 non_mother = [True] * len(stm.time.values)
@@ -228,7 +243,7 @@ stm_network_arcs["temp_coh"] = ens_coh
 
 stm_network_arcs = stm_network_arcs.compute()
 
-stm_arcs_output, stm_pnts_output, idx_ref = spatial_integration(
+_, stm_pnts_output = spatial_integration(
     stm_network_pnts,
     stm_network_arcs,
     key_arc_quality="temp_coh",
@@ -246,9 +261,10 @@ import pdb; pdb.set_trace()
 
 # 4. Atmosphere estimation
 
+
 stm_atmo_corrected = estimate_atmosphere_phase(
-    stm_estimation=stm_pnts_output,
-    stm_output=stm,
+    stm=stm_pnts_output,
+    prediction_coords=stm,
     psc_phase_residuals="phase_residuals",
     atmosphere_mother="mother_atmosphere",
     unmodeled_displacement_args={
@@ -269,10 +285,25 @@ stm_atmo_corrected = estimate_atmosphere_phase(
             "variogram_parameters": None,  # to be estimated from the empirical variogram
             "drift_terms": atmo_variogram_drift_terms,
         },
-    }
+    },
+    stm_coords_metadata={
+        "mode": "euclidean",
+        "x_label": f"x_euclidean_proj_epsg{euclidean_epsg_code_number}",
+        "y_label": f"y_euclidean_proj_epsg{euclidean_epsg_code_number}"
+    },
+    prediction_coords_metadata={
+        "mode": "euclidean",
+        "x_label": f"x_euclidean_proj_epsg{euclidean_epsg_code_number}",
+        "y_label": f"y_euclidean_proj_epsg{euclidean_epsg_code_number}"
+    },
 )
 
 # 3b. Network construction
+stm_atmo_corrected["phase_minus_atmo"] = (stm_atmo_corrected["phase"].values -
+                                          stm_atmo_corrected["atmosphere_predicted"].values + np.pi
+                                          ) % (2 * np.pi) - np.pi
+
+
 stm_atmo_corrected["sd_phase_minus_atmo"] = (
     (
             stm_atmo_corrected["phase_minus_atmo"] -
@@ -323,7 +354,7 @@ stm_network_arcs["temp_coh"] = ens_coh
 
 stm_network_arcs = stm_network_arcs.compute()
 
-stm_arcs_output, stm_firstordernetwork, idx_ref = spatial_integration(
+stm_arcs_output, stm_firstordernetwork = spatial_integration(
     stm_network_pnts,
     stm_network_arcs,
     key_arc_quality="temp_coh",
@@ -336,9 +367,10 @@ stm_densified = densification(
     stm_atmo_corrected,
     stm_firstordernetwork,
     wavelength=metadata["wavelength"],
-    idx_refpnt=idx_ref,
+    idx_refpnt=reference_point_index,
     n_connections=n_densification_connections,
-    key_sdphase="sd_phase_minus_atmo"
+    key_sdphase="sd_phase_minus_atmo",
+    key_h2ph="sd_h2ph"
 )
 
 # 6b. Geocoding
