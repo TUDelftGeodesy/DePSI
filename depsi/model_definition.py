@@ -1,25 +1,65 @@
-"""deformation models."""
+"""Definition of models used in deformation analysis.
+
+This module contains functions generating columns of the A matrix for different model components.
+"""
 
 import numpy as np
 
 
-def a_linear(time):
-    """Generate the A matrix for a linear model based on time.
+def a_height(h2ph, m2ph):
+    """Create the A matrix to estimate point height.
 
     Parameters
     ----------
-    time : np.ndarray
-        Array of time values (in years). Shape (n, ).
+    h2ph : np.ndarray
+        Array of height-related values. Shape (n_epochs, ).
+    m2ph : float
+        Meter to phase conversion factor.
 
     Returns
     -------
     np.ndarray
-        The A matrix, a 2-column matrix with ones in the first column and the time in the second column. Shape (n, 2).
-    """
-    A = np.ones((len(time), 2))
-    A[:, 1] = time
+        The A matrix, which is the reshaped height array multiplied by the given multiplier. Shape (n, 1).
 
-    return A
+    """
+    A_h2ph = (np.reshape(h2ph, (len(h2ph), 1))) * m2ph
+
+    return A_h2ph
+
+
+def a_offset(n_epochs):
+    """Generate the A matrix for an offset model.
+
+    Parameters
+    ----------
+    n_epochs : int
+        Number of epochs (observations).
+
+    Returns
+    -------
+    np.ndarray
+        The A matrix, which is a column vector of ones. Shape (n_epochs, 1).
+    """
+    return np.ones((n_epochs, 1))
+
+
+def a_velocity(Btemporal, m2ph):
+    """Generate the A matrix for a velocity model based on temporal baseline.
+
+    Parameters
+    ----------
+    Btemporal : np.ndarray
+        Array of temporal baseline values (in years). Shape (n, ).
+    m2ph : float
+        Meter to phase conversion factor.
+
+    Returns
+    -------
+    np.ndarray
+        The A matrix, which is a reshaped column vector of temporal baseline values multiplied by
+        the meter to phase conversion factor. Shape (n, 1).
+    """
+    return np.reshape(Btemporal * m2ph, (len(Btemporal), 1))
 
 
 def a_seasonal(t):
@@ -74,27 +114,6 @@ def a_temperature(temp):
     A_temp = np.reshape(temp, (len(temp), 1))
 
     return A_temp
-
-
-def a_height(h2ph, m2ph):
-    """Create the A matrix to estimate point height.
-
-    Parameters
-    ----------
-    h2ph : np.ndarray
-        Array of height-related values. Shape (n, ).
-    m2ph : float
-        Multiplier for the height values, typically representing a scaling factor or coefficient.
-
-    Returns
-    -------
-    np.ndarray
-        The A matrix, which is the reshaped height array multiplied by the given multiplier. Shape (n, 1).
-
-    """
-    A_h2ph = (np.reshape(h2ph, (len(h2ph), 1))) * m2ph
-
-    return A_h2ph
 
 
 def a_cross_range(b_cr):

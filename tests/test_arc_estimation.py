@@ -65,7 +65,7 @@ def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     results = periodogram(
         stm=arcs,
         key_dphase="phs_obs_wrapped",
-        key_Btemp="years",
+        key_Btemporal="years",
         key_h2ph="h2ph_values",
         std_height=std_height,
         std_vel=std_vel,
@@ -97,7 +97,7 @@ def test_periodogram_no_wavelength():
         _ = periodogram(
             stm=arcs,
             key_dphase="phs_obs_wrapped",
-            key_Btemp="years",
+            key_Btemporal="years",
             key_h2ph="h2ph_values",
         )
 
