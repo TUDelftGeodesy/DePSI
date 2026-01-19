@@ -43,22 +43,23 @@ def a_offset(n_epochs):
     return np.ones((n_epochs, 1))
 
 
-def a_velocity(time, m2ph):
-    """Generate the A matrix for a velocity model based on time.
+def a_velocity(Btemporal, m2ph):
+    """Generate the A matrix for a velocity model based on temporal baseline.
 
     Parameters
     ----------
-    time : np.ndarray
-        Array of time values (in years). Shape (n, ).
+    Btemporal : np.ndarray
+        Array of temporal baseline values (in years). Shape (n, ).
     m2ph : float
         Meter to phase conversion factor.
 
     Returns
     -------
     np.ndarray
-        The A matrix, which is a reshaped column vector of temporal baseline values multiplied by the meter to phase conversion factor. Shape (n, 1).
+        The A matrix, which is a reshaped column vector of temporal baseline values multiplied by
+        the meter to phase conversion factor. Shape (n, 1).
     """
-    return np.reshape(time * m2ph, (len(time), 1))
+    return np.reshape(Btemporal * m2ph, (len(Btemporal), 1))
 
 
 def a_seasonal(t):
