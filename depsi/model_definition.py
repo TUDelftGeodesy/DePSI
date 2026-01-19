@@ -56,7 +56,7 @@ def a_velocity(time, m2ph):
     Returns
     -------
     np.ndarray
-        The A matrix, which is a reshaped column vector of time values multiplied by the given multiplier. Shape (n, 1).
+        The A matrix, which is a reshaped column vector of temporal baseline values multiplied by the meter to phase conversion factor. Shape (n, 1).
     """
     return np.reshape(time * m2ph, (len(time), 1))
 

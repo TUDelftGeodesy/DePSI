@@ -1,4 +1,4 @@
-"""Definition of models used in deformation analysis.
+"""Estimation of model parameters as defined by the models in depsi.model_definition.
 
 This module contains functions to estimate model parameters for observations based on specified model components.
 """
