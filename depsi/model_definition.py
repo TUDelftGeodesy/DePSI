@@ -27,8 +27,24 @@ def a_height(h2ph, m2ph):
     return A_h2ph
 
 
-def a_linear(time, m2ph):
-    """Generate the A matrix for a linear model based on time.
+def a_offset(n_epochs):
+    """Generate the A matrix for an offset model.
+
+    Parameters
+    ----------
+    n_epochs : int
+        Number of epochs (observations).
+
+    Returns
+    -------
+    np.ndarray
+        The A matrix, which is a column vector of ones. Shape (n_epochs, 1).
+    """
+    return np.ones((n_epochs, 1))
+
+
+def a_velocity(time, m2ph):
+    """Generate the A matrix for a velocity model based on time.
 
     Parameters
     ----------
@@ -40,12 +56,9 @@ def a_linear(time, m2ph):
     Returns
     -------
     np.ndarray
-        The A matrix, a 2-column matrix with ones in the first column and the time in the second column. Shape (n, 2).
+        The A matrix, which is a reshaped column vector of time values multiplied by the given multiplier. Shape (n, 1).
     """
-    A = np.ones((len(time), 2))
-    A[:, 1] = time * m2ph
-
-    return A
+    return np.reshape(time * m2ph, (len(time), 1))
 
 
 def a_seasonal(t):

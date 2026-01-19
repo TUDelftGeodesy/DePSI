@@ -11,7 +11,7 @@ m2ph = -4 * np.pi / WAVELENGTH  # meters to phase conversion factor
 
 
 def stm_linear_height(n_space, n_time) -> xr.Dataset:
-    """Create a simple STM dataset with linear and height models."""
+    """Create a simple STM dataset with offset, velocity and height models."""
     time = np.sort(rng.uniform(-2, 2, size=n_time))
     # ordering time
     space = np.arange(n_space)
@@ -47,7 +47,7 @@ def stm_linear_height(n_space, n_time) -> xr.Dataset:
     return stm
 
 
-@pytest.mark.parametrize(["n_space", "n_time", "models"], [(11, 15, None), (41, 31, ["height", "linear"])])
+@pytest.mark.parametrize(["n_space", "n_time", "models"], [(11, 15, None), (41, 31, ["height", "velocity", "offset"])])
 def test_estimate_model_params_linear_height(n_space, n_time, models):
     """Test model parameter estimation for linear + height model."""
     stm = stm_linear_height(n_space, n_time)

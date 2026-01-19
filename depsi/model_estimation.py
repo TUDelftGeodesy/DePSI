@@ -6,13 +6,14 @@ This module contains functions to estimate model parameters for observations bas
 import numpy as np
 import xarray as xr
 
-from depsi.model_definition import a_height, a_linear
+from depsi.model_definition import a_height, a_offset, a_velocity
 
 # Look-up dictionary from model names to output model parameter names
 # Only models defined here can be used in the model estimation function
 # Note that the order of output parameters will follow the order in this list
 MODEL_NAMES_PARAMS = {
-    "linear": ["pnt_offset", "pnt_velocity"],  # offset + linear velocity
+    "offset": ["pnt_offset"],  # point offset at reference epoch
+    "velocity": ["pnt_velocity"],  # point velocity
     "height": ["pnt_height"],  # point height
 }
 
@@ -38,7 +39,7 @@ def estimate_model_params(
         Space-time dataset
     models : list[str], optional
         List of model names to be used for estimation.
-        By default this argument is None, which means using the default models: ["linear", "height"].
+        By default this argument is None, which means using the default models: ["velocity", "height"].
     key_observations : str, optional
         Key for the observations in the STM to be modeled, by default "unw_phase"
     key_h2ph : str, optional
@@ -59,7 +60,8 @@ def estimate_model_params(
     if models is None:
         # Default model components
         models = [
-            "linear",
+            "offset",
+            "velocity",
             "height",
         ]
     else:
@@ -102,7 +104,7 @@ def estimate_model_params(
     kwargs = {
         "models": models,
         "m2ph": m2ph,
-        "time": stm[key_time],  # Time coordinate is broadcasted to each point
+        "time": stm[key_time].data,  # Time coordinate is broadcasted to each point
         "st_args_keys": st_args_keys,  # pass the keys for st_args to identify them in the function
     }
 
@@ -143,8 +145,10 @@ def _estimate_model_params_one_point(
     """Estimate model parameters for a single point based on unwrapped phase values."""
     # Loop though models and build A matrix
     for model in models:
-        if model == "linear":
-            A_model = a_linear(time, m2ph)
+        if model == "offset":
+            A_model = a_offset(len(time))
+        elif model == "velocity":
+            A_model = a_velocity(time, m2ph)
         elif model == "height":
             # Get index of "h2ph" in st_args based on st_args_keys
             h2ph_idx = st_args_keys.index("h2ph")
