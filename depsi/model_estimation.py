@@ -33,6 +33,11 @@ def estimate_model_params(
     By default, we use a model which combines an offset, velocity and height model.
     The estimated model parameters are added to the input STM as new variables.
 
+    Currently supported models are:
+    - "offset": point offset at reference epoch
+    - "velocity": point velocity
+    - "height": point height
+
     Parameters
     ----------
     stm : xr.Dataset
