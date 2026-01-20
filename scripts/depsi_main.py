@@ -17,6 +17,7 @@ from depsi.io import (
     export_to_shapefile,
     read_slc_stack
 )
+from depsi.model_estimation import estimate_model_params
 from depsi.network import form_network, spatial_integration
 from depsi.point_quality import compute_spatiotemporal_consistency, detect_side_lobes
 from depsi.postprocessing import stm_point_filter
@@ -75,8 +76,8 @@ network_partition_number = 8
 network_dphase_method = "subtract"
 min_periodogram_iterations = 10
 arc_quality_threshold = 0.5  # ensemble coherence
-model_type = "linear"
-model_parameter_layer_names = ()
+model_types = ["offset", "velocity", "height"]
+
 
 # atmosphere
 euclidean_epsg_code_number = 28992  # 28992 is Dutch RD, for other AoIs visit https://epsg.io/ , units must be meters
@@ -128,12 +129,12 @@ chull_projection = "RD"  # RD or WGS84
 
 
 # 1. Project setup
-print("Reading SLC stack...")
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Reading SLC stack...")
 slcs = read_slc_stack(slc_path)
 
 
 # 2. Scatterer selection
-print("Start cropping...")
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Start cropping...")
 cropped_slcs = crop_slc_spacetime(
     slcs,
     aoi_filename=aoi_file,
@@ -142,7 +143,7 @@ cropped_slcs = crop_slc_spacetime(
 )
 
 # ######## POINT SELECTION WITH THE PARAMETERS ABOVE ############
-print("Starting PS selection...")
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Starting PS selection...")
 stm = ps_selection(
     cropped_slcs,
     method=ps_selection_method,
@@ -152,9 +153,9 @@ stm = ps_selection(
     output_chunks=chunks_ps_selection,
     mem_persist=False
 )
-print(f"Selected {len(stm.space)} PS.")
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Selected {len(stm.space)} PS.")
 
-print("Computing single differences and temporal baseline...")
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Computing single differences and temporal baseline...")
 stm = stm_compute_single_time_differences(
     stm,
     single_difference_mother=mother_epoch
@@ -166,7 +167,7 @@ stm = stm.assign({"temporal_baseline": (
 )})
 
 # sidelobe removal
-print("Removing sidelobes...")
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Removing sidelobes...")
 side_lobes_array, _ = detect_side_lobes(stm, max_pixel_dist, min_correlation, "sd_complex", "sd_amplitude_unnormalized")
 
 mask_sidelobes = np.ones(len(stm.space), dtype=bool)
@@ -174,10 +175,13 @@ mask_sidelobes[side_lobes_array] = False
 
 stm = stm.isel(space=mask_sidelobes)
 
-print(f"Removed {np.sum(~mask_sidelobes)} sidelobes from the STM, {len(stm.space)} remain.")
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Removed {np.sum(~mask_sidelobes)} sidelobes from the STM, "
+      f"{len(stm.space)} remain.")
 
 # 6a. Geocoding
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Starting geocoding...")
 metadata = sarxarray.read_metadata(metadata_path, driver="doris5")
+stm = stm.assign_attrs({"wavelength": metadata["wavelength"]})
 
 latlonh = radar_to_latlonh(
     azimuth_coords=stm.azimuth.values,
@@ -185,25 +189,31 @@ latlonh = radar_to_latlonh(
     elevation=stm.h.values,
     metadata=metadata,
 )
-stm["lat"] = latlonh[:, 0].flatten()
-stm["lon"] = latlonh[:, 1].flatten()
-stm["h"] = latlonh[:, 2].flatten()
+
+stm["lat"].data = latlonh[0].flatten()
+stm["lon"].data = latlonh[1].flatten()
+stm["h"].data = latlonh[2].flatten()
 
 # Add Euclidean coords in preparation for atmosphere estimation (here so it is also present in the first order network)
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Adding Euclidean coordinates...")
 crd_x, crd_y = convert_geographic_coords_to_euclidean(
     stm["lon"].values,
     stm["lat"].values,
     target_crs=f"EPSG:{euclidean_epsg_code_number}"
 )
-stm[f"x_euclidean_proj_epsg{euclidean_epsg_code_number}"] = crd_x
-stm[f"y_euclidean_proj_epsg{euclidean_epsg_code_number}"] = crd_y
+stm= stm.assign_coords({
+    f"x_euclidean_proj_epsg{euclidean_epsg_code_number}": (["space"], crd_x),
+    f"y_euclidean_proj_epsg{euclidean_epsg_code_number}": (["space"], crd_y),
+})
 
 # 3a. Network construction
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Removing mother from network STM...")
 mother_epoch_index = np.where(stm.time.values == stm.sel(time=stm.ps_sd_mother).time.values)[0][0]
 non_mother = [True] * len(stm.time.values)
 non_mother[mother_epoch_index] = False
 stm_without_mother_epoch = stm.isel(time=non_mother)
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Selecting first-order network points...")
 stm_network_pnts = network_stm_selection(
     stm=stm_without_mother_epoch,
     min_dist=min_point_distance,
@@ -216,11 +226,12 @@ stm_network_pnts = network_stm_selection(
     include_index=None
 )
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Forming first-order network...")
 stm_network_arcs = form_network(
     stm_network_pnts,
     key_phase='sd_phase',
     key_h2ph='h2ph',
-    key_Btemp='temporal_baseline',
+    key_Btemporal='temporal_baseline',
     max_length=max_arc_length,
     key_xcrds="lon",
     key_ycrds="lat",
@@ -230,12 +241,12 @@ stm_network_arcs = form_network(
     dphase_method=network_dphase_method,
 )
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating ambiguities through periodogram...")
 _, ambiguities, _, _, ens_coh = periodogram(
     stm_network_arcs,
     key_dphase='d_phase',
     key_h2ph='h2ph',
-    key_Btemp='Btemp',
-    wavelength=metadata["wavelength"],
+    key_Btemporal='Btemp',
     min_steps=min_periodogram_iterations,
             )
 stm_network_arcs["ambiguities"] = ambiguities
@@ -243,6 +254,7 @@ stm_network_arcs["temp_coh"] = ens_coh
 
 stm_network_arcs = stm_network_arcs.compute()
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Integrating the spatial network...")
 _, stm_pnts_output = spatial_integration(
     stm_network_pnts,
     stm_network_arcs,
@@ -250,18 +262,21 @@ _, stm_pnts_output = spatial_integration(
     threshold_arc_quality=arc_quality_threshold,
     idx_refpnt=reference_point_index,
 )
-# Here we should just fit a linear model to compute the phase residuals and the mother atmosphere
-# De h2ph en perpendicular baseline moet ook geschat worden
-# So we need the observed phase corrected for geometry and with the linear velocity subtracted --> the residuals are
-# either atmosphere, unmodeled deformation, or noise.
-# Is the geometric phase already removed in Doris v5?
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating the mother atmosphere...")
+stm_pnts_output, model_parameter_layer_names = estimate_model_params(
+    stm=stm_pnts_output,
+    models=model_types,
+    key_observations="unwrapped_phase",
+    key_h2ph="sd_h2ph",
+    key_time="temporal_baseline"
+)
 
-import pdb; pdb.set_trace()
+stm_pnts_output = stm_pnts_output.rename_vars({"pnt_offset": "mother_atmosphere"})
 
 # 4. Atmosphere estimation
-
-
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating the atmospheric phase screens...")
+import pdb; pdb.set_trace()
 stm_atmo_corrected = estimate_atmosphere_phase(
     stm=stm_pnts_output,
     prediction_coords=stm,
@@ -299,6 +314,7 @@ stm_atmo_corrected = estimate_atmosphere_phase(
 )
 
 # 3b. Network construction
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Removing the atmospheric phase screens...")
 stm_atmo_corrected["phase_minus_atmo"] = (stm_atmo_corrected["phase"].values -
                                           stm_atmo_corrected["atmosphere_predicted"].values + np.pi
                                           ) % (2 * np.pi) - np.pi
@@ -313,8 +329,11 @@ stm_atmo_corrected["sd_phase_minus_atmo"] = (
     np.pi
 )
 
+import pdb; pdb.set_trace()
+
 stm_atmo_corr_without_mother_epoch = stm_atmo_corrected.isel(time=non_mother)
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Selecting first-order network points...")
 stm_network_pnts = network_stm_selection(
     stm=stm_atmo_corr_without_mother_epoch,
     min_dist=min_point_distance,
@@ -327,11 +346,12 @@ stm_network_pnts = network_stm_selection(
     include_index=None
 )
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Forming first-order network...")
 stm_network_arcs = form_network(
     stm_network_pnts,
     key_phase='sd_phase_minus_atmo',
     key_h2ph='h2ph',
-    key_Btemp='temporal_baseline',
+    key_Btemporal='temporal_baseline',
     max_length=max_arc_length,
     key_xcrds="lon",
     key_ycrds="lat",
@@ -341,12 +361,12 @@ stm_network_arcs = form_network(
     dphase_method=network_dphase_method,
 )
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating ambiguities through periodogram...")
 _, ambiguities, _, _, ens_coh = periodogram(
     stm_network_arcs,
     key_dphase='d_phase',
     key_h2ph='h2ph',
-    key_Btemp='Btemp',
-    wavelength=metadata["wavelength"],
+    key_Btemporal='Btemp',
     min_steps=min_periodogram_iterations,
             )
 stm_network_arcs["ambiguities"] = ambiguities
@@ -354,13 +374,16 @@ stm_network_arcs["temp_coh"] = ens_coh
 
 stm_network_arcs = stm_network_arcs.compute()
 
-stm_arcs_output, stm_firstordernetwork = spatial_integration(
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Integrating the spatial network...")
+_, stm_firstordernetwork = spatial_integration(
     stm_network_pnts,
     stm_network_arcs,
     key_arc_quality="temp_coh",
     threshold_arc_quality=arc_quality_threshold,
     idx_refpnt=reference_point_index,
 )
+
+import pdb; pdb.set_trace()
 
 # 5. Densification
 stm_densified = densification(
@@ -380,9 +403,10 @@ latlonh = radar_to_latlonh(
     elevation=stm_densified.h.values,
     metadata=metadata,
 )
-stm_densified["lat"] = latlonh[:, 0].flatten()
-stm_densified["lon"] = latlonh[:, 1].flatten()
-stm_densified["h"] = latlonh[:, 2].flatten()
+
+stm_densified["lat"].data = latlonh[0].flatten()
+stm_densified["lon"].data = latlonh[1].flatten()
+stm_densified["h"].data = latlonh[2].flatten()
 
 # 7. STC Calculation
 stm_densified = compute_spatiotemporal_consistency(
