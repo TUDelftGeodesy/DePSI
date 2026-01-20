@@ -2,9 +2,9 @@
 Executable that identifies designated targets within a corregistered SLC stack
 by loading the stack, loading the RadarCoding Toolbox output, querrying for targets in the stack
 
-An example of the input parameter file (dtd_params.yml), 
-an SLC stack in zarr frmat (nl_groningen_s1_dsc_t037_haren), 
-the output of the RadarCoding Toolbox (s1_dsc037_RC.csv) can be found at:  
+An example of the input parameter file (dtd_params.yml),
+an SLC stack in zarr frmat (nl_groningen_s1_dsc_t037_haren),
+the output of the RadarCoding Toolbox (s1_dsc037_RC.csv) can be found at:
 https://figshare.com/ndownloader/files/51712790
 
 Please place these files in ./examples/scripts/data
@@ -24,7 +24,8 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 from depsi import io
-sys.path.append('/home/parallels/Sprint_Mobyle/DePSI_group/depsi/')
+
+sys.path.append("/home/parallels/Sprint_Mobyle/DePSI_group/depsi/")
 
 
 ## FUNCTIONS
@@ -72,6 +73,7 @@ def run_script_subprocess(script_path, args):
         subprocess.run(["python", script_path] + args, check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error while running the RCS Toolbox: {e}")
+
 
 def ensure_rc_csv_exists(rcsoutput_folder, rcsanalysis, arguments):
     """Ensure that an output of the RadarCoding Toolbox (*_RC.csv file) exists in the specified folder.
@@ -129,98 +131,101 @@ def ensure_rc_csv_exists(rcsoutput_folder, rcsanalysis, arguments):
 
     return output_file
 
+
 if __name__ == "__main__":
     ## STEP 0 - LOAD INPUT PARAMETERS
     # Specify folders and files to be used:
     print("STEP 0 - LOAD INPUT PARAMS")
     # Load the YAML parameters containing folders and files to be used:
     params = load_ymlparams("/home/parallels/Sprint_Mobyle/DePSI_group/examples/scripts/data/dtd_params.yml")
-    
+
     if params is None:
         raise ValueError("Failed to load parameters from ''.")
-    
+
     # Access paths from the YAML file
-    doris_stack_folder = params['paths']['doris_stack_folder']
-    nlines_file        = params['paths']['nlines_file']
-    npixels_file       = params['paths']['npixels_file']
-    
-    rcsoutput_folder   = params['paths']['rcs_output_folder']
-    rcsAnalizer        = params['paths']['rcsAnalizer']
-    rcs_AnalizerArgs   = [params['paths']['rcs_AnalizerArgs']]
-    
-    
+    doris_stack_folder = params["paths"]["doris_stack_folder"]
+    nlines_file = params["paths"]["nlines_file"]
+    npixels_file = params["paths"]["npixels_file"]
+
+    rcsoutput_folder = params["paths"]["rcs_output_folder"]
+    rcsAnalizer = params["paths"]["rcsAnalizer"]
+    rcs_AnalizerArgs = [params["paths"]["rcs_AnalizerArgs"]]
+
     print("")
-    
+
     ## STEP 1 - LOAD COREISTERED STACK OF SLC IN XARRAY FORMAT
     print("STEP 1 - LOAD CORREGISTRED STACK")
     # Check if the folder is a .zarr directory
     if doris_stack_folder.endswith(".zarr"):
         # Load the stack using io.read_slc_stack
-        slc_stack   = io.read_slc_stack(doris_stack_folder)
+        slc_stack = io.read_slc_stack(doris_stack_folder)
         print(f"Loaded stack from Zarr format: {doris_stack_folder}")
     else:
         # Ensure nlines_file and npixels_file paths are provided
         if not (nlines_file and npixels_file):
-            raise ValueError(
-                "nlines_file and npixels_file paths must be specified for non-Zarr stack folders."
-            )
+            raise ValueError("nlines_file and npixels_file paths must be specified for non-Zarr stack folders.")
         # Load the stack using io.doris_sar_stack_to_xarray
-        slc_stack = io.read_slc_stack(filename=doris_stack_folder, engine="doris", nlines_file=nlines_file, npixels_file=npixels_file, chunks=(500, 500))
+        slc_stack = io.read_slc_stack(
+            filename=doris_stack_folder,
+            engine="doris",
+            nlines_file=nlines_file,
+            npixels_file=npixels_file,
+            chunks=(500, 500),
+        )
         print(f"Loaded stack from folder with nlines and npixels files: {doris_stack_folder}")
-    
+
     print("")
-    
-    
-    ## STEP 2 - Run RADAR CODING TOOLBOX, get targets radard coordinates. 
+
+    ## STEP 2 - Run RADAR CODING TOOLBOX, get targets radard coordinates.
     # In case results are already produced by RC Toolbox read them in only.
-    # Note: Please configure your .parms and stacksRC.json beforehand 
+    # Note: Please configure your .parms and stacksRC.json beforehand
     print("STEP 2 - RUN RADAR CODING TOOLBOX, LOAD RESULTS")
     # Run the script with rcs_AnalizerArgs if output does not exist already
-    rcsoutput_file   = ensure_rc_csv_exists(rcsoutput_folder, rcsAnalizer, rcs_AnalizerArgs)
+    rcsoutput_file = ensure_rc_csv_exists(rcsoutput_folder, rcsAnalizer, rcs_AnalizerArgs)
     print("")
-    
+
     ## STEP 3 - LOAD THE RC TOOLBOX OUTPUT CSV FILE IN XARRAY FORMAT
     print("STEP 3 - LOAD RADAR CODING TOOLBOX RESULTS")
-    dt_df, dt_dates  = io.read_rcs_csv(rcsoutput_file) # Extract information from RC Toolbox output csv
-    
+    dt_df, dt_dates = io.read_rcs_csv(rcsoutput_file)  # Extract information from RC Toolbox output csv
+
     # Convert to xarray.Dataset
-    targets          = xr.Dataset(
-                            {
-                                "existing_flag": (["space", "time"], dt_df.iloc[:, 7:].values),
-                            },
-                            coords={
-                                "target": ("space", dt_df["ID"].values),
-                                "range": ("space", dt_df["Range"].values),
-                                "azimuth": ("space", dt_df["Azimuth"].values),
-                                "lat": ("space", dt_df["Lat"].values),
-                                "lon": ("space", dt_df["Lon"].values),
-                                "height": ("space", dt_df["Height"].values),
-                                "time": pd.to_datetime(dt_dates, format="%Y%m%d"),
-                                "detection_flag": (["space", "time"], dt_df.iloc[:, 7:].values),
-                            },
-                        )
+    targets = xr.Dataset(
+        {
+            "existing_flag": (["space", "time"], dt_df.iloc[:, 7:].values),
+        },
+        coords={
+            "target": ("space", dt_df["ID"].values),
+            "range": ("space", dt_df["Range"].values),
+            "azimuth": ("space", dt_df["Azimuth"].values),
+            "lat": ("space", dt_df["Lat"].values),
+            "lon": ("space", dt_df["Lon"].values),
+            "height": ("space", dt_df["Height"].values),
+            "time": pd.to_datetime(dt_dates, format="%Y%m%d"),
+            "detection_flag": (["space", "time"], dt_df.iloc[:, 7:].values),
+        },
+    )
     ## STEP 4 - EXTRACT THE TARGETS FROM THE STACK
     matching_scatterers = io.get_targets_from_slc(slc_stack, targets)
 
     # Re-organize the target names to the attributes, since they are currently string coords
     target_names = dict()
-    for name in matching_scatterers.coords['target'].values:
-        tgt = matching_scatterers.where(matching_scatterers['target'] == name, drop=True)
+    for name in matching_scatterers.coords["target"].values:
+        tgt = matching_scatterers.where(matching_scatterers["target"] == name, drop=True)
         target_names[name] = {
-            "lon": float(tgt['lon'].values),
-            "lat": float(tgt['lat'].values),
-            "azimuth": float(tgt['azimuth'].values),
-            "range": float(tgt['range'].values),
+            "lon": float(tgt["lon"].values),
+            "lat": float(tgt["lat"].values),
+            "azimuth": float(tgt["azimuth"].values),
+            "range": float(tgt["range"].values),
         }
-    
+
     matching_scatterers.attrs = target_names
-    
+
     # Print the number of identified targets and their names
     print(f"Identified {len(matching_scatterers.attrs)} targets in the SLC stack:")
     for name, info in matching_scatterers.attrs.items():
         print(f" - {name}: (lon={info['lon']}, lat={info['lat']}, az={info['azimuth']}, rg={info['range']})")
-    
-    matching_scatterers = matching_scatterers.drop(['target'])
+
+    matching_scatterers = matching_scatterers.drop(["target"])
 
 
 ## Note: Key variables
