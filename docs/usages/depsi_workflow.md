@@ -1,7 +1,7 @@
 # DePSI Workflow
 
 <div style="text-align: center;">
-  <img src="/assets/depsi_workflow_van_leijen_2014.png" alt="DePSI Workflow" style="width:70%; height:auto;">
+  <img src="../assets/depsi_workflow_van_leijen_2014.png" alt="DePSI Workflow" style="width:70%; height:auto;">
   <p><em>DePSI workflow (Van Leijen, 2014)</em></p>
 </div>
 
