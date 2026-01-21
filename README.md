@@ -1,7 +1,7 @@
 # DePSI
 
 <div style="text-align: center;">
-  <img src="docs/assets/depsi_snapshot.gif" alt="DePSI Snapshot" style="width:40%; height:auto;">
+  <img src="docs/assets/depsi_snapshot.gif" alt="DePSI Snapshot" style="width:60%; height:auto;">
 </div>
 
 DePSI (van Leijen, 2014) is an open source software for processing Persistent Scatterer Interferometry (PS-InSAR) data, originally implemented in MATLAB. From 2024, TUDelft and Netherlands eScience Center are collaborating to develop a Python version of DePSI, with recent advances in PS-InSAR. 
