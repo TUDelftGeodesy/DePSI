@@ -3,8 +3,9 @@ repo_url: https://github.com/TUDelftGeodesy/DePSI
 repo_name: DePSI
 
 nav:
-  - Getting started: 
-    - About DePSI: index.md
+  - Get started: 
+    - About DePSI: get_started/about_depsi.md
+    - Install DePSI: get_started/installation.md
   - Usage:
     - Load data: usages/io.md
     - Select PS and DS: usages/classification.md
@@ -57,6 +58,7 @@ plugins:
             ignore_init_summary: no
           merge_init_into_class: yes
           show_submodules: no
+- include-markdown
 
 markdown_extensions:
   - pymdownx.highlight:
