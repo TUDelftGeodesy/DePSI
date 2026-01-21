@@ -1,4 +1,4 @@
-# Data loading
+# Starting DePSI with Space-Time Matrix
 
 In this section, we will demonstrate how to get started with the `DePSI` by reading the SLC data and metadata. 
 

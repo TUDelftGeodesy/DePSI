@@ -8,10 +8,13 @@ nav:
     - Install DePSI: get_started/installation.md
   - Usage:
     - DePSI Workflow: usages/depsi_workflow.md
-    - Load data: usages/io.md
-    - Select PS and DS: usages/classification.md
-    - Quality improvement: usages/quality.md
-    - Network unwrapping: usages/network.md
+    - Starting point - Space-Time Matrix: usages/start_with_stm.md
+    - PS selection: usages/ps_selection.md
+    - Network estimation: usages/network.md
+    - Atmospheric phase screen estimation: usages/aps_estimation.md
+    - Densification: usages/densification.md
+    - Geo-coding: usages/geocoding.md
+    - Post-processing: usages/postprocessing.md
   - API Reference:
     - depsi.io: api/io.md
     - depsi.classification: api/classification.md
