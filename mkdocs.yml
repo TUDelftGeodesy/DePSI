@@ -16,8 +16,11 @@ nav:
     - Geo-coding: usages/geocoding.md
     - Post-processing: usages/postprocessing.md
   - API Reference:
-    - depsi.io: api/io.md
     - depsi.classification: api/classification.md
+    - depsi.arc_estimation: api/arc_estimation.md
+    - depsi.network: api/network.md
+    - depsi.densification: api/densification.md
+    - depsi.io: api/io.md
   - Contributing: 
     - Contributing guide: CONTRIBUTING.md
     - Practical info for developers: dev_guide.md
