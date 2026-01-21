@@ -1,7 +1,7 @@
 # DePSI: Delft PS-InSAR processing package
 
 <div style="text-align: center;">
-  <img src="../assets/depsi_snapshot.gif" alt="DePSI Snapshot" style="width:40%; height:auto;">
+  <img src="../../assets/depsi_snapshot.gif" alt="DePSI Snapshot" style="width:40%; height:auto;">
 </div>
 
 DePSI (van Leijen, 2014) is an open source Python software package for Persistent Scatterer Interferometric SAR (PS-InSAR) processing. It provides a comprehensive suite of functions to identify Persistent Scatterer (PS) points from a time series of interferometric SAR data, and estimate their deformation time series based on customizable assumptions, such as a predefined deformation model.
