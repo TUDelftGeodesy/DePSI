@@ -137,10 +137,8 @@ def estimate_model_params(
 
     # Assign parameter names to the output dataset
     stm_out = stm.copy()
-    new_layer_dict = {}
     for i, param_name in enumerate(param_names):
-        new_layer_dict[param_name] = (["space"], params.isel(params=i).data)
-    stm_out = stm_out.assign(new_layer_dict)
+        stm_out = stm_out.assign({param_name: (["space"], params.isel(params=i).data)})
     stm_out = stm_out.assign(
         {"expected_phases_yhat": (["space", "time"], yhat.data), "phase_residuals": (["space", "time"], ehat.data)}
     )
@@ -178,8 +176,9 @@ def _estimate_model_params_one_point(
             A = np.hstack((A, A_model))
 
     # Estimate model parameters using least squares
+    # currently without Qyy
     params, _, _, _ = np.linalg.lstsq(A, obs, rcond=None)
-    y_hat = A @ params  # currently without Qyy
+    y_hat = A @ params
     e_hat = obs - y_hat.reshape(obs.shape)
 
     return params.T, y_hat, e_hat

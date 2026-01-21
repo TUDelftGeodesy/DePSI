@@ -5,6 +5,7 @@ from datetime import datetime
 
 import numpy as np
 import sarxarray
+import xarray
 
 from depsi.arc_estimation import periodogram
 from depsi.atmosphere_estimation import estimate_atmosphere_phase
@@ -201,7 +202,7 @@ crd_x, crd_y = convert_geographic_coords_to_euclidean(
     stm["lat"].values,
     target_crs=f"EPSG:{euclidean_epsg_code_number}"
 )
-stm= stm.assign_coords({
+stm = stm.assign_coords({
     f"x_euclidean_proj_epsg{euclidean_epsg_code_number}": (["space"], crd_x),
     f"y_euclidean_proj_epsg{euclidean_epsg_code_number}": (["space"], crd_y),
 })
@@ -263,6 +264,7 @@ _, stm_pnts_output = spatial_integration(
     idx_refpnt=reference_point_index,
 )
 
+# 4. Atmosphere estimation
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating the mother atmosphere...")
 stm_pnts_output, model_parameter_layer_names = estimate_model_params(
     stm=stm_pnts_output,
@@ -272,16 +274,32 @@ stm_pnts_output, model_parameter_layer_names = estimate_model_params(
     key_time="temporal_baseline"
 )
 
-stm_pnts_output = stm_pnts_output.rename_vars({"pnt_offset": "mother_atmosphere"})
+stm_pnts_output = stm_pnts_output.rename_vars({
+    "pnt_offset": "mother_atmosphere",
+})
+# Rename the space dimension since it will otherwise clash with the space dimension of the predicted coordinates
+stm_pnts_output = stm_pnts_output.rename_dims({"space": "space_fon"})
 
-# 4. Atmosphere estimation
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Creating the atmosphere prediction coordinate dataset...")
+atmosphere_prediction_coords = xarray.Dataset(
+    coords={
+        f"x_euclidean_proj_epsg{euclidean_epsg_code_number}": (
+            "space", stm[f"x_euclidean_proj_epsg{euclidean_epsg_code_number}"].values
+        ),
+        f"y_euclidean_proj_epsg{euclidean_epsg_code_number}": (
+            "space", stm[f"y_euclidean_proj_epsg{euclidean_epsg_code_number}"].values
+        ),
+    }
+)
+
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating the atmospheric phase screens...")
-import pdb; pdb.set_trace()
-stm_atmo_corrected = estimate_atmosphere_phase(
+# import pdb; pdb.set_trace()
+atmospheric_phase_screens = estimate_atmosphere_phase(
     stm=stm_pnts_output,
-    prediction_coords=stm,
+    prediction_coords=atmosphere_prediction_coords,
     psc_phase_residuals="phase_residuals",
     atmosphere_mother="mother_atmosphere",
+    key_Btemporal="temporal_baseline",
     unmodeled_displacement_args={
         "filter_length": atmo_unmodeled_displacement_filter_length,
         "sampling_rate": atmo_unmodeled_displacement_sampling_rate,
@@ -304,17 +322,23 @@ stm_atmo_corrected = estimate_atmosphere_phase(
     stm_coords_metadata={
         "mode": "euclidean",
         "x_label": f"x_euclidean_proj_epsg{euclidean_epsg_code_number}",
-        "y_label": f"y_euclidean_proj_epsg{euclidean_epsg_code_number}"
+        "y_label": f"y_euclidean_proj_epsg{euclidean_epsg_code_number}",
+        "space_dim_name": "space_fon",
     },
     prediction_coords_metadata={
         "mode": "euclidean",
         "x_label": f"x_euclidean_proj_epsg{euclidean_epsg_code_number}",
-        "y_label": f"y_euclidean_proj_epsg{euclidean_epsg_code_number}"
+        "y_label": f"y_euclidean_proj_epsg{euclidean_epsg_code_number}",
+        "space_dim_name": "space"
     },
 )
 
+import pdb; pdb.set_trace()
+
 # 3b. Network construction
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Removing the atmospheric phase screens...")
+
+import pdb; pdb.set_trace()
 stm_atmo_corrected["phase_minus_atmo"] = (stm_atmo_corrected["phase"].values -
                                           stm_atmo_corrected["atmosphere_predicted"].values + np.pi
                                           ) % (2 * np.pi) - np.pi
