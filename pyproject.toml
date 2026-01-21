@@ -10,7 +10,7 @@ dependencies = [
     "matplotlib",
     "pydantic",
     "pykrige",
-    "sarxarray>=1.2.2",
+    "sarxarray",
     "scipy",
     "stmtools",
     "ruptures",
@@ -18,7 +18,7 @@ dependencies = [
     "drama",
     "asf_search",
     "sparse",
-    "scikit-learn"
+    "scikit-learn",
 ]
 description = "Python package for interferometric synthetic aperture radar (InSAR) time series processing."
 readme = "README.md"
@@ -37,7 +37,7 @@ classifiers=[
     'Programming Language :: Python :: 3.12',
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest",
     "pytest-cov",
@@ -52,6 +52,7 @@ docs = [
     "mkdocs-jupyter",
     "mkdocstrings[python]",
     "mkdocs-gen-files",
+    "mkdocs-include-markdown-plugin>=7.2.0",
 ]
 demo = [
     "jupyterlab",
