@@ -8,7 +8,7 @@ nav:
     - Install DePSI: get_started/installation.md
   - Usage:
     - DePSI Workflow: usages/depsi_workflow.md
-    - Starting point - Space-Time Matrix: usages/start_with_stm.md
+    - Starting point - Space-Time Matrix: usages/start_depsi.md
     - PS selection: usages/ps_selection.md
     - Network estimation: usages/network.md
     - Atmospheric phase screen estimation: usages/aps_estimation.md
@@ -23,8 +23,8 @@ nav:
     - Practical info for developers: dev_guide.md
     - Code of conduct: CODE_OF_CONDUCT.md
   - Example Notebooks:
+    - DePSI example workflow: notebooks/demo_depsi_full.ipynb
     - SARXarray and STMTools Dependencies of DePSI: notebooks/demo_sarxarray_and_stmtools.ipynb
-    - DePSI example workflow: notebooks/demo_depsi.ipynb
 
 
 theme:
