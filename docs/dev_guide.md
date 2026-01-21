@@ -4,7 +4,7 @@
 
 The Python implementation of DePSI is under development. At present you can only install it from the GitHub repository.
 
-It is assumed that you have `mamba` installed. If not, you can find the installation instructions [here](https://mamba.readthedocs.io/en/latest/installation/mamba-installation.html). Other package managers like `conda` or `venv` can be used as well.
+We strongly recommend using `uv` to handle the Python environment during development process. Please refer to the [uv documentation](https://docs.astral.sh/uv/) for installation instructions of `uv` 
 
 Before you start, make sure you have access to the correct DePSI repository. You can contribute to the pubilic DePSI repository by forking it to your own GitHub account. If you are a member of the TUDelftGeodesy organization, you can also contribute to the group DePSI repository.
 
@@ -14,24 +14,22 @@ Clone this GitHub repository, then `cd` into the cloned repository.
 cd DePSI
 ```
 
-Create a new conda environment (here we give an example name `depsi-dev`) with `mamba`.:
+Then you can create a development environment simply by synchronizing:
 
 ```bash
-mamba create -c conda-forge -n depsi-dev python=3.12
+uv sync --all-groups
 ```
 
-Here we use Python 3.12 since we aim to support python 3.10 and above.
-
-Activate the environment:
+To activate the environment created by `uv`, run under `DePSI` directory:
 
 ```bash
-mamba activate depsi-dev
+source .venv/bin/activate
 ```
 
-Install this package in development mode, with extra dependencies for development and documentation:
+To add a new package during development, you can use `uv add <package-name>` command. 
 
 ```bash
-pip install -e ".[dev,docs]"
+uv add <package-name>
 ```
 
 In the end, install the pre-commit hooks, which will run the checks before each commit:
