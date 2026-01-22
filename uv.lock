@@ -1094,11 +1094,11 @@ requires-dist = [
     { name = "pydantic" },
     { name = "pykrige" },
     { name = "ruptures" },
-    { name = "sarxarray" },
+    { name = "sarxarray", specifier = ">=1.2.3" },
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "sparse" },
-    { name = "stmtools" },
+    { name = "stmtools", specifier = ">=0.1.4" },
 ]
 
 [package.metadata.requires-dev]

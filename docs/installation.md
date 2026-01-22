@@ -1,4 +1,4 @@
-# Installation DePSI
+# Installating DePSI
 
 You can install DePSI from the Python Package Index (PyPI) using `pip`:
 
