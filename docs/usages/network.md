@@ -198,4 +198,4 @@ This adds `ambiguities` and `unwrapped_phase` variables to the network points da
 
 ## References
 
-Van Leijen, Frederik Johannes. "Persistent scatterer interferometry based on geodetic estimation theory." (2014).
+[Van Leijen, Frederik Johannes. "Persistent scatterer interferometry based on geodetic estimation theory." (2014).](https://repository.tudelft.nl/record/uuid:5dba48d7-ee26-4449-b674-caa8df93e71e)
