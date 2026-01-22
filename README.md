@@ -1,6 +1,6 @@
 # DePSI
 
-<table style="width:90%;">
+<table style="width:90%; margin-left:auto; margin-right:auto;">
 <tr>
 <td width="65%">
   <img src="docs/assets/depsi_snapshot.gif" alt="DePSI Snapshot" style="width:100%; height:auto;">
