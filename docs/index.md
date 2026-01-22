@@ -22,15 +22,15 @@ Please refer to the [Installation Guide](installation.md) for more details.
 
 ## User Guide
 
-The [User Guide](../usages/depsi_workflow.md) provides comprehensive instructions and examples on how to use DePSI for PS-InSAR processing.
+The [User Guide](usages/depsi_workflow.md) provides comprehensive instructions and examples on how to use DePSI for PS-InSAR processing.
 
 ## API Reference
 
-The [API Reference](../api/io.md) documents all available classes and functions in DePSI.
+The [API Reference](api/io.md) documents all available classes and functions in DePSI.
 
 ## Developer Guide
 
-Awesome! If you are contributing to DePSI, please refer to the [Developer Guide](../dev_guide.md) for installation instructions, testing, and other development-related information.
+Awesome! If you are contributing to DePSI, please refer to the [Developer Guide](dev_guide.md) for installation instructions, testing, and other development-related information.
 
 ## References
 
