@@ -52,7 +52,6 @@ docs = [
     "mkdocs-jupyter",
     "mkdocstrings[python]",
     "mkdocs-gen-files",
-    "mkdocs-include-markdown-plugin>=7.2.0",
 ]
 demo = [
     "jupyterlab",
