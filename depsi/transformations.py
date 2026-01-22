@@ -56,7 +56,6 @@ def seconds_of_day(t: numpy.datetime64) -> float:
     float
         Number of seconds elapsed since the start of that day
     """
-    # total_seconds = (t - t.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()
     day_start = t.astype("datetime64[D]")
     total_seconds = (t - day_start).astype("timedelta64[ns]").astype(float) * 1e-9
 
