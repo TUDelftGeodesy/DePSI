@@ -26,7 +26,7 @@ The [User Guide](usages/depsi_workflow.md) provides comprehensive instructions a
 
 ## API Reference
 
-The [API Reference](api/io.md) documents all available classes and functions in DePSI.
+The [API Reference](api/classification.md) documents all available classes and functions in DePSI.
 
 ## Developer Guide
 
