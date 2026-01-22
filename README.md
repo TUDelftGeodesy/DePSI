@@ -1,15 +1,15 @@
 # DePSI
 
-<table>
+<table style="width:90%;">
 <tr>
-<td width="70%">
+<td width="65%">
   <img src="docs/assets/depsi_snapshot.gif" alt="DePSI Snapshot" style="width:100%; height:auto;">
 </td>
-<td width="30%" valign="top">
+<td width="35%" valign="middle">
   
 [![Build and pytest](https://github.com/TUDelftGeodesy/DePSI_group/actions/workflows/build.yml/badge.svg)](https://github.com/TUDelftGeodesy/DePSI_group/actions/workflows/build.yml)
 
-[![License](https://img.shields.io/github/license/TUDelftGeodesy/DePSI_group)](https://opensource.org/licenses/Apache-2.0)
+[![License](https://img.shields.io/github/license/TUDelftGeodesy/DePSI)](https://opensource.org/licenses/Apache-2.0)
 
 </td>
 </tr>
