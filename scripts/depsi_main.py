@@ -333,29 +333,27 @@ atmospheric_phase_screens = estimate_atmosphere_phase(
     },
 )
 
-import pdb; pdb.set_trace()
-
-# 3b. Network construction
-print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Removing the atmospheric phase screens...")
-
-import pdb; pdb.set_trace()
-stm_atmo_corrected["phase_minus_atmo"] = (stm_atmo_corrected["phase"].values -
-                                          stm_atmo_corrected["atmosphere_predicted"].values + np.pi
-                                          ) % (2 * np.pi) - np.pi
-
-
-stm_atmo_corrected["sd_phase_minus_atmo"] = (
-    (
-            stm_atmo_corrected["phase_minus_atmo"] -
-            stm_atmo_corrected["phase_minus_atmo"].sel(time=stm_atmo_corrected.ps_sd_mother) +
-            np.pi
-    ) % (2 * np.pi) -
-    np.pi
+# create the zero layer for the mother atmosphere to be appended to the interferometric atmospheric phase screens
+mother_atmo_stm = xarray.Dataset(
+    data_vars={
+        "atmosphere_predicted": ("space", np.zeros((len(stm.space), ))),
+        "atmosphere_sigmasq": ("space", np.zeros((len(stm.space), ))),},
+    coords=stm["phase"].sel(time=stm.ps_sd_mother).coords
 )
 
-import pdb; pdb.set_trace()
+atmosphere = xarray.concat([atmospheric_phase_screens, mother_atmo_stm], dim="time").sortby("time")
 
-stm_atmo_corr_without_mother_epoch = stm_atmo_corrected.isel(time=non_mother)
+# Add the atmosphere into the original STM
+stm["atmosphere_predicted"] = atmosphere["atmosphere_predicted"].transpose("space", "time")
+stm["atmosphere_sigmasq"] = atmosphere["atmosphere_sigmasq"].transpose("space", "time")
+
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Removing the atmospheric phase screens...")
+stm["phase_minus_atmo"] = (stm["phase"] - stm["atmosphere_predicted"] + np.pi) % (2 * np.pi) - np.pi
+stm["sd_phase_minus_atmo"] = \
+    (stm["phase_minus_atmo"] - stm["phase_minus_atmo"].sel(time=stm.ps_sd_mother) + np.pi) % (2 * np.pi) - np.pi
+
+# 3b. Network construction
+stm_atmo_corr_without_mother_epoch = stm.isel(time=non_mother)
 
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Selecting first-order network points...")
 stm_network_pnts = network_stm_selection(
@@ -411,7 +409,7 @@ import pdb; pdb.set_trace()
 
 # 5. Densification
 stm_densified = densification(
-    stm_atmo_corrected,
+    stm,
     stm_firstordernetwork,
     wavelength=metadata["wavelength"],
     idx_refpnt=reference_point_index,
@@ -419,6 +417,8 @@ stm_densified = densification(
     key_sdphase="sd_phase_minus_atmo",
     key_h2ph="sd_h2ph"
 )
+
+## MODEL ESTIMATION
 
 # 6b. Geocoding
 latlonh = radar_to_latlonh(
