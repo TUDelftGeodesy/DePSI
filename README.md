@@ -1,27 +1,29 @@
 # DePSI
 
-<div style="text-align: center;">
-  <img src="docs/assets/depsi_snapshot.gif" alt="DePSI Snapshot" style="width:60%; height:auto;">
-</div>
+<table>
+<tr>
+<td width="70%">
+  <img src="docs/assets/depsi_snapshot.gif" alt="DePSI Snapshot" style="width:100%; height:auto;">
+</td>
+<td width="30%" valign="top">
+  
+[![Build and pytest](https://github.com/TUDelftGeodesy/DePSI_group/actions/workflows/build.yml/badge.svg)](https://github.com/TUDelftGeodesy/DePSI_group/actions/workflows/build.yml)
 
-DePSI (van Leijen, 2014) is an open source software for processing Persistent Scatterer Interferometry (PS-InSAR) data, originally implemented in MATLAB. From 2024, TUDelft and Netherlands eScience Center are collaborating to develop a Python version of DePSI, with recent advances in PS-InSAR. 
+[![License](https://img.shields.io/github/license/TUDelftGeodesy/DePSI_group)](https://opensource.org/licenses/Apache-2.0)
 
-## Installation (for non-developers)
+</td>
+</tr>
+</table>
 
-At present you can only install it from the GitHub repository:
+DePSI (van Leijen, 2014) is an open source Python software package for Persistent Scatterer Interferometric SAR (PS-InSAR) processing. It provides a comprehensive suite of functions to identify Persistent Scatterer (PS) points from a time series of interferometric SAR data, and estimate their deformation time series based on customizable assumptions, such as a predefined deformation model.
 
-`pip install git+https://github.com/TUDelftGeodesy/DePSI.git@main`
+DePSI was originally implemented in MATLAB in 2014. The Python implementation of DePSI is motivated by acconmondating the classic DePSI algorithm into a modern software framework, enabling easier maintenance and contribution from the InSAR community. The Python version also enables the support of parallel computing and handling large datasets by leveraging `Dask` and `Xarray` libraries.
 
+For the original MATLAB version, which is static without further development, please refer to the [MATLAB branch](https://github.com/TUDelftGeodesy/DePSI/tree/stable) of this repository.
 
-## Developer Guide
+## Documentation
 
-If you are contributing to DePSI, please refer to the [Developer Guide](docs/dev_guide.md) for installation instructions, testing, and other development-related information.
-
-## Useful reading material
-
-- [Python packaging user guide](https://packaging.python.org/)
-- [Testing in Python](https://docs.kedro.org/en/stable/development/automated_testing.html)
-- [Code formatting and linting](https://docs.kedro.org/en/stable/development/linting.html)
+You can find more information about DePSI in the [documentation site](https://tudelftgeodesy.github.io/DePSI_group).
 
 ## License
 
