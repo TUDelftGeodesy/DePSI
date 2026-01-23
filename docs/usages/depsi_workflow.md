@@ -13,4 +13,4 @@ The current Python implementation DePSI can perform the following main steps:
 4. **Densification**: Estimate all candidate PS points' deformation parameters by incorporating the APS and network arc parameters.
 5. **Geo-coding**: Convert the estimated deformation parameters from radar coordinates to geographic coordinates.
 
-This user guide provides examples and instructions on how to use DePSI to perform each of these steps. For a complete end-to-end example, please refer to the [DePSI full workflow demo notebook](notebooks/demo_depsi_full.ipynb).
+This user guide provides examples and instructions on how to use DePSI to perform each of these steps. For a complete end-to-end example, please refer to the [DePSI full workflow demo notebook](../notebooks/demo_depsi_full.ipynb).
