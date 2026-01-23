@@ -19,6 +19,7 @@ nav:
     - depsi.classification: api/classification.md
     - depsi.arc_estimation: api/arc_estimation.md
     - depsi.network: api/network.md
+    - depsi.atmosphere_estimation: api/atmosphere_estimation.md
     - depsi.densification: api/densification.md
     - depsi.io: api/io.md
   - Contributing: 
