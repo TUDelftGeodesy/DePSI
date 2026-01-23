@@ -1,7 +1,7 @@
 site_name: "DePSI: Delft PS-InSAR processing package"
 site_url: https://tudelftgeodesy.github.io/DePSI_group
-repo_url: https://github.com/TUDelftGeodesy/DePSI
-repo_name: DePSI
+repo_url: https://github.com/TUDelftGeodesy/DePSI_group
+repo_name: DePSI_group
 
 nav:
   - About DePSI: index.md
