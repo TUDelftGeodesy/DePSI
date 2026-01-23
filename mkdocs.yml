@@ -8,7 +8,7 @@ nav:
   - Install DePSI: installation.md
   - Usage:
     - DePSI Workflow: usages/depsi_workflow.md
-    - Starting point - Space-Time Matrix: usages/start_depsi.md
+    - Starting with a coregistered stack: usages/start_depsi.md
     - PS selection: usages/ps_selection.md
     - Network estimation: usages/network.md
     - Atmospheric phase screen estimation: usages/aps_estimation.md
