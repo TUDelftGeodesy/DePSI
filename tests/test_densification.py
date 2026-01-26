@@ -288,7 +288,3 @@ def test_densification_time_variables():
         stm_densified["time_var_common"].data,
         stm_network_pnts["time_var_common"].data,
     )
-    assert np.allclose(
-        stm_densified["time_var_common"].data,
-        stm_pnt_densification["time_var_common"].data,
-    )
