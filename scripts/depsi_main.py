@@ -29,6 +29,7 @@ from depsi.utils import (
     crop_slc_spacetime,
     stm_compute_single_time_differences,
 )
+from depsi.viewing_geometry import add_local_viewing_geometry
 
 
 # ############## INPUT VARIABLES
@@ -103,9 +104,14 @@ n_densification_connections = 1
 stc_min_dist = 50  # meters
 stc_max_dist = 200  # meters
 
+# Viewing geometry
+orbit_mode = "IWS"
+orbit_resolution = 0.01
+orbit_file = "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/GitHub_repos/DePSI_group/config/drama/S1_XTI.cfg"
+
 # output settings
 filter_dict = {"h": [-2000, 2000]}
-output_types = ["csv_web_portal"]  # csv, csv_web_portal, shapefile, convex_hull
+output_types = ["csv_web_portal", "csv", "shapefile", "convex_hull"]  # csv, csv_web_portal, shapefile, convex_hull
 
 # csv export
 csv_save_path = "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037.csv"
@@ -266,7 +272,7 @@ _, stm_pnts_output = spatial_integration(
 
 # 4. Atmosphere estimation
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating the mother atmosphere...")
-stm_pnts_output, model_parameter_layer_names = estimate_model_params(
+stm_pnts_output, _ = estimate_model_params(
     stm=stm_pnts_output,
     models=model_types,
     key_observations="unwrapped_phase",
@@ -337,7 +343,7 @@ atmospheric_phase_screens = estimate_atmosphere_phase(
 mother_atmo_stm = xarray.Dataset(
     data_vars={
         "atmosphere_predicted": ("space", np.zeros((len(stm.space), ))),
-        "atmosphere_sigmasq": ("space", np.zeros((len(stm.space), ))),},
+        "atmosphere_sigmasq": ("space", np.zeros((len(stm.space), ))), },
     coords=stm["phase"].sel(time=stm.ps_sd_mother).coords
 )
 
@@ -354,6 +360,7 @@ stm["sd_phase_minus_atmo"] = \
 
 # 3b. Network construction
 stm_atmo_corr_without_mother_epoch = stm.isel(time=non_mother)
+stm_atmo_corr_without_mother_epoch = stm_atmo_corr_without_mother_epoch.chunk({"time": -1})
 
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Selecting first-order network points...")
 stm_network_pnts = network_stm_selection(
@@ -405,26 +412,35 @@ _, stm_firstordernetwork = spatial_integration(
     idx_refpnt=reference_point_index,
 )
 
-import pdb; pdb.set_trace()
-
 # 5. Densification
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Starting densification...")
 stm_densified = densification(
-    stm,
+    stm_atmo_corr_without_mother_epoch,
     stm_firstordernetwork,
-    wavelength=metadata["wavelength"],
     idx_refpnt=reference_point_index,
     n_connections=n_densification_connections,
     key_sdphase="sd_phase_minus_atmo",
-    key_h2ph="sd_h2ph"
+    key_h2ph="sd_h2ph",
+    key_Btemporal="temporal_baseline"
 )
 
-## MODEL ESTIMATION
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating the model parameters...")
+stm_densified, model_parameter_layer_names = estimate_model_params(
+    stm=stm_densified,
+    models=model_types,
+    key_observations="unwrapped_phase",
+    key_h2ph="sd_h2ph",
+    key_time="temporal_baseline"
+)
+
+import pdb; pdb.set_trace()
 
 # 6b. Geocoding
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Starting geocoding...")
 latlonh = radar_to_latlonh(
     azimuth_coords=stm_densified.azimuth.values,
     range_coords=stm_densified.range.values,
-    elevation=stm_densified.h.values,
+    elevation=stm_densified.pnt_height.values,
     metadata=metadata,
 )
 
@@ -433,6 +449,10 @@ stm_densified["lon"].data = latlonh[1].flatten()
 stm_densified["h"].data = latlonh[2].flatten()
 
 # 7. STC Calculation
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Calculating the unwrapped phase timeseries...")
+stm_densified["unwrapped_phase"].data = stm_densified["unwrapped_phase"].values
+
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Calculating spatiotemporal consistency...")
 stm_densified = compute_spatiotemporal_consistency(
     stm_densified,
     min_dist=stc_min_dist,
@@ -443,6 +463,7 @@ stm_densified = compute_spatiotemporal_consistency(
 )
 
 # 8. Scatterer filtering
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Filtering scatterers...")
 for layer in filter_dict.keys():
     stm_densified = stm_point_filter(
         stm=stm_densified,
@@ -453,7 +474,26 @@ for layer in filter_dict.keys():
     )
 
 # 9. Output generation
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Adding viewing geometry...")
+stm_densified = add_local_viewing_geometry(
+    stm=stm_densified,
+    orbit_config_file=orbit_file,
+    orbit_res=orbit_resolution,
+    orbit_mode=orbit_mode,
+    orbit=f"{satellite}_{direction}_t{track:0>3d}"
+)
+
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Projecting phases and models onto the vertical...")
+stm_densified["unwrapped_phase_pov"] = stm_densified["unwrapped_phase"] / np.cos(
+    np.radians(stm_densified["local_incidence_angle"])
+)
+for param in model_parameter_layer_names:
+    stm_densified[param].data = stm_densified[param].values
+    stm_densified[f"{param}_pov"] = stm_densified[param] / np.cos(np.radians(stm_densified["local_incidence_angle"]))
+
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Starting export...")
 if "csv" in output_types:
+    print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Exporting to CSV...")
     export_to_csv(
         stm=stm_densified,
         save_path=csv_save_path,
@@ -463,6 +503,7 @@ if "csv" in output_types:
     )
 
 if "csv_web_portal" in output_types:
+    print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Exporting to Portal CSV...")
     export_to_skygeo_portal(
         stm=stm_densified,
         save_path=csv_web_save_path,
@@ -472,9 +513,11 @@ if "csv_web_portal" in output_types:
         asc_dsc=direction,
         azimuth_spacing=metadata["azimuth_pixel_spacing"],
         range_spacing=metadata["range_pixel_spacing"],
+        model_names=model_types,
     )
 
 if "shapefile" in output_types:
+    print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Exporting to shapefile...")
     export_to_shapefile(
         stm=stm_densified,
         save_path=shape_save_path,
@@ -484,9 +527,11 @@ if "shapefile" in output_types:
     )
 
 if "convex_hull" in output_types:
+    print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Exporting to convex hull...")
     export_convex_hull_to_shapefile(
         stm=stm_densified,
         save_path=chull_save_path,
         projection=chull_projection,
     )
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Finished!")

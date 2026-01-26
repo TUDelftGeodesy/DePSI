@@ -1506,6 +1506,7 @@ def periodogram(
     # Therefore, we are calling it on the "time" dimension of every space entry.
     # So we have the input_core_dims as  [["time"], ["time"]]
     input_core_dims = [["time"], ["time"]]
+    stm = stm.chunk({"time": -1})
     # There are 5 outputs from _periodogram_arc
     # The first two are np arrays with time dimension
     # The other three are scalars, so they have no dimensions

@@ -851,7 +851,7 @@ def compute_spatiotemporal_consistency(
         if len(buffer_indices) == 0:
             stcs.append(np.nan)
         else:
-            buffer_ts_sd = stm.ts_los.isel(space=buffer_indices) - stm.ts_los.isel(space=point)
+            buffer_ts_sd = stm["unwrapped_phase"].isel(space=buffer_indices) - stm["unwrapped_phase"].isel(space=point)
             buffer_ts_sd_comp = buffer_ts_sd.values
             buffer_ts_dd = buffer_ts_sd_comp[:, :-1] - buffer_ts_sd_comp[:, 1:]
             buffer_ts_stcs = np.std(buffer_ts_dd, axis=1).flatten()
