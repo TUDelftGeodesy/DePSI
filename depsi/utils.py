@@ -803,6 +803,7 @@ def concatenate_stms(
         assert (
             current_time_size == reference_time_size
         ), f"STM at index {idx} has time dimension size {current_time_size}, expected {reference_time_size}."
+
     # All coordinates of all STMs should be 1D, only space or time dimension
     for idx, stm in enumerate(stm_list):
         for coord in stm.coords:
