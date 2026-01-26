@@ -2,7 +2,14 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.utils import compute_phase_difference, convert_geographic_coords_to_euclidean, generate_pnt_uids
+from depsi.utils import (
+    compute_phase_difference,
+    concatenate_stms,
+    convert_geographic_coords_to_euclidean,
+    generate_pnt_uids,
+)
+
+rng = np.random.default_rng(seed=42)
 
 
 class TestGeneratePntUids:
@@ -130,3 +137,45 @@ def test_convert_geographic_coords_to_euclidean():
     # Assert that the output coordinates have the correct shape
     assert x.shape == (3,)
     assert y.shape == (3,)
+
+
+def test_concate_multiple_stms():
+    """Test concatenation of multiple STM datasets."""
+    # Make three sample STM datasets
+    space_dim_size = [3, 7, 4]
+    time_var_common = rng.uniform(10, 20, 5)
+    list_stms = []
+    for idx, sp_size in enumerate(space_dim_size):
+        sp_coords_start = 0
+        stm_i = xr.Dataset(
+            data_vars={
+                "phase": (("space", "time"), rng.uniform(-np.pi, np.pi, (sp_size, 5))),
+                "h2ph": (("space", "time"), rng.uniform(0, 1, (sp_size, 5))),
+                f"time_var_{idx}": (("time"), rng.uniform(0, 10, 5)),  # time-only variable stm specific
+                "time_var_common": (("time"), time_var_common),  # time-only variable common
+            },
+            coords={
+                "space": ("space", rng.integers(sp_coords_start, sp_coords_start + 100, sp_size)),
+                "time": ("time", np.arange(5)),
+            },
+        )
+        sp_coords_start += 100
+        list_stms.append(stm_i)
+
+    # Concatenate the STM datasets
+    concatenated_stm = concatenate_stms(list_stms)
+
+    # Assert that the concatenated dataset has the correct shape
+    assert concatenated_stm["phase"].shape == (14, 5)
+    assert concatenated_stm["h2ph"].shape == (14, 5)
+    # Assert that time-only variables are preserved correctly
+    for idx in range(3):
+        assert f"time_var_{idx}" in concatenated_stm
+        np.testing.assert_array_equal(
+            concatenated_stm[f"time_var_{idx}"].values,
+            list_stms[idx][f"time_var_{idx}"].values,
+        )
+        np.testing.assert_array_equal(
+            concatenated_stm["time_var_common"].values,
+            list_stms[0]["time_var_common"].values,
+        )

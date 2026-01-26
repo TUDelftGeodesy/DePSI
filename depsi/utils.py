@@ -773,8 +773,8 @@ def concatenate_stms(
     along the space dimension.
     It ensures that all STMs have the required dimensions and coordinates, and handles time-only variables appropriately
     to prevent broadcasting issues during concatenation.
-    If the same time-only variable exists in multiple STMs, it is assumed to be identical across those STMs, and the
-    values from the first STM in the list are retained.
+    If the same time-only variable exists in multiple STMs, it is assumed to be identical across those STMs. Otherwise,
+    an error will be raised during the concatenation process.
     If a time-only variable exists in only a subset of the STMs, it will be included in the final concatenated STM, as
     it is a data variable for all STMs.
 
