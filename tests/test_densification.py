@@ -272,18 +272,23 @@ def test_densification_time_variables():
     )
 
     # Check that time-only variables are present in the output
-    for var in ["time_var_common", "time_var_net"]:
+    for var in ["time_var_common", "time_var_net", "time_var_dens"]:
         assert var in stm_densified.data_vars
         assert stm_densified[var].dims == ("time",)
-        assert np.allclose(
-            stm_densified[var].data,
-            stm_network_pnts[var].data,
-        )
 
-    for var in ["time_var_common", "time_var_dens"]:
-        assert var in stm_densified.data_vars
-        assert stm_densified[var].dims == ("time",)
-        assert np.allclose(
-            stm_densified[var].data,
-            stm_pnt_densification[var].data,
-        )
+    assert np.allclose(
+        stm_densified["time_var_net"].data,
+        stm_network_pnts["time_var_net"].data,
+    )
+    assert np.allclose(
+        stm_densified["time_var_dens"].data,
+        stm_pnt_densification["time_var_dens"].data,
+    )
+    assert np.allclose(
+        stm_densified["time_var_common"].data,
+        stm_network_pnts["time_var_common"].data,
+    )
+    assert np.allclose(
+        stm_densified["time_var_common"].data,
+        stm_pnt_densification["time_var_common"].data,
+    )

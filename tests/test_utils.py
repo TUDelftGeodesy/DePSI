@@ -145,8 +145,8 @@ def test_concatenate_multiple_stms():
     space_dim_size = [3, 7, 4]
     time_var_common = rng.uniform(10, 20, 5)
     list_stms = []
+    sp_coords_start = 0
     for idx, sp_size in enumerate(space_dim_size):
-        sp_coords_start = 0
         stm_i = xr.Dataset(
             data_vars={
                 "phase": (("space", "time"), rng.uniform(-np.pi, np.pi, (sp_size, 5))),
