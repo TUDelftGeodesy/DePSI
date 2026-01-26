@@ -775,8 +775,8 @@ def concatenate_stms(
     to prevent broadcasting issues during concatenation.
     If the same time-only variable exists in multiple STMs, it is assumed to be identical across those STMs. Otherwise,
     an error will be raised during the concatenation process.
-    If a time-only variable exists in only a subset of the STMs, it will be included in the final concatenated STM, as
-    it is a data variable for all STMs.
+    If a time-only variable exists in only a subset of the STMs, it will be included in the final concatenated STM,
+    assuming this data variable applys to all points in the concatenated STM.
 
     Parameters
     ----------
