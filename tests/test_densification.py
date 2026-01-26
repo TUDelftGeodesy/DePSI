@@ -246,3 +246,45 @@ def test_densification_wrong_n_connections(n_connections):
             stm_network_pnts,
             n_connections=n_connections,
         )
+
+
+def test_densification_time_variables():
+    """Time-only variables should be preserved with correct dimensions after densification."""
+    stm_network_pnts = make_stm_network_pnts(6, 7)
+    stm_pnt_densification = make_stm_pnt_densification(13, 7)
+
+    # Assign some time-only variables
+    time_var_common = ("time", rng.uniform(0, 1, size=stm_network_pnts.sizes["time"]))
+    stm_network_pnts["time_var_common"] = time_var_common
+    stm_pnt_densification["time_var_common"] = time_var_common
+    stm_network_pnts["time_var_net"] = ("time", rng.uniform(0, 1, size=stm_network_pnts.sizes["time"]))
+    stm_pnt_densification["time_var_dens"] = ("time", rng.uniform(0, 1, size=stm_pnt_densification.sizes["time"]))
+
+    stm_densified = densification(
+        stm_pnt_densification,
+        stm_network_pnts,
+        n_connections=1,
+        key_xcoord="azimuth",
+        key_ycoord="range",
+        key_Btemporal="time",
+        key_h2ph="h2ph",
+        key_sdphase="sd_phase",
+    )
+
+    # Check that time-only variables are present in the output
+    for var in ["time_var_common", "time_var_net", "time_var_dens"]:
+        assert var in stm_densified.data_vars
+        assert stm_densified[var].dims == ("time",)
+
+    assert np.allclose(
+        stm_densified["time_var_net"].data,
+        stm_network_pnts["time_var_net"].data,
+    )
+    assert np.allclose(
+        stm_densified["time_var_dens"].data,
+        stm_pnt_densification["time_var_dens"].data,
+    )
+    assert np.allclose(
+        stm_densified["time_var_common"].data,
+        stm_network_pnts["time_var_common"].data,
+    )
