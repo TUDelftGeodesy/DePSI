@@ -762,3 +762,61 @@ def convert_geographic_coords_to_euclidean(
     transformer = pyproj.Transformer.from_crs("EPSG:4326", target_crs, always_xy=True)
     x, y = transformer.transform(lon, lat)
     return np.array(x), np.array(y)
+
+
+def concatenate_stms(
+    stm_list: list[xr.Dataset],
+) -> xr.Dataset:
+    """Concatenate multiple STMs along the space dimension.
+
+    This function concatenates a list of xarray Datasets representing space-time matrices (STMs)
+    along the space dimension.
+    It ensures that all STMs have the required dimensions and coordinates, and handles time-only variables appropriately
+    to prevent broadcasting issues during concatenation.
+    If the same time-only variable exists in multiple STMs, it is assumed to be identical across those STMs, and the
+    values from the first STM in the list are retained.
+    If a time-only variable exists in only a subset of the STMs, it will be included in the final concatenated STM, as
+    it is a data variable for all STMs.
+
+    Parameters
+    ----------
+    stm_list : list[xr.Dataset]
+        List of xarray Datasets representing STMs to concatenate.
+
+    Returns
+    -------
+    xr.Dataset
+        Concatenated STM along the space dimension.
+    """
+    # Check stm_list is a non-empty list
+    assert isinstance(stm_list, list) and len(stm_list) > 0, "stm_list must be a non-empty list of xarray Datasets."
+
+    # All STMs should have space and time dimensions
+    for idx, stm in enumerate(stm_list):
+        assert "space" in stm.dims, f"STM at index {idx} does not have 'space' dimension."
+        assert "time" in stm.dims, f"STM at index {idx} does not have 'time' dimension."
+
+    # All coordinates of all STMs should be 1D, only space or time dimension
+    for idx, stm in enumerate(stm_list):
+        for coord in stm.coords:
+            assert len(stm[coord].dims) == 1, f"Coordinate '{coord}' in STM at index {idx} is not 1D."
+
+    # Identify and temporarily convert time-only variables to coords to prevent broadcasting during concat
+    time_only_vars = set()
+    for ds in stm_list:
+        time_only_vars.update(v for v in ds.data_vars if ds[v].dims == ("time",))
+
+    # Set identified time-only variables as coordinates (preferring network ones if they exist in both)
+    for idx, ds in enumerate(stm_list):
+        for var in time_only_vars:
+            if var in ds.data_vars:
+                ds = ds.set_coords(var)
+        stm_list[idx] = ds
+
+    # Concat in space dimension with all (space, time) data variables, filling NaNs for missing vars
+    stm_dens_pnts_output = xr.concat(stm_list, dim="space", data_vars="all")
+
+    # Reset coordinates back to data variables
+    stm_dens_pnts_output = stm_dens_pnts_output.reset_coords(names=time_only_vars, drop=False)
+
+    return stm_dens_pnts_output
