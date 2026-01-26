@@ -808,7 +808,9 @@ def concatenate_stms(
     # All coordinates of all STMs should be 1D, only space or time dimension
     for idx, stm in enumerate(stm_list):
         for coord in stm.coords:
-            assert len(stm[coord].dims) == 1, f"Coordinate '{coord}' in STM at index {idx} is not 1D (dims {stm[coord].dims})."
+            assert (
+                len(stm[coord].dims) == 1
+            ), f"Coordinate '{coord}' in STM at index {idx} is not 1D (dims {stm[coord].dims})."
 
     # Identify and temporarily convert time-only variables to coords to prevent broadcasting during concat
     time_only_vars = set()
