@@ -139,7 +139,7 @@ def test_convert_geographic_coords_to_euclidean():
     assert y.shape == (3,)
 
 
-def test_concate_multiple_stms():
+def test_concatenate_multiple_stms():
     """Test concatenation of multiple STM datasets."""
     # Make three sample STM datasets
     space_dim_size = [3, 7, 4]
@@ -175,7 +175,7 @@ def test_concate_multiple_stms():
             concatenated_stm[f"time_var_{idx}"].values,
             list_stms[idx][f"time_var_{idx}"].values,
         )
-        np.testing.assert_array_equal(
-            concatenated_stm["time_var_common"].values,
-            list_stms[0]["time_var_common"].values,
-        )
+    np.testing.assert_array_equal(
+        concatenated_stm["time_var_common"].values,
+        list_stms[0]["time_var_common"].values,
+    )
