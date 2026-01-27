@@ -45,9 +45,6 @@ satellite = "s1"
 track = 37
 direction = "dsc"
 
-# STM save path
-stm_save_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_stm.zarr'
-
 # Crop in time
 first_date = datetime(2020, 1, 1)
 last_date = datetime(2025, 9, 1)
@@ -111,7 +108,8 @@ orbit_file = "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/GitHub_rep
 
 # output settings
 filter_dict = {"h": [-2000, 2000]}
-output_types = ["csv_web_portal", "csv", "shapefile", "convex_hull"]  # csv, csv_web_portal, shapefile, convex_hull
+output_types = ["csv_web_portal", "csv", "shapefile", "convex_hull", "zarr"]
+# csv, csv_web_portal, shapefile, convex_hull, zarr
 
 # csv export
 csv_save_path = "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037.csv"
@@ -134,6 +132,8 @@ shape_point_annotation_label = f"nl_amsterdam_{satellite}_{direction}_t{track:0>
 chull_save_path = "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_chull.shp"
 chull_projection = "RD"  # RD or WGS84
 
+# zarr export
+stm_save_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_result.zarr'
 
 # 1. Project setup
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Reading SLC stack...")
@@ -532,5 +532,9 @@ if "convex_hull" in output_types:
         save_path=chull_save_path,
         projection=chull_projection,
     )
+
+if "zarr" in output_types:
+    print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Exporting to zarr...")
+    stm_densified.to_zarr(stm_save_path, mode="w")
 
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Finished!")
