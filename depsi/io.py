@@ -903,14 +903,14 @@ def export_to_skygeo_portal(
     # then generate the JSON file
     json_dict = {
         "acquisition_period": f"{min(fmt_dates)} - {max(fmt_dates)}",
-        "number_of_observations_in_time": len(fmt_dates),
-        "number_of_measurements_in_AoI": len(list(stm["space"].values)),
+        "number_of_observations_in_time": str(len(fmt_dates)),
+        "number_of_measurements_in_AoI": str(len(list(stm["space"].values))),
         "resolution": f"{round(azimuth_spacing, 1)} x {round(range_spacing, 1)} m",
         "deformation_direction": "Line of Sight" if ts_proj == "los" else "Projected onto Vertical",
         "DEM": "SRTM",
         "reference_point_location": ref_pts,
         "satellite_name": satellite,
-        "satellite_incidence_angle": round(np.mean(stm.local_incidence_angle.values)[0], 1),
+        "satellite_incidence_angle": str(round(np.mean(stm.local_incidence_angle.values.flatten()), 1)),
         "satellite_pass_direction": asc_dsc,
         "processing_id": point_annotation_label,
         "DePSI_version": "DePSI_group",
