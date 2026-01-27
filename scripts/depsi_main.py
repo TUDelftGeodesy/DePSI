@@ -433,8 +433,6 @@ stm_densified, model_parameter_layer_names = estimate_model_params(
     key_time="temporal_baseline"
 )
 
-import pdb; pdb.set_trace()
-
 # 6b. Geocoding
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Starting geocoding...")
 latlonh = radar_to_latlonh(
@@ -514,6 +512,7 @@ if "csv_web_portal" in output_types:
         azimuth_spacing=metadata["azimuth_pixel_spacing"],
         range_spacing=metadata["range_pixel_spacing"],
         model_names=model_types,
+        model_parameter_layer_names=model_parameter_layer_names,
     )
 
 if "shapefile" in output_types:

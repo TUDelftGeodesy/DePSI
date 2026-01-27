@@ -26,8 +26,8 @@ ALLOWED_KNMI_DATA_COLUMNS = ["TG", "TN", "TX", "RH", "RXH", "EV24"]
 SHAPEFILE_PROJECTIONS = {
     "RD": {
         "EPSG_code": "EPSG:28992",
-        "x_crd_layer": "rd_x",
-        "y_crd_layer": "rd_y",
+        "x_crd_layer": "x_euclidean_proj_epsg28992",
+        "y_crd_layer": "y_euclidean_proj_epsg28992",
     },
     "WGS84": {
         "EPSG_code": "EPSG:4326",
@@ -82,6 +82,7 @@ PORTAL_CSV_FIELD_NAMES = [
     "pnt_range",
     "pnt_quality",
     "pnt_linear",
+    "FUNC_INSERTS_MODEL_PARAMS_HERE",
     "FUNC_INSERTS_TIMESERIES_HERE",
     "FUNC_INSERTS_AMP_HERE",
 ]
@@ -608,7 +609,7 @@ def get_targets_from_slc(slc_stack, targets):
 def export_to_csv(
     stm: xr.Dataset,
     save_path: str,
-    model_parameter_layer_names: tuple,
+    model_parameter_layer_names: tuple | list,
     ts_proj: Literal["los", "vertical"],
     point_annotation_label: str,
 ) -> None:
@@ -635,6 +636,23 @@ def export_to_csv(
         - If unknown or unmodeled parameters have been added to `CSV_FIELD_NAMES`
     """
     assert save_path.split(".")[-1] == "csv", f"Provided path {save_path} is not a csv!"
+
+    # Store everything into memory
+    for layer in ["azimuth", "range", "lat", "lon", "h", "amplitude", "stc"]:
+        stm[layer].data = stm[layer].values
+    for layer in ["unwrapped_phase"]:  # these ones are projectable onto the vertical
+        if ts_proj == "los":
+            stm[layer].data = stm[layer].values
+        else:
+            stm[f"{layer}_pov"].data = stm[f"{layer}_pov"].values
+    for layer in model_parameter_layer_names:
+        if ts_proj == "los":
+            stm[layer].data = stm[layer].values
+        else:
+            stm[f"{layer}_pov"].data = stm[f"{layer}_pov"].values
+    for layer in ["x_euclidean_proj_epsg28992", "y_euclidean_proj_epsg28992"]:  # these ones might not exist
+        if layer in stm.variables.keys():
+            stm[layer].data = stm[layer].values
 
     fmt_dates = [npdatetime64_to_datetime(date).strftime("%Y%m%d") for date in stm["time"].values]
     headers = []
@@ -666,13 +684,13 @@ def export_to_csv(
                     r = int(stm.range.sel(space=point).values)
                     point_values.append(f"{point_annotation_label}_az{az:0>8d}r{r:0>8d}")
                 case "X (RD) [m]":
-                    if "rd_x" in stm.variables.keys():
-                        point_values.append(round(float(stm.rd_x.sel(space=point).values), 2))
+                    if "x_euclidean_proj_epsg28992" in stm.variables.keys():
+                        point_values.append(round(float(stm.x_euclidean_proj_epsg28992.sel(space=point).values), 2))
                     else:
                         point_values.append("NULL")
                 case "Y (RD) [m]":
-                    if "rd_y" in stm.variables.keys():
-                        point_values.append(round(float(stm.rd_y.sel(space=point).values), 2))
+                    if "y_euclidean_proj_epsg28992" in stm.variables.keys():
+                        point_values.append(round(float(stm.y_euclidean_proj_epsg28992.sel(space=point).values), 2))
                     else:
                         point_values.append("NULL")
                 case "H [m-NAP]":
@@ -726,7 +744,7 @@ def export_to_csv(
                     else:
                         raise ValueError(f"Requested header {value} but this is undefined!")
 
-        f.write(",".join(point_values) + "\n")
+        f.write(",".join([str(p) for p in point_values]) + "\n")
     f.close()
 
 
@@ -740,6 +758,7 @@ def export_to_skygeo_portal(
     azimuth_spacing: float,
     range_spacing: float,
     model_names: list[str],
+    model_parameter_layer_names: list | tuple,
 ) -> None:
     """Export an STM to CSV-format.
 
@@ -763,6 +782,8 @@ def export_to_skygeo_portal(
         The pixel spacing in range direction
     model_names: list[str]
         List containing the names of all models applied in the parameter estimation
+    model_parameter_layer_names: tuple | list
+        Tuple or list with the layer names of the model parameters in the order that they will be stored in the csv
 
     Raises
     ------
@@ -773,6 +794,20 @@ def export_to_skygeo_portal(
     """
     assert save_path.split(".")[-1] == "csv", f"Provided path {save_path} is not a csv!"
 
+    # Store everything into memory
+    for layer in ["azimuth", "range", "lat", "lon", "h", "amplitude", "local_incidence_angle"]:
+        stm[layer].data = stm[layer].values
+    for layer in ["pnt_velocity", "unwrapped_phase"]:  # these ones are projectable onto the vertical
+        if ts_proj == "los":
+            stm[layer].data = stm[layer].values
+        else:
+            stm[f"{layer}_pov"].data = stm[f"{layer}_pov"].values
+    for layer in model_parameter_layer_names:
+        if ts_proj == "los":
+            stm[layer].data = stm[layer].values
+        else:
+            stm[f"{layer}_pov"].data = stm[f"{layer}_pov"].values
+
     # first generate the CSV file
 
     if save_path.split(".")[-2].split("_")[-1] != "portal":
@@ -780,7 +815,7 @@ def export_to_skygeo_portal(
 
     fmt_dates = [npdatetime64_to_datetime(date).strftime("%Y%m%d") for date in stm["time"].values]
     headers = []
-    for name in CSV_FIELD_NAMES:
+    for name in PORTAL_CSV_FIELD_NAMES:
         if "FUNC_INSERTS" not in name:
             headers.append(name)
         else:
@@ -791,6 +826,10 @@ def export_to_skygeo_portal(
                 case "FUNC_INSERTS_AMP_HERE":
                     for fmt_date in fmt_dates:
                         headers.append(f"a_{fmt_date}")
+                case "FUNC_INSERTS_MODEL_PARAMS_HERE":
+                    for param in model_parameter_layer_names:
+                        if param != "pnt_height":  # this one already gets added in a different place
+                            headers.append(param)
                 case _:
                     raise ValueError(f"Function insert {name} requested but not defined!")
 
@@ -808,7 +847,7 @@ def export_to_skygeo_portal(
                     point_values.append(round(float(stm.lat.sel(space=point).values), 8))
                 case "pnt_lon":
                     point_values.append(round(float(stm.lon.sel(space=point).values), 8))
-                case "pnt_height" | "pnt_demheight":
+                case "pnt_demheight":
                     point_values.append(round(float(stm.h.sel(space=point).values), 3))
                 case "pnt_azimuth":
                     point_values.append(int(stm.azimuth.sel(space=point).values))
@@ -819,32 +858,42 @@ def export_to_skygeo_portal(
                     point_values.append(1)
                 case "pnt_linear":
                     if ts_proj == "vertical":
-                        point_values.append(round(float(stm.pnt_velocity_pov.sel(space=point).values), 3))
+                        point_values.append(round(float(stm.pnt_velocity_pov.sel(space=point).values), 5))
                     elif ts_proj == "los":
-                        point_values.append(round(float(stm.pnt_velocity.sel(space=point).values), 3))
+                        point_values.append(round(float(stm.pnt_velocity.sel(space=point).values), 5))
                 case _:
                     if value[:2] == "d_" and value[2:] in fmt_dates:
                         if ts_proj == "vertical":
                             point_values.append(
                                 round(
-                                    float(stm.unwrapped_phase_pov.sel(space=point).isel(time=fmt_dates.index(value))), 5
+                                    float(
+                                        stm.unwrapped_phase_pov.sel(space=point).isel(time=fmt_dates.index(value[2:]))
+                                    ),
+                                    5,
                                 )
                             )
                         elif ts_proj == "los":
                             point_values.append(
-                                round(float(stm.unwrapped_phase.sel(space=point).isel(time=fmt_dates.index(value))), 5)
+                                round(
+                                    float(stm.unwrapped_phase.sel(space=point).isel(time=fmt_dates.index(value[2:]))), 5
+                                )
                             )
                     elif value[:2] == "a_" and value[2:] in fmt_dates:
                         point_values.append(
                             round(float(stm.amplitude.sel(space=point).isel(time=fmt_dates.index(value[2:]))), 3)
                         )
+                    elif value in model_parameter_layer_names:
+                        if ts_proj == "vertical":
+                            point_values.append(round(float(stm[f"{value}_pov"].sel(space=point).values), 5))
+                        elif ts_proj == "los":
+                            point_values.append(round(float(stm[value].sel(space=point).values), 5))
                     else:
                         raise ValueError(f"Requested header {value} but this is undefined!")
 
-        f.write(",".join(point_values) + "\n")
+        f.write(",".join([str(p) for p in point_values]) + "\n")
     f.close()
 
-    ref_point_idx = [stm.ref_pnt_idx]
+    ref_point_idx = [stm.idx_refpnt]
     ref_pt_coords = [
         f"{round(float(stm.lat.sel(space=point).values), 8)}, {round(float(stm.lon.sel(space=point).values), 8)}"
         for point in ref_point_idx
@@ -908,6 +957,10 @@ def export_to_shapefile(
     assert projection in SHAPEFILE_PROJECTIONS.keys(), f"Unknown requested projection {projection}!"
     assert save_path.split(".")[-1] == "shp", f"Provided path {save_path} is not a shapefile!"
 
+    # Store coordinates into memory
+    for layer in [SHAPEFILE_PROJECTIONS[projection]["x_crd_layer"], SHAPEFILE_PROJECTIONS[projection]["y_crd_layer"]]:
+        stm[layer].data = stm[layer].values
+
     schema = []
     for name in SHAPEFILE_FIELD_NAMES["properties"]:
         if "FUNC_INSERTS" not in name:
@@ -938,13 +991,13 @@ def export_to_shapefile(
                     r = int(stm.range.sel(space=point).values)
                     properties[value].append(f"{point_annotation_label}_az{az:0>8d}r{r:0>8d}")
             case "X (RD) [m]":
-                if "rd_x" in stm.variables.keys():
-                    properties[value] = [round(float(val), 2) for val in stm.rd_x.values]
+                if "x_euclidean_proj_epsg28992" in stm.variables.keys():
+                    properties[value] = [round(float(val), 2) for val in stm.x_euclidean_proj_epsg28992.values]
                 else:
                     properties[value] = [np.nan for _ in stm["space"].values]
             case "Y (RD) [m]":
-                if "rd_y" in stm.variables.keys():
-                    properties[value] = [round(float(val), 2) for val in stm.rd_y.values]
+                if "y_euclidean_proj_epsg28992" in stm.variables.keys():
+                    properties[value] = [round(float(val), 2) for val in stm.y_euclidean_proj_epsg28992.values]
                 else:
                     properties[value] = [np.nan for _ in stm["space"].values]
             case "H [m-NAP]":
