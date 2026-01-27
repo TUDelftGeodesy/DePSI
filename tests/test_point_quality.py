@@ -11,7 +11,7 @@ def test_stc():
     stm = xr.Dataset(
         data_vars={
             "amplitude": (("space", "time"), np.ones((5, 10))),
-            "ts_los": (("space", "time"), rng.random((5, 10))),
+            "unwrapped_phase": (("space", "time"), rng.random((5, 10))),
             "rd_x": (("space"), np.array([150000, 150010, 150100, 150200, 150300])),
             "rd_y": (("space"), np.array([450000, 450010, 450100, 450200, 450300])),
         },
@@ -46,7 +46,7 @@ def test_stc_geographic():
     stm = xr.Dataset(
         data_vars={
             "amplitude": (("space", "time"), np.ones((5, 10))),
-            "ts_los": (("space", "time"), rng.random((5, 10))),
+            "unwrapped_phase": (("space", "time"), rng.random((5, 10))),
             "lon": (("space"), np.array([5.31433, 5.31448, 5.31579, 5.31725, 5.31870])),
             "lat": (("space"), np.array([52.03831, 52.03840, 52.03921, 52.04011, 52.04101])),
         },
