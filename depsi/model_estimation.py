@@ -65,9 +65,6 @@ def estimate_model_params(
     list
         Parameter layer names
     """
-    # Rechunk so no chunks in space or time
-    stm = stm.chunk({"space": -1, "time": -1})
-
     # Get model list with a standard order as in MODEL_NAMES_PARAMS
     if models is None:
         # Default model components
@@ -116,7 +113,9 @@ def estimate_model_params(
     kwargs = {
         "models": models,
         "m2ph": m2ph,
-        "time": stm[key_time].values,  # Time coordinate is broadcasted to each point. It's evaluated since it's 1d and small.
+        "time": stm[
+            key_time
+        ].values,  # Time coordinate is broadcasted to each point. It's evaluated since it's 1d and small.
         "st_args_keys": st_args_keys,  # pass the keys for st_args to identify them in the function
     }
 
