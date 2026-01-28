@@ -535,6 +535,7 @@ if "convex_hull" in output_types:
 
 if "zarr" in output_types:
     print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Exporting to zarr...")
+    stm_densified = stm_densified.chunk({"time": 100, "space": "auto"})
     stm_densified.to_zarr(stm_save_path, mode="w")
 
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Finished!")
