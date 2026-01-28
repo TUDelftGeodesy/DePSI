@@ -1509,8 +1509,9 @@ def periodogram(
 
     # check if the core dimension is not chunked, and unchunk it if necessary
     chunk_sizes = dict(zip(list(stm.sizes), stm.chunks, strict=False))
-    if chunk_sizes["time"] != 1:
-        stm = stm.chunk({"time": -1})
+    if "time" in chunk_sizes.keys():
+        if chunk_sizes["time"] != 1:
+            stm = stm.chunk({"time": -1})
 
     # There are 5 outputs from _periodogram_arc
     # The first two are np arrays with time dimension
