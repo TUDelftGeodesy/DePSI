@@ -42,15 +42,15 @@ SHAPEFILE_FIELD_NAMES = {
         "X (RD) [m]",
         "Y (RD) [m]",
         "H [m-NAP]",
-        "Lat (WGS84) [deg]",
-        "Lon (WGS84) [deg]",
-        "h (WGS84) [m]",
+        "Lat [deg]",
+        "Lon [deg]",
+        "h_WGS84[m]",
         "Azimuth",
         "Range",
         "FUNC_INSERTS_MODEL_PARAMS_HERE",
-        "Std linear [mm/y]",
+        "Std linear",
         "STC [mm]",
-        "Coherence [0-1]",
+        "Coherence",
         "Std [mm]",
     ],
 }
@@ -1006,22 +1006,22 @@ def export_to_shapefile(
                     properties[value] = [np.nan for _ in stm["space"].values]
                 else:
                     properties[value] = [np.nan for _ in stm["space"].values]
-            case "Lat (WGS84) [deg]":
+            case "Lat [deg]":
                 properties[value] = [round(float(val), 8) for val in stm.lat.values]
-            case "Lon (WGS84) [deg]":
+            case "Lon [deg]":
                 properties[value] = [round(float(val), 8) for val in stm.lon.values]
-            case "h (WGS84) [m]":
+            case "h_WGS84[m]":
                 properties[value] = [round(float(val), 3) for val in stm.h.values]
             case "Azimuth":
                 properties[value] = [int(val) for val in stm.azimuth.values]
             case "Range":
                 properties[value] = [int(val) for val in stm.range.values]
-            case "Std linear [mm/y]":
+            case "Std linear":
                 # properties[value] = [round(float(val), 3) for val in stm.linear_std.values]
                 properties[value] = [np.nan for _ in stm["space"].values]
             case "STC [mm]":
                 properties[value] = [round(float(val), 3) for val in stm.stc.values]
-            case "Coherence [0-1]":
+            case "Coherence":
                 # properties[value] = [round(float(val), 4) for val in stm.coherence.values]
                 properties[value] = [np.nan for _ in stm["space"].values]
             case "Std [mm]":
@@ -1029,7 +1029,7 @@ def export_to_shapefile(
                 properties[value] = [np.nan for _ in stm["space"].values]
             case _:
                 if value in model_parameter_layer_names:
-                    properties[value] = [round(float(val), 5) for val in stm[value].values]
+                    properties[value[:10]] = [round(float(val), 5) for val in stm[value].values]
                 else:
                     raise ValueError(f"Requested header {value} but this is undefined!")
 
