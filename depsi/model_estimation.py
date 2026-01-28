@@ -116,7 +116,7 @@ def estimate_model_params(
     kwargs = {
         "models": models,
         "m2ph": m2ph,
-        "time": stm[key_time].values,  # Time coordinate is broadcasted to each point
+        "time": stm[key_time].values,  # Time coordinate is broadcasted to each point. It's evaluated since it's 1d and small.
         "st_args_keys": st_args_keys,  # pass the keys for st_args to identify them in the function
     }
 
