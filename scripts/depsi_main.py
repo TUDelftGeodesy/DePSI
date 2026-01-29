@@ -55,7 +55,7 @@ reference_point_index = None
 # PS selection method
 ps_selection_method = "nmad"
 threshold = 0.15
-chunks_ps_selection = 1000
+chunks_ps_selection = 5000
 start_date_ps_selection = None
 end_date_ps_selection = None
 
