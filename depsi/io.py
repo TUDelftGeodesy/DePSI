@@ -48,7 +48,7 @@ SHAPEFILE_FIELD_NAMES = {
         "Azimuth",
         "Range",
         "FUNC_INSERTS_MODEL_PARAMS_HERE",
-        "Std linear",
+        "Std vel",
         "STC [mm]",
         "Coherence",
         "Std [mm]",
