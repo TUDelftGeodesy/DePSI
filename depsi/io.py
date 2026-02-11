@@ -1016,7 +1016,7 @@ def export_to_shapefile(
                 properties[value] = [int(val) for val in stm.azimuth.values]
             case "Range":
                 properties[value] = [int(val) for val in stm.range.values]
-            case "Std linear":
+            case "Std vel":
                 # properties[value] = [round(float(val), 3) for val in stm.linear_std.values]
                 properties[value] = [np.nan for _ in stm["space"].values]
             case "STC [mm]":
