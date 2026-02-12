@@ -8,10 +8,10 @@ import pandas as pd
 import pyproj
 
 try:
-    from datetime import UTC, datetime
+    from datetime import UTC, datetime, timedelta
 except ImportError:  # UTC can only be imported from Python 3.11 onwards
     import warnings
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     UTC = timezone.utc
     warnings.warn(
@@ -199,7 +199,8 @@ def npdatetime64_to_datetime(date: np.datetime64, tz_aware: bool = True) -> date
     timestamp = (date - np.datetime64("1970-01-01T00:00:00")) / np.timedelta64(1, "s")
     dt_obj = datetime.fromtimestamp(timestamp, UTC)
     if not tz_aware:
-        dt_obj = datetime.strptime(dt_obj.strftime("%Y%m%d:%H%M%S"), "%Y%m%d:%H%M%S")
+        microseconds = timedelta(microseconds=dt_obj.microsecond)
+        dt_obj = datetime.strptime(dt_obj.strftime("%Y%m%d:%H%M%S"), "%Y%m%d:%H%M%S") + microseconds
     return dt_obj
 
 

@@ -465,7 +465,7 @@ def setup_kriging_system(
             da,
             variogram_model=variogram_model,
             variogram_parameters=variogram_parameters,
-            exact_values=False,  #  If True, results would be input values at input locations
+            exact_values=False,  # If True, results would be input values at input locations
             drift_terms=variogram_args.get("drift_terms", "regional_linear"),  # this activates drift of order 1
         )
 
@@ -665,7 +665,9 @@ def solve_kriging(
 
     # Check if ps_atmosphere has 'x' and 'y' coordinates
     if "x" not in ps_atmosphere.coords or "y" not in ps_atmosphere.coords:
-        raise ValueError("ps_atmosphere must have coordinates 'x' and 'y' in Euclidean mode.")
+        raise ValueError(
+            f"ps_atmosphere must have coordinates 'x' and 'y' in Euclidean mode, currently has {ps_atmosphere.coords}."
+        )
 
     # Remove "time" because we will apply kriging per time step
     input_core_dims = list(ps_atmosphere.sizes)
@@ -735,7 +737,7 @@ def _check_coords_metadata(coords: Mapping[str, xr.DataArray], metadata: dict):
         )
 
 
-def _fix_coords(ds: xr.Dataset | xr.DataArray, coords_metadata: dict) -> xr.Dataset:
+def _fix_coords(ds: xr.Dataset | xr.DataArray, coords_metadata: dict | Mapping[str, str]) -> xr.Dataset:
     """Fix the coordinates of a Dataset based on the provided metadata.
 
     This function renames the coordinates of the Dataset to 'x' and 'y' based
@@ -751,6 +753,7 @@ def _fix_coords(ds: xr.Dataset | xr.DataArray, coords_metadata: dict) -> xr.Data
         - 'mode': either 'euclidean' or 'geographic'.
         - 'x_label': the name of the x coordinate in the original Dataset.
         - 'y_label': the name of the y coordinate in the original Dataset.
+        - 'space_dim_name': the name of the space dimension in the STM. `None` if no space dimension exists.
 
     Returns
     -------
@@ -762,12 +765,14 @@ def _fix_coords(ds: xr.Dataset | xr.DataArray, coords_metadata: dict) -> xr.Data
 
     x, y = ds.coords[coords_metadata["x_label"]].values, ds.coords[coords_metadata["y_label"]].values
 
-    # convert geographic to euclidean if needed
+    # convert geographic to Euclidean if needed
     if coords_metadata["mode"] == "geographic":
         x, y = convert_geographic_coords_to_euclidean(x, y)
 
-    if "space" in ds.dims:
-        ds = ds.assign_coords({"x": ("space", x), "y": ("space", y)})
+    if coords_metadata["space_dim_name"] in ds.dims and coords_metadata["space_dim_name"] is not None:
+        ds = ds.assign_coords(
+            {"x": (coords_metadata["space_dim_name"], x), "y": (coords_metadata["space_dim_name"], y)}
+        )
     else:
         ds = ds.assign_coords(x=x, y=y)
     return ds
@@ -778,10 +783,21 @@ def estimate_atmosphere_phase(
     prediction_coords: xr.Dataset | xr.DataArray = None,
     psc_phase_residuals="psc_phase_residuals",
     atmosphere_mother: int | str = "atmosphere_mother",
+    key_Btemporal: str = "Btemp",
     unmodeled_displacement_args: dict = None,
     kriging_args: dict = None,
-    stm_coords_metadata: Mapping[str, str] = {"mode": "euclidean", "x_label": "x", "y_label": "y"},
-    prediction_coords_metadata: Mapping[str, str] = {"mode": "euclidean", "x_label": "x", "y_label": "y"},
+    stm_coords_metadata: Mapping[str, str] = {
+        "mode": "euclidean",
+        "x_label": "x",
+        "y_label": "y",
+        "space_dim_name": "space",
+    },
+    prediction_coords_metadata: Mapping[str, str] = {
+        "mode": "euclidean",
+        "x_label": "x",
+        "y_label": "y",
+        "space_dim_name": "space",
+    },
 ) -> xr.Dataset:
     """Estimate the atmosphere phase.
 
@@ -805,6 +821,9 @@ def estimate_atmosphere_phase(
         A string indicating the name of the variable in the stm Dataset
         that contains the atmosphere mother or an integer indicating the time
         index of the atmosphere.
+    key_Btemporal:
+        String indicating the name of the variable in the stm Dataset that
+        contains the temporal baselines.
     unmodeled_displacement_args: dict
         Keyword arguments for the `estimate_unmodeled_displacement` function.
         The allowed keys are: `filter_length`, `sampling_rate`, `filter_type`.
@@ -851,7 +870,7 @@ def estimate_atmosphere_phase(
         unmodeled_displacement_args = {}
     unmodeled_disp = estimate_unmodeled_displacement(
         psc_phase_residuals=stm[psc_phase_residuals],
-        baseline_years=stm["time"],
+        baseline_years=stm[key_Btemporal],
         **unmodeled_displacement_args,
     )
 

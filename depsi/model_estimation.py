@@ -25,7 +25,7 @@ def estimate_model_params(
     key_h2ph: str = "h2ph",
     key_time: str = "time",
     wavelength: float | None = None,
-) -> xr.Dataset:
+) -> tuple[xr.Dataset, list]:
     """Estimate model parameters for all points in the Space-Time Matrix.
 
     The model estimation is performed based on observation values and specified model components.
@@ -59,7 +59,11 @@ def estimate_model_params(
     xr.Dataset
         Dataset containing estimated model parameters for each point.
         All estimated parameters are assumed to only have "space" dimension.
-        In case a model has multiple parameters, they will be splitted into separate variables.
+        In case a model has multiple parameters, they will be split into separate variables.
+        The layers `expected_phases_yhat` (y_hat=Ax_hat) and `phase_residuals` (e_hat=y-y_hat) are also
+        added into the dataset, with dimensions ("space", "time")
+    list
+        Parameter layer names
     """
     # Get model list with a standard order as in MODEL_NAMES_PARAMS
     if models is None:
@@ -109,7 +113,9 @@ def estimate_model_params(
     kwargs = {
         "models": models,
         "m2ph": m2ph,
-        "time": stm[key_time].data,  # Time coordinate is broadcasted to each point
+        "time": stm[
+            key_time
+        ].values,  # Time coordinate is broadcasted to each point. It's evaluated since it's 1d and small.
         "st_args_keys": st_args_keys,  # pass the keys for st_args to identify them in the function
     }
 
@@ -119,22 +125,26 @@ def estimate_model_params(
         param_names.extend(MODEL_NAMES_PARAMS[model])
 
     # Apply model estimation for each point
-    params = xr.apply_ufunc(
+    params, yhat, ehat = xr.apply_ufunc(
         _estimate_model_params_one_point,
         stm[key_observations],
         *st_args,
         input_core_dims=[["time"]] * (len(st_args) + 1),  # all args plus key_observations have core dim "time"
-        output_core_dims=[[]] * len(param_names),  # per point per parameter, the output is a scalar
+        output_core_dims=[["params"], ["time"], ["time"]],
         vectorize=True,
         dask="parallelized",
-        output_dtypes=[float] * len(param_names),
+        output_dtypes=[float, float, float],
+        dask_gufunc_kwargs={"output_sizes": {"params": len(param_names), "time": len(stm.time)}},
         kwargs=kwargs,
     )
 
     # Assign parameter names to the output dataset
     stm_out = stm.copy()
     for i, param_name in enumerate(param_names):
-        stm_out[param_name] = params[i]
+        stm_out = stm_out.assign({param_name: (["space"], params.isel(params=i).data)})
+    stm_out = stm_out.assign(
+        {"expected_phases_yhat": (["space", "time"], yhat.data), "phase_residuals": (["space", "time"], ehat.data)}
+    )
 
     return stm_out, param_names
 
@@ -169,6 +179,10 @@ def _estimate_model_params_one_point(
             A = np.hstack((A, A_model))
 
     # Estimate model parameters using least squares
-    params, _, _, _ = np.linalg.lstsq(A, obs, rcond=None)
+    # currently without Qyy
+    # params, _, _, _ = np.linalg.lstsq(A, obs)  # rcond=None
+    params = np.linalg.inv(A.T @ A) @ A.T @ obs
+    y_hat = A @ params
+    e_hat = obs - y_hat.reshape(obs.shape)
 
-    return tuple(params)
+    return params.T, y_hat, e_hat

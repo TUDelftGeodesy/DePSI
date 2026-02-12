@@ -494,7 +494,7 @@ class TestEstimateAtmospherePhase:
         stm = da.to_dataset(name="psc_phase_residuals")
         stm["atmosphere_mother"] = (("time", "space"), rng.random((len(da.time), len(da.space))))
 
-        results = estimate_atmosphere_phase(stm)
+        results = estimate_atmosphere_phase(stm, key_Btemporal="time")
         assert isinstance(results, xr.Dataset)
         assert "atmosphere_predicted" in results
         assert "atmosphere_sigmasq" in results
@@ -508,6 +508,7 @@ class TestEstimateAtmospherePhase:
 
         results = estimate_atmosphere_phase(
             stm,
+            key_Btemporal="time",
             unmodeled_displacement_args={
                 "filter_length": 2,
                 "sampling_rate": 1,
