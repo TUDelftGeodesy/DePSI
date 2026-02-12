@@ -65,7 +65,7 @@ CSV_FIELD_NAMES = [
     "Azimuth",
     "Range",
     "FUNC_INSERTS_MODEL_PARAMS_HERE",
-    "Std linear [mm/y]",
+    "Std velocity [mm/y]",
     "STC [mm]",
     "Coherence [0-1]",
     "Std [mm]",
@@ -709,7 +709,7 @@ def export_to_csv(
                     point_values.append(int(stm.azimuth.sel(space=point).values))
                 case "Range":
                     point_values.append(int(stm.range.sel(space=point).values))
-                case "Std linear [mm/y]":
+                case "Std velocity [mm/y]":
                     # point_values.append(round(float(stm.linear_std.sel(space=point).values), 3))
                     point_values.append("NULL")
                 case "STC [mm]":
