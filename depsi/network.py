@@ -386,12 +386,7 @@ def _mht_network_adjustment(
         raise NotImplementedError(f"arc_estimation_method '{arc_estimation_method}' is not supported.")
     invQy = np.diag(1 / Qyy_diag)
 
-    try:
-        _, echeck = _solve_float_ambiguities(A, stm_arcs["ambiguities"].data, invQy)  # Estimate initial residual
-    except np.linalg.LinAlgError:
-        _, echeck = _solve_float_ambiguities(
-            A, stm_arcs["ambiguities"].data, invQy, sparse_mode=True
-        )  # Estimate initial residual
+    _, echeck = _solve_float_ambiguities(A, stm_arcs["ambiguities"].data, invQy)  # Estimate initial residual
     OMT = np.diag(echeck.T @ invQy @ echeck).sum()  # Test statistics for Overall Model Test
 
     # Setup test parameters
@@ -470,14 +465,7 @@ def _mht_network_adjustment(
             idx_refpnt,
             sparse_mode,
         )  # Update A matrix
-        try:
-            _, echeck = _solve_float_ambiguities(
-                A, stm_arcs_updated["ambiguities"].data, invQy
-            )  # Estimate residual again
-        except np.linalg.LinAlgError:
-            _, echeck = _solve_float_ambiguities(
-                A, stm_arcs_updated["ambiguities"].data, invQy, sparse_mode=True
-            )  # Estimate residual again
+        _, echeck = _solve_float_ambiguities(A, stm_arcs_updated["ambiguities"].data, invQy)  # Estimate residual again
         OMT = np.diag(echeck.T @ invQy @ echeck).sum()  # Update OMT statistic
 
         niter += 1

@@ -8,6 +8,7 @@ from depsi.network import (
     _ensure_network_min_connections,
     _network_relation_matrix,
     _remove_network_points_min_connections,
+    _solve_float_ambiguities,
     form_network,
     spatial_integration,
 )
@@ -427,3 +428,15 @@ class TestNetworkUnwrap:
 
         assert A.shape == A_exp.shape
         assert np.all(A.todense() == A_exp)
+
+
+def test__solve_float_ambiguities_rankdeficient_a():
+    A = np.array(
+        [[1, 1, 3], [1, 2, 3], [1, 3, 3], [1, 2, 3]]
+    )  # x1 and x3 are linearly dependent (columns 1 and 3). A.T @ A is singular
+    invQy = np.eye(4)
+    y = np.array([1, 2, 3, 2.5]).T
+    acheck, echeck = _solve_float_ambiguities(A, y, invQy)
+    print(acheck, echeck)
+    assert acheck.shape == (3,)
+    assert echeck.shape == (4,)
