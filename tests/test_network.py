@@ -437,6 +437,5 @@ def test__solve_float_ambiguities_rankdeficient_a():
     invQy = np.eye(4)
     y = np.array([1, 2, 3, 2.5]).T
     acheck, echeck = _solve_float_ambiguities(A, y, invQy)
-    print(acheck, echeck)
     assert acheck.shape == (3,)
     assert echeck.shape == (4,)
