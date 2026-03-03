@@ -46,20 +46,21 @@ track = 37
 direction = "dsc"
 
 # Crop in time
-first_date = datetime(2020, 1, 1)
-last_date = datetime(2025, 9, 1)
+first_date = datetime(2014, 12, 19)
+last_date = datetime(2025, 10, 22)
 
-mother_epoch = "auto"
+mother_epoch = datetime(2020, 3, 28)
 reference_point_index = None
 
 # PS selection method
-ps_selection_method = "nmad"
-threshold = 0.15
+ps_selection_method = "nad"
+threshold = 0.5
 chunks_ps_selection = 5000
 start_date_ps_selection = None
 end_date_ps_selection = None
 
 # Sidelobes
+do_sidelobe_detection = False
 max_pixel_dist = 2
 min_correlation = 0.90
 
@@ -68,8 +69,8 @@ network_crs = "radar"
 network_x_crds = "azimuth"
 network_y_crds = "range"
 min_point_distance = 20  # pixels if radar, otherwise units of the EPSG code in network_crs
-max_arc_length = 0.001  # degrees (lat/lon)
-network_formation_method="redundant"
+max_arc_length = 0.045  # degrees (lat/lon)
+network_formation_method = "redundant"
 min_network_links = 16
 network_partition_number = 8
 network_dphase_method = "subtract"
@@ -98,8 +99,8 @@ atmo_variogram_drift_terms = "regional_linear"
 n_densification_connections = 1
 
 # Spatio-temporal consistency
-stc_min_dist = 50  # meters
-stc_max_dist = 200  # meters
+stc_min_dist = 30  # meters
+stc_max_dist = 100  # meters
 
 # Viewing geometry
 orbit_mode = "IWS"
@@ -118,7 +119,7 @@ csv_point_annotation_label = f"nl_amsterdam_{satellite}_{direction}_t{track:0>3d
 
 # csv web portal export
 csv_web_save_path = (
-    "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_portal.csv"
+    "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_portal_val.csv"
 )
 csv_web_ts_proj = "los"
 csv_web_point_annotation_label = f"nl_amsterdam_{satellite}_{direction}_t{track:0>3d}"
@@ -175,10 +176,15 @@ stm = stm.assign({"temporal_baseline": (
 
 # sidelobe removal
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Removing sidelobes...")
-side_lobes_array, _ = detect_side_lobes(stm, max_pixel_dist, min_correlation, "sd_complex", "sd_amplitude_unnormalized")
+if do_sidelobe_detection:
+    side_lobes_array, _ = detect_side_lobes(stm, max_pixel_dist, min_correlation, "sd_complex", "sd_amplitude_unnormalized")
 
-mask_sidelobes = np.ones(len(stm.space), dtype=bool)
-mask_sidelobes[side_lobes_array] = False
+    mask_sidelobes = np.ones(len(stm.space), dtype=bool)
+    mask_sidelobes[side_lobes_array] = False
+
+else:
+    print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Skipping sidelobe detection...")
+    mask_sidelobes = np.ones(len(stm.space), dtype=bool)
 
 stm = stm.isel(space=mask_sidelobes)
 
@@ -248,6 +254,9 @@ stm_network_arcs = form_network(
     dphase_method=network_dphase_method,
 )
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Formed first-order network with {len(stm_network_pnts.space)} "
+      f"points and {len(stm_network_arcs.space)} arcs.")
+
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating ambiguities through periodogram...")
 _, ambiguities, _, _, ens_coh = periodogram(
     stm_network_arcs,
@@ -259,6 +268,7 @@ _, ambiguities, _, _, ens_coh = periodogram(
 stm_network_arcs["ambiguities"] = ambiguities
 stm_network_arcs["temp_coh"] = ens_coh
 
+stm_network_pnts = stm_network_pnts.compute()
 stm_network_arcs = stm_network_arcs.compute()
 
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Integrating the spatial network...")
@@ -390,6 +400,9 @@ stm_network_arcs = form_network(
     dphase_method=network_dphase_method,
 )
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Formed first-order network with {len(stm_network_pnts.space)} "
+      f"points and {len(stm_network_arcs.space)} arcs.")
+
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating ambiguities through periodogram...")
 _, ambiguities, _, _, ens_coh = periodogram(
     stm_network_arcs,
@@ -401,6 +414,7 @@ _, ambiguities, _, _, ens_coh = periodogram(
 stm_network_arcs["ambiguities"] = ambiguities
 stm_network_arcs["temp_coh"] = ens_coh
 
+stm_network_pnts = stm_network_pnts.compute()
 stm_network_arcs = stm_network_arcs.compute()
 
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Integrating the spatial network...")

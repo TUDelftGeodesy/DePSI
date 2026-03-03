@@ -502,7 +502,10 @@ def _mht_network_adjustment_reject_one(
     _, echeck = _solve_float_ambiguities(A, y, invQy)
 
     # Post-priori VCM of residuals
-    Qxx = np.linalg.inv(A.T @ invQy @ A)
+    try:
+        Qxx = np.linalg.inv(A.T @ invQy @ A)
+    except np.linalg.LinAlgError:
+        Qxx = np.linalg.pinv(A.T @ invQy @ A)  # matrix is singular, so pseudo inverse is necessary
     Qecheck = Qyy - (A @ Qxx @ A.T)  # TODO: check how to handle large Qecheck
 
     # Test statistics TT1 per arc
@@ -692,7 +695,10 @@ def _solve_float_ambiguities(A, y, invQy, sparse_mode: bool = False):
 
         acheck = lsmr(y.T).T  # float ambiguity estimation
     else:
-        acheck = np.linalg.inv(A.T @ invQy @ A) @ (A.T @ invQy @ y)
+        try:
+            acheck = np.linalg.inv(A.T @ invQy @ A) @ (A.T @ invQy @ y)
+        except np.linalg.LinAlgError:
+            acheck = np.linalg.pinv(A.T @ invQy @ A) @ (A.T @ invQy @ y)
     echeck = y - A @ acheck  # residuals estimation
 
     return acheck, echeck
