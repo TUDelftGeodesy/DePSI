@@ -133,8 +133,8 @@ shape_point_annotation_label = f"nl_amsterdam_{satellite}_{direction}_t{track:0>
 chull_save_path = "/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_chull.shp"
 chull_projection = "RD"  # RD or WGS84
 
-# zarr export
-stm_save_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_result.zarr'
+# zarr export & checkpoints (NEEDS {}!)
+stm_save_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_{}.zarr'
 
 # 1. Project setup
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Reading SLC stack...")
@@ -368,6 +368,13 @@ stm["phase_minus_atmo"] = (stm["phase"] - stm["atmosphere_predicted"] + np.pi) %
 stm["sd_phase_minus_atmo"] = \
     (stm["phase_minus_atmo"] - stm["phase_minus_atmo"].sel(time=stm.ps_sd_mother) + np.pi) % (2 * np.pi) - np.pi
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Checkpoint 1: saving to zarr...")
+stm = stm.chunk({"time": 100, "space": "auto"})
+stm.to_zarr(stm_save_path.format("4atmo"), mode="w")
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Checkpoint 1: Saved! Reloading...")
+stm = xarray.open_zarr(stm_save_path.format("4atmo"))
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Checkpoint 1: Re-loaded!")
+
 # 3b. Network construction
 stm_atmo_corr_without_mother_epoch = stm.isel(time=non_mother)
 stm_atmo_corr_without_mother_epoch = stm_atmo_corr_without_mother_epoch.chunk({"time": -1})
@@ -447,6 +454,13 @@ stm_densified, model_parameter_layer_names = estimate_model_params(
     key_time="temporal_baseline"
 )
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Checkpoint 2: saving to zarr...")
+stm_densified = stm_densified.chunk({"time": 100, "space": "auto"})
+stm_densified.to_zarr(stm_save_path.format("5dens"), mode="w")
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Checkpoint 2: Saved! Reloading...")
+stm_densified = xarray.open_zarr(stm_save_path.format("5dens"))
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Checkpoint 2: Re-loaded!")
+
 # 6b. Geocoding
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Starting geocoding...")
 latlonh = radar_to_latlonh(
@@ -503,6 +517,13 @@ for param in model_parameter_layer_names:
     stm_densified[param].data = stm_densified[param].values
     stm_densified[f"{param}_pov"] = stm_densified[param] / np.cos(np.radians(stm_densified["local_incidence_angle"]))
 
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Checkpoint 3. Exporting to zarr...")
+stm_densified = stm_densified.chunk({"time": 100, "space": "auto"})
+stm_densified.to_zarr(stm_save_path.format("result"), mode="w")
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Checkpoint 3: Saved! Reloading...")
+stm_densified = xarray.open_zarr(stm_save_path.format("result"))
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Checkpoint 3: Re-loaded!")
+
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Starting export...")
 if "csv" in output_types:
     print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Exporting to CSV...")
@@ -546,10 +567,5 @@ if "convex_hull" in output_types:
         save_path=chull_save_path,
         projection=chull_projection,
     )
-
-if "zarr" in output_types:
-    print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Exporting to zarr...")
-    stm_densified = stm_densified.chunk({"time": 100, "space": "auto"})
-    stm_densified.to_zarr(stm_save_path, mode="w")
 
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Finished!")
