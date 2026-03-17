@@ -5,7 +5,7 @@ import xarray as xr
 from scipy.spatial import KDTree
 
 from depsi.arc_estimation import periodogram
-from depsi.utils import compute_phase_difference, generate_pnt_uids
+from depsi.utils import compute_phase_difference, concatenate_stms, generate_pnt_uids
 
 
 def densification(
@@ -167,8 +167,11 @@ def densification(
     stm_dens_pnts_output["local_temp_coh"] = (("space",), temporal_coh_arc.data)
 
     # Attach network points to the output
-    # Join in space dimension, keep all data variables
-    stm_dens_pnts_output = xr.concat([stm_network_pnts, stm_dens_pnts_output], dim="space", data_vars="all")
+    # Concatenate in space dimension
+    # For variables with (space,) or (space, time) dimensions, missing values will be filled with NaNs
+    # For time-only variables, the values will be directly copied from stm_network_pnts or stm_dens_pnts_output
+    # If a time-only variable exists in both STMs, it is assumed to be identical across those STMs.
+    stm_dens_pnts_output = concatenate_stms([stm_network_pnts, stm_dens_pnts_output])
 
     return stm_dens_pnts_output
 

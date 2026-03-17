@@ -23,8 +23,6 @@ import numpy
 import pyproj
 from numpy.polynomial.chebyshev import chebval
 
-from depsi.utils import npdatetime64_to_datetime
-
 logger = logging.getLogger(__name__)
 
 SPEED_OF_LIGHT = 299792458.0
@@ -45,12 +43,12 @@ VALIDATION_NONORBIT_KEYS = {
 }
 
 
-def seconds_of_day(t: datetime.datetime) -> float:
+def seconds_of_day(t: numpy.datetime64) -> float:
     """Calculate the number of seconds elapsed since the start of the day for a given epoch.
 
     Parameters
     ----------
-    t: datetime.datetime
+    t: numpy.datetime64
         Epoch to be converted
 
     Returns
@@ -58,7 +56,9 @@ def seconds_of_day(t: datetime.datetime) -> float:
     float
         Number of seconds elapsed since the start of that day
     """
-    total_seconds = (t - t.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()
+    day_start = t.astype("datetime64[D]")
+    total_seconds = (t - day_start).astype("timedelta64[ns]").astype(float) * 1e-9
+
     return total_seconds
 
 
@@ -544,8 +544,9 @@ def radar_to_time(
         Time radar coordinates, azimuth as datetime.datetime and range in 2-way seconds.
 
     """
-    azimuth_time = npdatetime64_to_datetime(metadata["first_azimuth_time"], tz_aware=False) + numpy.array(
-        [datetime.timedelta(seconds=az / metadata["pulse_repetition_frequency"]) for az in azimuth_coords]
+    azimuth_time = metadata["first_azimuth_time"] + numpy.array(
+        azimuth_coords / metadata["pulse_repetition_frequency"] * 1e9,
+        dtype="timedelta64[ns]",
     )
     range_time = range_coords / metadata["range_sampling_rate"] + metadata["first_range_time"]
     return azimuth_time, range_time

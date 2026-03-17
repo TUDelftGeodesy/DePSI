@@ -809,6 +809,7 @@ def compute_spatiotemporal_consistency(
     x_crd_layer_name: str,
     y_crd_layer_name: str,
     coordinate_type: Literal["euclidean", "geographic"],
+    key_unwrapped_phase: str = "unwrapped_phase",
 ) -> xr.Dataset:
     """Calculate the spatio-temporal consistency of each point in the STM.
 
@@ -829,6 +830,8 @@ def compute_spatiotemporal_consistency(
         Name of the layer containing the Y-coordinates
     coordinate_type: Literal["euclidean", "geographic"]
         Whether the coordinates in the provided layers are Euclidean (e.g. RD) or Geographic (e.g. latitude/longitude)
+    key_unwrapped_phase: str, default "unwrapped_phase"
+        Name of the layer containing the unwrapped phases
 
     Returns
     -------
@@ -851,7 +854,9 @@ def compute_spatiotemporal_consistency(
         if len(buffer_indices) == 0:
             stcs.append(np.nan)
         else:
-            buffer_ts_sd = stm.ts_los.isel(space=buffer_indices) - stm.ts_los.isel(space=point)
+            buffer_ts_sd = stm[key_unwrapped_phase].isel(space=buffer_indices) - stm[key_unwrapped_phase].isel(
+                space=point
+            )
             buffer_ts_sd_comp = buffer_ts_sd.values
             buffer_ts_dd = buffer_ts_sd_comp[:, :-1] - buffer_ts_sd_comp[:, 1:]
             buffer_ts_stcs = np.std(buffer_ts_dd, axis=1).flatten()
