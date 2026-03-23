@@ -8,7 +8,7 @@ from scipy.optimize import curve_fit
 
 import depsi.model_definition as md
 import depsi.stats as est
-from depsi.utils import get_distance, wrap_phase
+from depsi.utils import get_distance
 
 # Constants
 STOP_HEIGHT = 1e-4  # Stop search step for height [m]
@@ -1608,10 +1608,14 @@ def _periodogram_arc(
     step_height = init_step_height  # Initial step size for height
     step_vel = init_step_vel  # Initial step size for velocity
     search_space = init_search_space  # Initial search space for height and velocity
+    param_height = search_space[0, 0]
+    param_vel = search_space[0, 1]
+    coh_best = 0.0 + 0.0j
     count = 0
     while step_height > STOP_HEIGHT and step_vel > STOP_VEL and count < MAX_COUNT:
         # Calculate the wrapped model phase for all candidates
-        phs_model = wrap_phase(B @ search_space.T)  # size n_obs x n_search
+        # No explicit wrapping is needed here because exp(i*phi) is 2pi-periodic.
+        phs_model = B @ search_space.T  # size n_obs x n_search
 
         # Calculate the temporal coherence for all search candidates
         # Expand dimension of phs_obs_wrapped to facilitate broadcasting
@@ -1649,7 +1653,8 @@ def _periodogram_arc(
 
     # Calculate the modelled phase and unwrapped phase
     model_est = B @ np.array([param_height, param_vel]) + np.angle(coh_best)  # Absolute modelled phase
-    dphase_new = wrap_phase(phs_obs_wrapped - model_est)  # Wrapped modelled phase
+    # Use principal-value residual via complex argument for robust wrapping.
+    dphase_new = np.angle(np.exp(1j * (phs_obs_wrapped - model_est)))
     ambiguities = np.round((model_est + dphase_new - phs_obs_wrapped) / (2 * np.pi))  # Ambiguities
     phs_obs_unwrapped = 2 * np.pi * ambiguities + phs_obs_wrapped  # Unwrapped phase
     param = rhs @ phs_obs_unwrapped  # [height_est, velocity_est]
