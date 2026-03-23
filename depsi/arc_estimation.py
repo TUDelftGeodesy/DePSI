@@ -1400,12 +1400,12 @@ def periodogram(
     key_h2ph: str,
     key_Btemporal: str,
     std_obs: float = 1.0,
-    std_height: float = 50.0,
-    std_vel: float = 0.02,
+    std_height: float = 30.0,
+    std_vel: float = 0.005,
     init_height: float = 0.0,
     init_vel: float = 0.0,
     init_step_height: float = 1.0,
-    init_step_vel: float = 1e-3,
+    init_step_vel: float = 0.001,
     min_steps: int = 10,
 ):
     """Periodogram algorithm.
