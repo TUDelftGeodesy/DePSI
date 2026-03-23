@@ -1655,7 +1655,6 @@ def _periodogram_arc(
 
     # Calculate the modelled phase and unwrapped phase
     model_est = B @ np.array([param_height, param_vel]) + np.angle(coh_best)  # Absolute modelled phase
-    # Use principal-value residual via complex argument for robust wrapping.
     dphase_new = wrap_phase(phs_obs_wrapped - model_est)  # Wrapped modelled phase
     ambiguities = np.round((model_est + dphase_new - phs_obs_wrapped) / (2 * np.pi))  # Ambiguities
     phs_obs_unwrapped = 2 * np.pi * ambiguities + phs_obs_wrapped  # Unwrapped phase
