@@ -1614,8 +1614,7 @@ def _periodogram_arc(
     count = 0
     while step_height > STOP_HEIGHT and step_vel > STOP_VEL and count < MAX_COUNT:
         # Calculate the wrapped model phase for all candidates
-        # No explicit wrapping is needed here because exp(i*phi) is 2pi-periodic.
-        phs_model = B @ search_space.T  # size n_obs x n_search
+        phs_model = wrap_phase(B @ search_space.T)  # size n_obs x n_search
 
         # Calculate the temporal coherence for all search candidates
         # Expand dimension of phs_obs_wrapped to facilitate broadcasting
