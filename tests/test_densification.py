@@ -17,7 +17,7 @@ m2ph = -4 * np.pi / wavelength
 az_range = (0, 100)  # azimuth coordinate range
 rg_range = (0, 100)  # range coordinate range
 h2ph_range = (1e-5, 1e-4)  # height to phase conversion factor range
-vel_range = (-0.01, 0.01)  # velocity range in m/yr
+vel_range = (-0.005, 0.005)  # velocity range in m/yr
 height_range = (1e-1, 1e0)  # height range in meters
 time_range = 3.0  # time span in years
 
