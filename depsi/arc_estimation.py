@@ -1404,8 +1404,8 @@ def periodogram(
     std_vel: float = 0.02,
     init_height: float = 0.0,
     init_vel: float = 0.0,
-    init_step_height: float = 1.0,
-    init_step_vel: float = 1e-3,
+    init_step_height: float = 3.0,
+    init_step_vel: float = 2e-3,
     min_steps: int = 10,
 ):
     """Periodogram algorithm.
