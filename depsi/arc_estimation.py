@@ -1534,6 +1534,9 @@ def periodogram(
     ) / stm[key_dphase].sizes["time"]  # n_arcs x n_search
     coh_idx_all_arcs = np.argmax(np.abs(coh_search_space_all_arcs), axis=1)  # n_arcs
 
+    # Implicitly compute best coh index if dask array
+    coh_idx_all_arcs = coh_idx_all_arcs.compute() if isinstance(coh_idx_all_arcs, da.Array) else coh_idx_all_arcs
+
     # Build xr.DataArray for the initial height and velocity of all arcs
     da_init_height_all_arcs = xr.DataArray(
         init_search_space[coh_idx_all_arcs, 0],
