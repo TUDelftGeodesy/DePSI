@@ -1443,11 +1443,11 @@ def periodogram(
     init_vel : float, optional
         Initial value for the velocity parameter in meters per year, by default 0.0.
     init_step_height : float, optional
-        Initial step size for the height parameter in meters, by default 1.0.
+        Initial step size for the height parameter in meters, by default 3.0.
         This value sets the resolution of the initial search space for the height parameter.
         After every search, the step size will be reduced by a factor of 10.
     init_step_vel : float, optional
-        Initial step size for the velocity parameter in meters per year, by default 1e-3.
+        Initial step size for the velocity parameter in meters per year, by default 2e-3.
         This value sets the resolution of the initial search space for the velocity parameter.
         After every search, the step size will be reduced by a factor of 10.
     min_steps : int, optional
