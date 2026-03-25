@@ -2,6 +2,7 @@
 
 from typing import Literal
 
+import dask.array as da
 import numpy as np
 import xarray as xr
 from scipy.optimize import curve_fit
@@ -1517,10 +1518,18 @@ def periodogram(
     # Perform one search for all arcs, and get the best initial estimates for height and velocity per arc
     # This is motivated by the fact that the initial search space is the largest, and can be vectorized for all arcs
     # First iteration, candidate modeled phases are identical for all arcs
-    phs_model = B @ init_search_space.T  # n_obs x n_search
-    # Large arr min_steps with n_arcs x n_obs x n_search
+    # The redisuals phase_residual_all_arcs is a large array with n_arcs x n_obs x n_search
     # so use .data to avoid loading it into memory if it is a dask array
-    phase_residual_all_arcs = stm[key_dphase].data[:, :, None] - phs_model[None, :, :]
+    dphase_obs = stm[key_dphase].data[:, :, None]  # n_arcs x n_obs x 1
+    phs_model = B @ init_search_space.T  # n_obs x n_search
+    if isinstance(dphase_obs, da.Array):
+        # If dphase_obs is a dask array
+        # Also chunk the phs_model in the search dimension, making each chunk about 100 MB
+        # No chunk in observation dimension since we need to do sum in that dimension
+        chunksize_search = max(1, 100 * 1024**2 // (dphase_obs.chunks[0][0] * n_obs * dphase_obs.dtype.itemsize))
+        phs_model = da.from_array(phs_model, chunks=(n_obs, chunksize_search))
+    phs_model = phs_model[None, :, :]  # 1 x n_obs x n_search
+    phase_residual_all_arcs = dphase_obs - phs_model
     coh_search_space_all_arcs = (
         np.cos(phase_residual_all_arcs).sum(axis=1) + 1j * np.sin(phase_residual_all_arcs).sum(axis=1)
     ) / stm[key_dphase].sizes["time"]  # n_arcs x n_search
