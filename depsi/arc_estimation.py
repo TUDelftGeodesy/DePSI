@@ -1637,11 +1637,11 @@ def _periodogram_arc(
         - Estimated velocity: in meters per year, scalar, dtype np.float64.
         - Temporal coherence: unitless float number, norm of the complex coherence, scalar, dtype np.float64.
     """
+    # Assign initial values for the search
     step_height = init_step_height
     step_vel = init_step_vel
     param_height = init_height
     param_vel = init_vel
-    count = 0
 
     # Calculate the initial temporal coherence for the initial height and velocity,
     # in case the search loop is not entered
@@ -1650,6 +1650,7 @@ def _periodogram_arc(
     coh_best = (np.cos(phase_residual).sum() + 1j * np.sin(phase_residual).sum()) / phs_obs_wrapped.shape[0]
 
     # Search loop
+    count = 0
     while step_height > STOP_HEIGHT and step_vel > STOP_VEL and count < MAX_COUNT:
         # Build search space
         search_space = _build_periodogram_search_space(
