@@ -1517,7 +1517,7 @@ def periodogram(
     # Perform one search for all arcs, and get the best initial estimates for height and velocity per arc
     # This is motivated by the fact that the initial search space is the largest, and can be vectorized for all arcs
     # First iteration, candidate modeled phases are identical for all arcs
-    # The redisuals phase_residual_all_arcs is a large array with n_arcs x n_obs x n_search
+    # The residuals phase_residual_all_arcs is a large array with n_arcs x n_obs x n_search
     # so use .data to avoid loading it into memory if it is a dask array
     dphase_obs = stm[key_dphase].data[:, :, None]  # n_arcs x n_obs x 1
     phs_model = B @ init_search_space.T  # n_obs x n_search
@@ -1549,7 +1549,7 @@ def periodogram(
     # We are broadcasting _periodogram_arc on stm[key_dphase] and stm[key_h2ph] along the space dimension
     # The height and velocity are scalars
     # Therefore, we are only calling it on the "time" dimension for the first two parameters
-    # So we have the input_core_dims as  [["time"], ["time", [], []]
+    # So we have the input_core_dims as [["time"], ["time"], [], []]
     input_core_dims = [["time"], ["time"], [], []]
 
     # There are 5 outputs from _periodogram_arc
