@@ -14,12 +14,8 @@ def get_test_consts(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
 
     rng = np.random.default_rng(42)  # reset every time for reproducibility
     h2ph = rng.random((n_obs, n_arcs)) * 1e-3  # fixed
-    velo = (velo_min - velo_max) * rng.random(
-        (n_arcs,)
-    ) + velo_max  # velo [-0.02, 0.005), uniform distribution, in meters per year
-    height = (height_min - height_max) * rng.random(
-        (n_arcs,)
-    ) + height_max  # height [-1, 5), uniform distribution, in meters
+    velo = (velo_min - velo_max) * rng.random((n_arcs,)) + velo_max  # uniform distribution, in meters per year
+    height = (height_min - height_max) * rng.random((n_arcs,)) + height_max  # uniform distribution, in meters
     return m2ph, n_obs, n_arcs, velo, height, h2ph
 
 
