@@ -1503,9 +1503,8 @@ def periodogram(
     rhs = np.linalg.inv(N) @ B.T @ np.linalg.inv(Qyy)
 
     # check if the time dimension is not chunked, and unchunk it if necessary
-    chunk_sizes = dict(zip(list(stm.sizes), stm.chunks, strict=False))
-    if "time" in chunk_sizes.keys():
-        if chunk_sizes["time"] != 1:
+    if "time" in stm.chunks.keys():
+        if len(stm.chunks["time"]) != 1:
             stm = stm.chunk({"time": -1})
 
     # Build initial search space for height and velocity
