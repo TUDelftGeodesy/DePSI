@@ -14,12 +14,8 @@ def get_test_consts(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
 
     rng = np.random.default_rng(42)  # reset every time for reproducibility
     h2ph = rng.random((n_obs, n_arcs)) * 1e-3  # fixed
-    velo = (velo_min - velo_max) * rng.random(
-        (n_arcs,)
-    ) + velo_max  # velo [-0.02, 0.005), uniform distribution, in meters per year
-    height = (height_min - height_max) * rng.random(
-        (n_arcs,)
-    ) + height_max  # height [-1, 5), uniform distribution, in meters
+    velo = (velo_min - velo_max) * rng.random((n_arcs,)) + velo_max  # uniform distribution, in meters per year
+    height = (height_min - height_max) * rng.random((n_arcs,)) + height_max  # uniform distribution, in meters
     return m2ph, n_obs, n_arcs, velo, height, h2ph
 
 
@@ -59,6 +55,45 @@ def get_arcs_stm(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
 )
 def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     arcs = get_arcs_stm(n_obs, n_arcs, velo_min, velo_max, height_min, height_max)
+    std_height = 5  # standard deviation for height
+    std_vel = 0.01  # standard deviation for velocity
+
+    results = periodogram(
+        stm=arcs,
+        key_dphase="phs_obs_wrapped",
+        key_Btemporal="years",
+        key_h2ph="h2ph_values",
+        std_height=std_height,
+        std_vel=std_vel,
+        init_step_height=abs(height_max - height_min) / 10,
+        init_step_vel=abs(velo_max - velo_min) / 10,
+        init_height=(height_min + height_max) / 2,
+        init_vel=(velo_min + velo_max) / 2,
+    )
+
+    m2ph, n_obs, n_arcs, velo, height, h2ph = get_test_consts(n_obs, n_arcs, velo_min, velo_max, height_min, height_max)
+    assert len(results) == 5  # 5 outputs: unwrapped phs, ambiguities, height, vel, coherence
+    assert results[0].shape == (n_arcs, n_obs)  # unwrapped phase
+    assert results[1].shape == (n_arcs, n_obs)  # ambiguities
+    assert results[2].shape == (n_arcs,)  # height
+    assert results[3].shape == (n_arcs,)  # velocity
+    assert results[4].shape == (n_arcs,)  # coherence
+
+    # Solved height and velocity should be close to the true values, within the standard deviation
+    assert np.allclose(results[2].values, arcs["height"].values, atol=std_height)
+    assert np.allclose(results[3].values, arcs["velo"].values, atol=std_vel)
+
+
+@pytest.mark.parametrize("chunk_space, chunk_time", [(10, -1), (10, 5)])
+def test_periodogram_chunk(chunk_space, chunk_time):
+    n_obs = 21
+    n_arcs = 22
+    velo_min = -5e-3
+    velo_max = 2e-4
+    height_min = -7
+    height_max = 5
+    arcs = get_arcs_stm(n_obs, n_arcs, velo_min, velo_max, height_min, height_max)
+    arcs = arcs.chunk({"space": chunk_space, "time": chunk_time})
     std_height = 5  # standard deviation for height
     std_vel = 0.01  # standard deviation for velocity
 
