@@ -15,6 +15,7 @@ from depsi.utils import get_distance, wrap_phase
 STOP_HEIGHT = 1e-4  # Stop search step for height [m]
 STOP_VEL = 1e-7  # Stop search step for velocity [m/y]
 MAX_COUNT = 10  # Maximum number of search iterations
+THRES_TEMP_COH_MEMORY = 500  # unit MB. Threshold to use dask array for temporal coherence calculation in periodogram.
 
 
 def _compute_dd(sd_complex_i, sd_complex_j, sd_quality_i, sd_quality_j):
@@ -1476,9 +1477,9 @@ def periodogram(
     m2ph = -4 * np.pi / wavelength
 
     # Make sure year time only contains the time dimension
-    assert (len(stm[key_Btemporal].dims) == 1) and (
-        "time" in stm[key_Btemporal].dims
-    ), "year time should and only should contain the 'time' dimension."
+    assert (len(stm[key_Btemporal].dims) == 1) and ("time" in stm[key_Btemporal].dims), (
+        "year time should and only should contain the 'time' dimension."
+    )
 
     # Load year time in memory
     Btemporal = stm[key_Btemporal].values
@@ -1519,16 +1520,25 @@ def periodogram(
     # First iteration, candidate modeled phases are identical for all arcs
     # The residuals phase_residual_all_arcs is a large array with n_arcs x n_obs x n_search
     # so use .data to avoid loading it into memory if it is a dask array
-    dphase_obs = stm[key_dphase].data[:, :, None]  # n_arcs x n_obs x 1
+    dphase_obs = stm[key_dphase].data  # n_arcs x n_obs x 1
+
+    # If the memory size of phase_residual_all_arcs will exceed the threshold
+    # chunk dphase_obs and init_search_space to enable computation
+    mem_size_estimation = (
+        dphase_obs.shape[0] * dphase_obs.shape[1] * init_search_space.shape[0] * dphase_obs.dtype.itemsize
+    ) / (1024**2)  # in MB
+    if mem_size_estimation > THRES_TEMP_COH_MEMORY:
+        dphase_obs, init_search_space = _chunk_for_temp_coh_compute(dphase_obs, init_search_space)
+
+    # Compute modelled phase for all arcs and all search candidates
     phs_model = B @ init_search_space.T  # n_obs x n_search
-    if isinstance(dphase_obs, da.Array):
-        # If dphase_obs is a dask array
-        # Also chunk the phs_model in the search dimension, making each chunk about 100 MB
-        # No chunk in observation dimension since we need to do sum in that dimension
-        chunksize_search = max(1, 100 * 1024**2 // (dphase_obs.chunks[0][0] * n_obs * dphase_obs.dtype.itemsize))
-        phs_model = da.from_array(phs_model, chunks=(n_obs, chunksize_search))
+
+    # Expand dimensions and compute the phase residuals for all arcs and all search candidates
+    dphase_obs = dphase_obs[:, :, None]  # n_arcs x n_obs x 1
     phs_model = phs_model[None, :, :]  # 1 x n_obs x n_search
     phase_residual_all_arcs = dphase_obs - phs_model
+
+    # Find the best initial height and velocity based on the temporal coherence
     coh_search_space_all_arcs = (
         np.cos(phase_residual_all_arcs).sum(axis=1) + 1j * np.sin(phase_residual_all_arcs).sum(axis=1)
     ) / stm[key_dphase].sizes["time"]  # n_arcs x n_search
@@ -1700,6 +1710,22 @@ def _periodogram_arc(
     param = rhs @ phs_obs_unwrapped  # [height_est, velocity_est]
 
     return phs_obs_unwrapped, ambiguities, param[0], param[1], np.abs(coh_best)
+
+
+def _chunk_for_temp_coh_compute(phs_obs_wrapped, search_space):
+    """Chunk observations and search space for temporal coherence computation."""
+    if isinstance(phs_obs_wrapped, da.Array):  # Existing chunk size for the arc dimension
+        chunk_arcs = phs_obs_wrapped.chunks[0][0]
+    else:
+        # If phs_obs_wrapped is not a dask array, chunk it in the arc dimension, making each chunk about 10 MB
+        chunk_arcs = max(1, 10 * 1024**2 // (phs_obs_wrapped.shape[1] * phs_obs_wrapped.dtype.itemsize))
+        phs_obs_wrapped = da.from_array(phs_obs_wrapped, chunks=(chunk_arcs, phs_obs_wrapped.shape[1]))
+    # Decide the chunk size for the search space dimension
+    # making each n_arcs x n_obs x n_search chunk about 100 MB
+    chunk_searches = max(1, 100 * 1024**2 // (chunk_arcs * phs_obs_wrapped.shape[1] * phs_obs_wrapped.dtype.itemsize))
+    search_space = da.from_array(search_space, chunks=(chunk_searches, 2))
+
+    return phs_obs_wrapped, search_space
 
 
 def _build_periodogram_search_space(init_height, init_vel, step_height, step_vel, n_steps_height, n_steps_vel):
