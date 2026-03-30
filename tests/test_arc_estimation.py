@@ -1,8 +1,9 @@
+import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.arc_estimation import _build_periodogram_search_space, periodogram
+from depsi.arc_estimation import _build_periodogram_search_space, _chunk_for_temp_coh_compute, periodogram
 from depsi.utils import wrap_phase
 
 WAVELENGTH_S1 = 0.055465763  # m, sentinel-1 wavelength used for testing
@@ -161,3 +162,27 @@ def test_build_periodogram_search_space():
     search_space = search_space[np.lexsort((search_space[:, 1], search_space[:, 0]))]
 
     assert np.allclose(search_space, expect_search_space)
+
+
+@pytest.mark.parametrize("n_arcs, n_obs, n_search", [(1000, 50, 20), (3001, 111, 50)])
+def test_chunk_for_temp_coh_compute_dask(n_arcs, n_obs, n_search):
+    phase = da.ones((n_arcs, n_obs))  # dummy phase data
+    search_space = np.random.rand(n_search, 2)
+
+    phase_chunked, search_space_chunked = _chunk_for_temp_coh_compute(phase, search_space)
+
+    assert isinstance(phase_chunked, da.Array)
+    assert isinstance(search_space_chunked, da.Array)
+    assert phase_chunked.chunks == phase.chunks  # phase chunking should not change
+
+
+@pytest.mark.parametrize("n_arcs, n_obs, n_search", [(11, 7, 21)])
+def test_chunk_for_temp_coh_compute_np(n_arcs, n_obs, n_search):
+    phase = np.ones((n_arcs, n_obs))  # dummy phase data
+    search_space = np.random.rand(n_search, 2)
+
+    phase_chunked, search_space_chunked = _chunk_for_temp_coh_compute(phase, search_space)
+
+    # The np arrays should be converted to dask arrays
+    assert isinstance(phase_chunked, da.Array)
+    assert isinstance(search_space_chunked, da.Array)
