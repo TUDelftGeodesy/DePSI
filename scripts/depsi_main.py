@@ -263,6 +263,8 @@ if start_at_checkpoint < 1:
           f"points and {len(stm_network_arcs.space)} arcs.")
 
     print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating ambiguities through periodogram...")
+    stm_network_arcs = stm_network_arcs.chunk({"space": 1000})
+
     _, ambiguities, _, _, ens_coh = periodogram(
         stm_network_arcs,
         key_dphase='d_phase',
@@ -273,6 +275,7 @@ if start_at_checkpoint < 1:
     stm_network_arcs["ambiguities"] = ambiguities
     stm_network_arcs["temp_coh"] = ens_coh
 
+    print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Computing periodogram output...")
     stm_network_pnts = stm_network_pnts.compute()
     stm_network_arcs = stm_network_arcs.compute()
 
@@ -421,6 +424,8 @@ if start_at_checkpoint < 2:
           f"points and {len(stm_network_arcs.space)} arcs.")
 
     print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating ambiguities through periodogram...")
+    stm_network_arcs = stm_network_arcs.chunk({"space": 1000})
+
     _, ambiguities, _, _, ens_coh = periodogram(
         stm_network_arcs,
         key_dphase='d_phase',
@@ -430,6 +435,8 @@ if start_at_checkpoint < 2:
                 )
     stm_network_arcs["ambiguities"] = ambiguities
     stm_network_arcs["temp_coh"] = ens_coh
+
+    print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Computing periodogram output...")
 
     stm_network_pnts = stm_network_pnts.compute()
     stm_network_arcs = stm_network_arcs.compute()
