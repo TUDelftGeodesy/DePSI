@@ -1,8 +1,9 @@
+import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.arc_estimation import _build_periodogram_search_space, periodogram
+from depsi.arc_estimation import _build_periodogram_search_space, _chunk_for_temp_coh_compute, periodogram
 from depsi.utils import wrap_phase
 
 WAVELENGTH_S1 = 0.055465763  # m, sentinel-1 wavelength used for testing
@@ -14,12 +15,8 @@ def get_test_consts(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
 
     rng = np.random.default_rng(42)  # reset every time for reproducibility
     h2ph = rng.random((n_obs, n_arcs)) * 1e-3  # fixed
-    velo = (velo_min - velo_max) * rng.random(
-        (n_arcs,)
-    ) + velo_max  # velo [-0.02, 0.005), uniform distribution, in meters per year
-    height = (height_min - height_max) * rng.random(
-        (n_arcs,)
-    ) + height_max  # height [-1, 5), uniform distribution, in meters
+    velo = (velo_min - velo_max) * rng.random((n_arcs,)) + velo_max  # uniform distribution, in meters per year
+    height = (height_min - height_max) * rng.random((n_arcs,)) + height_max  # uniform distribution, in meters
     return m2ph, n_obs, n_arcs, velo, height, h2ph
 
 
@@ -88,6 +85,45 @@ def test_periodogram(n_obs, n_arcs, velo_min, velo_max, height_min, height_max):
     assert np.allclose(results[3].values, arcs["velo"].values, atol=std_vel)
 
 
+@pytest.mark.parametrize("chunk_space, chunk_time", [(10, -1), (10, 5)])
+def test_periodogram_chunk(chunk_space, chunk_time):
+    n_obs = 21
+    n_arcs = 22
+    velo_min = -5e-3
+    velo_max = 2e-4
+    height_min = -7
+    height_max = 5
+    arcs = get_arcs_stm(n_obs, n_arcs, velo_min, velo_max, height_min, height_max)
+    arcs = arcs.chunk({"space": chunk_space, "time": chunk_time})
+    std_height = 5  # standard deviation for height
+    std_vel = 0.01  # standard deviation for velocity
+
+    results = periodogram(
+        stm=arcs,
+        key_dphase="phs_obs_wrapped",
+        key_Btemporal="years",
+        key_h2ph="h2ph_values",
+        std_height=std_height,
+        std_vel=std_vel,
+        init_step_height=abs(height_max - height_min) / 10,
+        init_step_vel=abs(velo_max - velo_min) / 10,
+        init_height=(height_min + height_max) / 2,
+        init_vel=(velo_min + velo_max) / 2,
+    )
+
+    m2ph, n_obs, n_arcs, velo, height, h2ph = get_test_consts(n_obs, n_arcs, velo_min, velo_max, height_min, height_max)
+    assert len(results) == 5  # 5 outputs: unwrapped phs, ambiguities, height, vel, coherence
+    assert results[0].shape == (n_arcs, n_obs)  # unwrapped phase
+    assert results[1].shape == (n_arcs, n_obs)  # ambiguities
+    assert results[2].shape == (n_arcs,)  # height
+    assert results[3].shape == (n_arcs,)  # velocity
+    assert results[4].shape == (n_arcs,)  # coherence
+
+    # Solved height and velocity should be close to the true values, within the standard deviation
+    assert np.allclose(results[2].values, arcs["height"].values, atol=std_height)
+    assert np.allclose(results[3].values, arcs["velo"].values, atol=std_vel)
+
+
 def test_periodogram_no_wavelength():
     arcs = get_arcs_stm(13, 4, -1e-3, 1e-4, -1, 1)
     arcs.attrs.pop("wavelength", None)  # remove wavelength to test without it
@@ -126,3 +162,27 @@ def test_build_periodogram_search_space():
     search_space = search_space[np.lexsort((search_space[:, 1], search_space[:, 0]))]
 
     assert np.allclose(search_space, expect_search_space)
+
+
+@pytest.mark.parametrize("n_arcs, n_obs, n_search", [(1000, 50, 20), (3001, 111, 50)])
+def test_chunk_for_temp_coh_compute_dask(n_arcs, n_obs, n_search):
+    phase = da.ones((n_arcs, n_obs))  # dummy phase data
+    search_space = np.random.rand(n_search, 2)
+
+    phase_chunked, search_space_chunked = _chunk_for_temp_coh_compute(phase, search_space)
+
+    assert isinstance(phase_chunked, da.Array)
+    assert isinstance(search_space_chunked, da.Array)
+    assert phase_chunked.chunks == phase.chunks  # phase chunking should not change
+
+
+@pytest.mark.parametrize("n_arcs, n_obs, n_search", [(11, 7, 21)])
+def test_chunk_for_temp_coh_compute_np(n_arcs, n_obs, n_search):
+    phase = np.ones((n_arcs, n_obs))  # dummy phase data
+    search_space = np.random.rand(n_search, 2)
+
+    phase_chunked, search_space_chunked = _chunk_for_temp_coh_compute(phase, search_space)
+
+    # The np arrays should be converted to dask arrays
+    assert isinstance(phase_chunked, da.Array)
+    assert isinstance(search_space_chunked, da.Array)
