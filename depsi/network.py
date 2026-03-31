@@ -386,7 +386,7 @@ def _mht_network_adjustment(
         raise NotImplementedError(f"arc_estimation_method '{arc_estimation_method}' is not supported.")
     invQy = np.diag(1 / Qyy_diag)
 
-    _, echeck = _solve_float_ambiguities(A, stm_arcs["ambiguities"].data, invQy)  # Estimate initial residual
+    _, echeck, _ = _solve_float_ambiguities(A, stm_arcs["ambiguities"].data, invQy)  # Estimate initial residual
     OMT = np.diag(echeck.T @ invQy @ echeck).sum()  # Test statistics for Overall Model Test
 
     # Setup test parameters
@@ -465,7 +465,9 @@ def _mht_network_adjustment(
             idx_refpnt,
             sparse_mode,
         )  # Update A matrix
-        _, echeck = _solve_float_ambiguities(A, stm_arcs_updated["ambiguities"].data, invQy)  # Estimate residual again
+        _, echeck, _ = _solve_float_ambiguities(
+            A, stm_arcs_updated["ambiguities"].data, invQy
+        )  # Estimate residual again
         OMT = np.diag(echeck.T @ invQy @ echeck).sum()  # Update OMT statistic
 
         niter += 1
@@ -499,14 +501,10 @@ def _mht_network_adjustment_reject_one(
         raise NotImplementedError("Currently only diagonal VCM is supported. Qyy_diag should be an 1d array.")
 
     # Solve ambiguities as float
-    _, echeck = _solve_float_ambiguities(A, y, invQy)
+    _, echeck, invAtQyA = _solve_float_ambiguities(A, y, invQy)
 
     # Post-priori VCM of residuals
-    try:
-        Qxx = np.linalg.inv(A.T @ invQy @ A)
-    except np.linalg.LinAlgError:
-        Qxx = np.linalg.pinv(A.T @ invQy @ A)  # matrix is singular, so pseudo inverse is necessary
-    Qecheck = Qyy - (A @ Qxx @ A.T)  # TODO: check how to handle large Qecheck
+    Qecheck = Qyy - (A @ invAtQyA @ A.T)  # TODO: check how to handle large Qecheck
 
     # Test statistics TT1 per arc
     Qecheck_diag = np.array(np.diag(Qecheck).flatten()).squeeze()
@@ -520,12 +518,12 @@ def _mht_network_adjustment_reject_one(
         arcs_idx = np.where(A[:, pnt_idx] != 0)[0]  # Arcs connected to this point
         arcs_idx = arcs_idx[1:]  # Drop one arc to create basis, see e.g. verhoef97
         echeck_point = echeck[arcs_idx, :]  # Relevant echeck of this point
-        Qecheck_point = Qecheck[arcs_idx, :][:, arcs_idx]  # Relevant Qecheck of this point
+        Qecheck_point_diag = Qecheck_diag[arcs_idx]  # Relevant Qecheck of this point
 
         # Compute the test statistic for this point
         try:
             Tq = np.sum(
-                np.diag(echeck_point.T @ np.linalg.inv(Qecheck_point) @ echeck_point)
+                np.diag(echeck_point.T @ np.diag(1.0 / Qecheck_point_diag) @ echeck_point)
             )  # Before adjust for degree of freedom
         except np.linalg.LinAlgError:
             # In case Qecheck_point is singular
@@ -597,7 +595,7 @@ def _ambiguities_adjustment(
     for epoch in range(stm_pnts.sizes["time"]):
         logger.debug(f"Adjusting ambiguities for epoch {epoch}")
         y = stm_arcs["ambiguities"].isel(time=epoch).data
-        acheck_ifg, echeck_ifg = _solve_float_ambiguities(A, y, invQy)
+        acheck_ifg, echeck_ifg, _ = _solve_float_ambiguities(A, y, invQy)
         OMT = echeck_ifg.T @ invQy @ echeck_ifg
         idx_previous_arc_fix = -1  # Avoid fixing the same arc again in the same epoch
 
@@ -620,7 +618,7 @@ def _ambiguities_adjustment(
             idx_previous_arc_fix = idx_max_echeck  # record the fixed arc index
 
             # Recalculate OMT
-            acheck_ifg, echeck_ifg = _solve_float_ambiguities(A, y, invQy)
+            acheck_ifg, echeck_ifg, _ = _solve_float_ambiguities(A, y, invQy)
             OMT = echeck_ifg.T @ invQy @ echeck_ifg
 
             logger.debug(f"Fixing arc index {idx_max_echeck}, new OMT={OMT:.2e}")
@@ -684,6 +682,7 @@ def _solve_float_ambiguities(A, y, invQy, sparse_mode: bool = False):
     # With A a sparse matrix
     # And stochastic model Qyy taken into account
     invQyA = invQy @ A  # Avoid repeated computation in vectorized lsmr
+    invAtQyA = np.linalg.inv(A.T @ invQyA)
 
     if sparse_mode:
 
@@ -695,13 +694,10 @@ def _solve_float_ambiguities(A, y, invQy, sparse_mode: bool = False):
 
         acheck = lsmr(y.T).T  # float ambiguity estimation
     else:
-        try:
-            acheck = np.linalg.inv(A.T @ invQy @ A) @ (A.T @ invQy @ y)
-        except np.linalg.LinAlgError:
-            acheck = np.linalg.pinv(A.T @ invQy @ A) @ (A.T @ invQy @ y)
+        acheck = invAtQyA @ (A.T @ invQy @ y)
     echeck = y - A @ acheck  # residuals estimation
 
-    return acheck, echeck
+    return acheck, echeck, invAtQyA
 
 
 def _remove_network_points_min_connections(
