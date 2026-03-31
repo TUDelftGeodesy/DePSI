@@ -513,23 +513,26 @@ def _mht_network_adjustment_reject_one(
     TT1max = max(TT1)
 
     # Test statistics per point
-    TTq = np.zeros(N_points)
-    for pnt_idx in range(N_points):
-        arcs_idx = np.where(A[:, pnt_idx] != 0)[0]  # Arcs connected to this point
-        arcs_idx = arcs_idx[1:]  # Drop one arc to create basis, see e.g. verhoef97
-        echeck_point = echeck[arcs_idx, :]  # Relevant echeck of this point
-        Qecheck_point_diag = Qecheck_diag[arcs_idx]  # Relevant Qecheck of this point
-
-        # Compute the test statistic for this point
-        try:
-            Tq = np.sum(
-                np.diag(echeck_point.T @ np.diag(1.0 / Qecheck_point_diag) @ echeck_point)
-            )  # Before adjust for degree of freedom
-        except np.linalg.LinAlgError:
-            # In case Qecheck_point is singular
-            # Assign a very small value to avoid selecting this point for removal
-            Tq = -np.inf
-        TTq[pnt_idx] = Tq / kb_dict[len(arcs_idx)]
+    # Build arc-point connectivity mask and
+    connected_mask = A != 0
+    # Drop one connected arc per point to create the basis (see e.g. verhoef97).
+    has_connection = connected_mask.any(axis=0)
+    first_connected_idx = np.argmax(connected_mask, axis=0)
+    selected_mask = connected_mask.copy()
+    selected_mask[first_connected_idx[has_connection], np.where(has_connection)[0]] = False
+    # Tq for point q: sum_i(sum_t(e_i,t^2) / Qe_i) over selected arcs i connected to point q.
+    e2_sum = np.sum(echeck**2, axis=1)
+    e2_sum_weighted = e2_sum / Qecheck_diag
+    Tq_num = selected_mask.T @ e2_sum_weighted
+    # Find where to calculate TTq based on connectivity
+    narcs_connected = selected_mask.sum(axis=0).astype(int)
+    kb_vals = np.array([kb_dict.get(d, np.nan) for d in narcs_connected], dtype=float)
+    valid = (narcs_connected > 0) & np.isfinite(kb_vals) & (kb_vals != 0)
+    # Calculate TTq for points with valid kb values
+    # assign -inf to invalid ones to make sure they won't be selected for removal
+    TTq = np.full(N_points, -np.inf, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        TTq[valid] = Tq_num[valid] / kb_vals[valid]
     TTqmax = max(TTq)
 
     # Decision one removal strategy
