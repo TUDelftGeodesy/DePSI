@@ -152,6 +152,9 @@ def spatial_integration(
     stm_arcs = stm_arcs.where(mask, drop=True)
     stm_arcs, stm_pnts = _ensure_network_min_connections(stm_arcs, stm_pnts, min_arc_connections)
 
+    # Ensure the network is a single connected component after arc selection and point removal
+    stm_arcs, stm_pnts = _ensure_single_network(stm_arcs, stm_pnts)
+
     # Select reference point as the source pnt of arcs with highest temp_coh
     if idx_refpnt is None:
         idx_arc_max_coh = stm_arcs[key_arc_quality].argmax().values
@@ -444,6 +447,9 @@ def _mht_network_adjustment(
         stm_arcs_updated, stm_pnts_updated = _ensure_network_min_connections(
             stm_arcs_updated, stm_pnts_updated, min_connections=min_connections_to_ensure
         )
+
+        # Ensure the network is a single connected component after arc/point removal
+        stm_arcs_updated, stm_pnts_updated = _ensure_single_network(stm_arcs_updated, stm_pnts_updated)
 
         # Make sure the reference point is still in stm_pnts_updated, by checking its azimuth and range
         mask_refpnt = (stm_pnts_updated["azimuth"].values == azimuth_refpnt) & (
