@@ -33,6 +33,9 @@ OMT_THRES = 1e-10
 # If for all arcs max(TT1) < TT1_THRES, stop rejection iteration
 # For most cases this threshold is triggered in rejection phase
 TT1_THRES = 1.0
+# Threshold fraction for the largest component in the network
+# The largest component in a network should contain at least 80% of the points
+LARGEST_COMPONENT_THRES = 0.8
 
 
 def spatial_integration(
@@ -676,6 +679,75 @@ def _ensure_network_min_connections(
         stm_pnts, stm_arcs = _remove_network_points_min_connections(stm_pnts, stm_arcs, min_connections)
 
     return stm_arcs, stm_pnts
+
+
+def _ensure_single_network(stm_arcs: xr.Dataset, stm_pnts: xr.Dataset) -> xr.Dataset:
+    """Ensure the network is connected and discard the smaller disconnected sub-network(s)."""
+    # Create networkx graph
+    # Note that arc sources and targets are indices of the points
+    # The "space" coordinate of the point STM is not necessarily the same as the index
+    G = nx.Graph()
+    G.add_nodes_from(np.arange(stm_pnts.sizes["space"]))  # Use point indices as node identities
+    G.add_edges_from(
+        zip(
+            stm_arcs["source"].values,
+            stm_arcs["target"].values,
+            strict=False,
+        )
+    )
+
+    # Get list of connected components
+    list_components = [cc for cc in nx.connected_components(G)]
+
+    # If there are multiple connected components, keep only the largest one and discard the others
+    if len(list_components) > 1:
+        nodes_largest = max(list_components, key=len)  # set of node indices in the largest connected component
+
+        # Check if the largest component is significantly larger than the second largest one
+        if (len(nodes_largest) / stm_pnts.sizes["space"]) < LARGEST_COMPONENT_THRES:
+            raise RuntimeError(
+                f"The largest connected component contains only {len(nodes_largest)} points, which is less than "
+                f"{LARGEST_COMPONENT_THRES * 100:.1f}% of the total {stm_pnts.sizes['space']} points. "
+                "In this case DePSI cannot automatically decide which component to keep. "
+                "This may indicate a problem with the network formation. "
+                "Please check the input data and parameters."
+            )
+
+        mask_arcs = xr.DataArray(
+            np.isin(stm_arcs["source"].values, list(nodes_largest))
+            & np.isin(stm_arcs["target"].values, list(nodes_largest)),
+            dims=["space"],
+        )
+        stm_arcs_output = stm_arcs.where(mask_arcs, drop=True)
+        stm_pnts_output = stm_pnts.isel(space=list(nodes_largest))
+
+        # Update the source and target indices in stm_arcs_output to match the new stm_pnts_output
+        idx_map = {old_idx: new_idx for new_idx, old_idx in enumerate(sorted(nodes_largest))}
+        stm_arcs_output_updated = stm_arcs_output.copy()
+        stm_arcs_output_updated["source"] = xr.DataArray(
+            np.vectorize(idx_map.get)(stm_arcs_output["source"].values), dims="space"
+        )
+        stm_arcs_output_updated["target"] = xr.DataArray(
+            np.vectorize(idx_map.get)(stm_arcs_output["target"].values), dims="space"
+        )
+        stm_arcs_output = stm_arcs_output_updated
+
+        n_components = len(list_components)
+        logging.info("Separated components detected in the network!")
+        logging.info(f"Network has {n_components} connected components.")
+        logging.info(
+            f"Keeping only the largest component with {stm_pnts_output.sizes['space']} points "
+            f"and {stm_arcs_output.sizes['space']} arcs."
+        )
+        logging.info(
+            f"Discarded {stm_pnts.sizes['space'] - stm_pnts_output.sizes['space']} points "
+            f"and {stm_arcs.sizes['space'] - stm_arcs_output.sizes['space']} arcs."
+        )
+    else:
+        stm_arcs_output = stm_arcs
+        stm_pnts_output = stm_pnts
+
+    return stm_arcs_output, stm_pnts_output
 
 
 def _solve_float_ambiguities(A, y, invQy, sparse_mode: bool = False):
