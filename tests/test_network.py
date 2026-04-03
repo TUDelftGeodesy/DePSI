@@ -6,6 +6,7 @@ import xarray as xr
 
 from depsi.network import (
     _ensure_network_min_connections,
+    _ensure_single_network,
     _network_relation_matrix,
     _remove_network_points_min_connections,
     form_network,
@@ -87,6 +88,33 @@ def arcs_random(stm_random):
     arcs["temp_coh"] = (("space"), temp_coh)
 
     return arcs
+
+
+def _build_network_components(component_sizes: list[int]) -> tuple[xr.Dataset, xr.Dataset]:
+    """Build coordinate only point/arcs STMs from connected-component sizes."""
+    n_points = int(sum(component_sizes))
+    stm_pnts = xr.Dataset(coords={"space": ("space", np.arange(n_points))})
+
+    source = []
+    target = []
+    offset = 0
+    for size in component_sizes:
+        # Build each component as a simple chain graph.
+        for idx in range(offset, offset + size - 1):
+            source.append(idx)
+            target.append(idx + 1)
+        offset += size
+
+    n_arcs = len(source)
+    stm_arcs = xr.Dataset(
+        coords={
+            "space": ("space", np.arange(n_arcs)),
+            "source": ("space", np.array(source, dtype=int)),
+            "target": ("space", np.array(target, dtype=int)),
+        }
+    )
+
+    return stm_arcs, stm_pnts
 
 
 class TestNetworkFormation:
@@ -203,6 +231,55 @@ class TestNetworkEnsure:
 
         # Should remove the point with index 1
         assert stm_updated.sizes["space"] == stm_random.sizes["space"] - 1
+
+    @pytest.mark.parametrize("component_sizes", [[12]])
+    def test_ensure_single_network_no_separated_part(self, component_sizes):
+        """Keep the network unchanged when there is only one connected component."""
+        stm_arcs, stm_pnts = _build_network_components(component_sizes)
+
+        stm_arcs_out, stm_pnts_out = _ensure_single_network(stm_arcs, stm_pnts)
+
+        assert stm_pnts_out.sizes["space"] == stm_pnts.sizes["space"]
+        assert stm_arcs_out.sizes["space"] == stm_arcs.sizes["space"]
+        assert np.array_equal(stm_arcs_out["source"].values, stm_arcs["source"].values)
+        assert np.array_equal(stm_arcs_out["target"].values, stm_arcs["target"].values)
+
+    @pytest.mark.parametrize(
+        "component_sizes",
+        [
+            [9, 1],
+            [17, 2, 1],
+            [41, 3, 2, 2, 2],
+        ],
+    )
+    def test_ensure_single_network_keep_largest_significant(self, component_sizes):
+        """Keep only the largest component when it is significant enough."""
+        stm_arcs, stm_pnts = _build_network_components(component_sizes)
+        largest_size = max(component_sizes)
+
+        stm_arcs_out, stm_pnts_out = _ensure_single_network(stm_arcs, stm_pnts)
+
+        assert stm_pnts_out.sizes["space"] == largest_size
+        assert stm_arcs_out.sizes["space"] == largest_size - 1
+        assert np.all(stm_arcs_out["source"].values >= 0)
+        assert np.all(stm_arcs_out["target"].values >= 0)
+        assert np.all(stm_arcs_out["source"].values < largest_size)
+        assert np.all(stm_arcs_out["target"].values < largest_size)
+
+    @pytest.mark.parametrize(
+        "component_sizes",
+        [
+            [6, 4],
+            [8, 7, 1],
+            [10, 9, 1, 1],
+        ],
+    )
+    def test_ensure_single_network_raise_when_largest_not_significant(self, component_sizes):
+        """Raise when the largest component is not clearly dominant."""
+        stm_arcs, stm_pnts = _build_network_components(component_sizes)
+
+        with pytest.raises(RuntimeError):
+            _ensure_single_network(stm_arcs, stm_pnts)
 
 
 class TestNetworkUnwrap:
