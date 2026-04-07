@@ -430,7 +430,7 @@ def _mht_network_adjustment(
     stm_arcs_updated = stm_arcs.copy()
     TT1max = TT1_THRES + 1.0  # Initial TT1_max to trigger the while loop
     niter = 0
-    while (OMT >= OMT_THRES) and (TT1max >= TT1_THRES) and (niter <= max_iterations_adjustment):
+    while (OMT >= OMT_THRES) and (TT1max >= TT1_THRES) and (niter < max_iterations_adjustment):
         # The iteration stops when one of the following conditions is met:
         # 1) overall model test pass: OMT < OMT_THRES (very rare case)
         # 2) all arc test statistics smaller than threshold: max(TT1) < TT1_THRES (most common case)
@@ -554,7 +554,7 @@ def _mht_network_adjustment_reject_one(
     selected_mask[first_connected_idx[has_connection], np.where(has_connection)[0]] = False
     # Tq for point q: sum_i(sum_t(e_i,t^2) / Qe_i) over selected arcs i connected to point q.
     e2_sum = np.sum(echeck**2, axis=1)
-    e2_sum_weighted = e2_sum / Qecheck_diag
+    e2_sum_weighted = e2_sum / np.abs(Qecheck_diag)
     Tq_num = selected_mask.T @ e2_sum_weighted
     # Find where to calculate TTq based on connectivity
     narcs_connected = selected_mask.sum(axis=0).astype(int)
@@ -710,9 +710,7 @@ def _ensure_network_min_connections(
     return stm_arcs, stm_pnts
 
 
-def _ensure_single_network(
-    stm_arcs: xr.Dataset, stm_pnts: xr.Dataset
-) -> tuple[xr.Dataset, xr.Dataset]:
+def _ensure_single_network(stm_arcs: xr.Dataset, stm_pnts: xr.Dataset) -> tuple[xr.Dataset, xr.Dataset]:
     """Ensure the network is connected and discard the smaller disconnected sub-network(s)."""
     # Create networkx graph
     # Note that arc sources and targets are indices of the points
