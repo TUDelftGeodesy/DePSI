@@ -284,14 +284,15 @@ class TestNetworkEnsure:
 
 class TestNetworkUnwrap:
     @pytest.mark.parametrize(
-        ["id_ref", "idx_err_space", "idx_err_time", "error_values"],
+        ["id_ref", "idx_err_space", "idx_err_time", "error_values", "skip_network_adjustment"],
         [
-            (3, [], [], []),  # No error
-            (3, [2, 11], [7, 13], [-1, 1]),  # Two errors in arc ambiguities
-            (9, [0, 4, 8], [5, 10, 15], [1, -100, 1]),  # Three errors, one large, but should be corrected
+            (3, [], [], [], False),  # No error
+            (3, [2, 11], [7, 13], [-1, 1], False),  # Two errors in arc ambiguities
+            (3, [2, 11], [7, 13], [-1, 1], True),  # Two errors, skip network adjustment, should still be corrected
+            (9, [0, 4, 8], [5, 10, 15], [1, -100, 1], False),  # Three errors, one large, but should be corrected
         ],
     )
-    def test_spatial_integration(self, id_ref, idx_err_space, idx_err_time, error_values):
+    def test_spatial_integration(self, id_ref, idx_err_space, idx_err_time, error_values, skip_network_adjustment):
         """Test spatial unwrapping based on arc ambiguities.
 
         Build points with true value of ambiguities.
@@ -359,7 +360,7 @@ class TestNetworkUnwrap:
         stm_arcs["ambiguities"] = (("space", "time"), ambigs + ambigs_errors)
 
         stm_arcs_output, stm_pnts_output = spatial_integration(
-            stm_pnts, stm_arcs, idx_refpnt=id_ref, key_sdphase="phase"
+            stm_pnts, stm_arcs, idx_refpnt=id_ref, key_sdphase="phase", skip_network_adjustment=skip_network_adjustment
         )
 
         # Verify output dimensions, no points should be rejected
