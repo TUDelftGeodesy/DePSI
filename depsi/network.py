@@ -110,7 +110,8 @@ def spatial_integration(
         high value (e.g. 0.75) to ensure only high-quality arcs are selected for spatial
         integration.
     max_iterations_adjustment : int, optional
-        Maximum number of iterations for network adjustment, by default None (no limit).
+        Maximum number of iterations for network adjustment.
+        If None, the maximum number if iterations will be the number of arcs.
 
     Returns
     -------
@@ -709,7 +710,9 @@ def _ensure_network_min_connections(
     return stm_arcs, stm_pnts
 
 
-def _ensure_single_network(stm_arcs: xr.Dataset, stm_pnts: xr.Dataset) -> xr.Dataset:
+def _ensure_single_network(
+    stm_arcs: xr.Dataset, stm_pnts: xr.Dataset
+) -> tuple[xr.Dataset, xr.Dataset]:
     """Ensure the network is connected and discard the smaller disconnected sub-network(s)."""
     # Create networkx graph
     # Note that arc sources and targets are indices of the points
@@ -761,13 +764,13 @@ def _ensure_single_network(stm_arcs: xr.Dataset, stm_pnts: xr.Dataset) -> xr.Dat
         stm_arcs_output = stm_arcs_output_updated
 
         n_components = len(list_components)
-        logging.info("Separated components detected in the network!")
-        logging.info(f"Network has {n_components} connected components.")
-        logging.info(
+        logger.info("Separated components detected in the network!")
+        logger.info(f"Network has {n_components} connected components.")
+        logger.info(
             f"Keeping only the largest component with {stm_pnts_output.sizes['space']} points "
             f"and {stm_arcs_output.sizes['space']} arcs."
         )
-        logging.info(
+        logger.info(
             f"Discarded {stm_pnts.sizes['space'] - stm_pnts_output.sizes['space']} points "
             f"and {stm_arcs.sizes['space'] - stm_arcs_output.sizes['space']} arcs."
         )
