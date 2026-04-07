@@ -50,6 +50,7 @@ def spatial_integration(
     sparse_mode: bool = False,
     ensure_network_while_mht: bool = False,
     arc_estimation_method: Literal["periodogram"] = "periodogram",
+    skip_network_adjustment: bool = False,
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """Spatially integrate the ambiguities of network arcs to points.
 
@@ -102,6 +103,11 @@ def spatial_integration(
     arc_estimation_method : Literal["periodogram"], optional
         Method used for arc estimation, by default "periodogram".
         This constrains the method used for VCM computation.
+    skip_network_adjustment : bool, optional
+        whether to skip network adjustment by MHT, by default False.
+        When enabling this option, it is recommended to set the threshold_arc_quality to a
+        high value (e.g. 0.75) to ensure only high-quality arcs are selected for spatial
+        integration.
 
     Returns
     -------
@@ -174,21 +180,26 @@ def spatial_integration(
         idx_refpnt = np.where(mask_refpnt)[0][0]
 
     # Adjust the network by removing bad arcs/points using MHT
-    stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adjustment(
-        stm_arcs,
-        stm_pnts,
-        idx_refpnt,
-        azimuth_refpnt,
-        range_refpnt,
-        ensure_network_while_mht,
-        sparse_mode,
-        arc_estimation_method,
-    )
+    if skip_network_adjustment:
+        logger.info("Skipping MHT network adjustment step.")
+        stm_arcs_adjusted, stm_pnts_adjusted = stm_arcs, stm_pnts
+    else:
+        stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adjustment(
+            stm_arcs,
+            stm_pnts,
+            idx_refpnt,
+            azimuth_refpnt,
+            range_refpnt,
+            ensure_network_while_mht,
+            sparse_mode,
+            arc_estimation_method,
+        )
 
-    # Update idx_refpnt after MHT adjustment
-    idx_refpnt = np.where(
-        (stm_pnts_adjusted["azimuth"].values == azimuth_refpnt) & (stm_pnts_adjusted["range"].values == range_refpnt)
-    )[0][0]
+        # Update idx_refpnt after MHT adjustment
+        idx_refpnt = np.where(
+            (stm_pnts_adjusted["azimuth"].values == azimuth_refpnt)
+            & (stm_pnts_adjusted["range"].values == range_refpnt)
+        )[0][0]
 
     # Adjust ambiguities to fix unwrapping errors
     stm_arcs_output, stm_pnts_output, idx_refpnt = _ambiguities_adjustment(
