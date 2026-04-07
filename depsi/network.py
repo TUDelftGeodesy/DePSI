@@ -51,6 +51,7 @@ def spatial_integration(
     ensure_network_while_mht: bool = False,
     arc_estimation_method: Literal["periodogram"] = "periodogram",
     skip_network_adjustment: bool = False,
+    max_iterations_adjustment: int = None,
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """Spatially integrate the ambiguities of network arcs to points.
 
@@ -108,6 +109,8 @@ def spatial_integration(
         When enabling this option, it is recommended to set the threshold_arc_quality to a
         high value (e.g. 0.75) to ensure only high-quality arcs are selected for spatial
         integration.
+    max_iterations_adjustment : int, optional
+        Maximum number of iterations for network adjustment, by default None (no limit).
 
     Returns
     -------
@@ -193,6 +196,7 @@ def spatial_integration(
             ensure_network_while_mht,
             sparse_mode,
             arc_estimation_method,
+            max_iterations_adjustment,
         )
 
         # Update idx_refpnt after MHT adjustment
@@ -362,6 +366,7 @@ def _mht_network_adjustment(
     ensure_network_while_mht: bool,
     sparse_mode: bool,
     arc_estimation_method: str,
+    max_iterations_adjustment: int,
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """Adjust the network by removing bad arcs/points by applying MHT.
 
@@ -386,6 +391,8 @@ def _mht_network_adjustment(
         Whether to use sparse matrix format for large networks.
     arc_estimation_method : str
         Method used for arc estimation.
+    max_iterations_adjustment : int
+        Maximum number of iterations for network adjustment.
 
     Returns
     -------
@@ -413,12 +420,16 @@ def _mht_network_adjustment(
         _, k1, kb, _ = pretest(n_con, ALPHA0, GAMMA0)
         kb_dict[n_con] = kb
 
+    # By default, set max_iterations_adjustment to the number of arcs
+    if max_iterations_adjustment is None:
+        max_iterations_adjustment = stm_arcs.sizes["space"]
+
     # Iteratively remove arcs/points until OMT and all arc statistics pass the test
     stm_pnts_updated = stm_pnts.copy()
     stm_arcs_updated = stm_arcs.copy()
     TT1max = TT1_THRES + 1.0  # Initial TT1_max to trigger the while loop
     niter = 0
-    while (OMT >= OMT_THRES) and (TT1max >= TT1_THRES) and (niter <= stm_arcs.sizes["space"]):
+    while (OMT >= OMT_THRES) and (TT1max >= TT1_THRES) and (niter <= max_iterations_adjustment):
         # The iteration stops when one of the following conditions is met:
         # 1) overall model test pass: OMT < OMT_THRES (very rare case)
         # 2) all arc test statistics smaller than threshold: max(TT1) < TT1_THRES (most common case)
