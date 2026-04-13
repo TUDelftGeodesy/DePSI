@@ -33,6 +33,9 @@ OMT_THRES = 1e-10
 # If for all arcs max(TT1) < TT1_THRES, stop rejection iteration
 # For most cases this threshold is triggered in rejection phase
 TT1_THRES = 1.0
+# Threshold fraction for the largest component in the network
+# The largest component in a network should contain at least 80% of the points
+LARGEST_COMPONENT_THRES = 0.8
 
 
 def spatial_integration(
@@ -47,6 +50,8 @@ def spatial_integration(
     sparse_mode: bool = False,
     ensure_network_while_mht: bool = False,
     arc_estimation_method: Literal["periodogram"] = "periodogram",
+    skip_network_adjustment: bool = False,
+    max_iterations_adjustment: int = None,
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """Spatially integrate the ambiguities of network arcs to points.
 
@@ -99,6 +104,14 @@ def spatial_integration(
     arc_estimation_method : Literal["periodogram"], optional
         Method used for arc estimation, by default "periodogram".
         This constrains the method used for VCM computation.
+    skip_network_adjustment : bool, optional
+        whether to skip network adjustment by MHT, by default False.
+        When enabling this option, it is recommended to set the threshold_arc_quality to a
+        high value (e.g. 0.75) to ensure only high-quality arcs are selected for spatial
+        integration.
+    max_iterations_adjustment : int, optional
+        Maximum number of iterations for network adjustment.
+        If None, the maximum number if iterations will be the number of arcs.
 
     Returns
     -------
@@ -149,6 +162,9 @@ def spatial_integration(
     stm_arcs = stm_arcs.where(mask, drop=True)
     stm_arcs, stm_pnts = _ensure_network_min_connections(stm_arcs, stm_pnts, min_arc_connections)
 
+    # Ensure the network is a single connected component after arc selection and point removal
+    stm_arcs, stm_pnts = _ensure_single_network(stm_arcs, stm_pnts)
+
     # Select reference point as the source pnt of arcs with highest temp_coh
     if idx_refpnt is None:
         idx_arc_max_coh = stm_arcs[key_arc_quality].argmax().values
@@ -168,21 +184,27 @@ def spatial_integration(
         idx_refpnt = np.where(mask_refpnt)[0][0]
 
     # Adjust the network by removing bad arcs/points using MHT
-    stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adjustment(
-        stm_arcs,
-        stm_pnts,
-        idx_refpnt,
-        azimuth_refpnt,
-        range_refpnt,
-        ensure_network_while_mht,
-        sparse_mode,
-        arc_estimation_method,
-    )
+    if skip_network_adjustment:
+        logger.info("Skipping MHT network adjustment step.")
+        stm_arcs_adjusted, stm_pnts_adjusted = stm_arcs, stm_pnts
+    else:
+        stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adjustment(
+            stm_arcs,
+            stm_pnts,
+            idx_refpnt,
+            azimuth_refpnt,
+            range_refpnt,
+            ensure_network_while_mht,
+            sparse_mode,
+            arc_estimation_method,
+            max_iterations_adjustment,
+        )
 
-    # Update idx_refpnt after MHT adjustment
-    idx_refpnt = np.where(
-        (stm_pnts_adjusted["azimuth"].values == azimuth_refpnt) & (stm_pnts_adjusted["range"].values == range_refpnt)
-    )[0][0]
+        # Update idx_refpnt after MHT adjustment
+        idx_refpnt = np.where(
+            (stm_pnts_adjusted["azimuth"].values == azimuth_refpnt)
+            & (stm_pnts_adjusted["range"].values == range_refpnt)
+        )[0][0]
 
     # Adjust ambiguities to fix unwrapping errors
     stm_arcs_output, stm_pnts_output, idx_refpnt = _ambiguities_adjustment(
@@ -345,6 +367,7 @@ def _mht_network_adjustment(
     ensure_network_while_mht: bool,
     sparse_mode: bool,
     arc_estimation_method: str,
+    max_iterations_adjustment: int,
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """Adjust the network by removing bad arcs/points by applying MHT.
 
@@ -369,6 +392,8 @@ def _mht_network_adjustment(
         Whether to use sparse matrix format for large networks.
     arc_estimation_method : str
         Method used for arc estimation.
+    max_iterations_adjustment : int
+        Maximum number of iterations for network adjustment.
 
     Returns
     -------
@@ -386,7 +411,7 @@ def _mht_network_adjustment(
         raise NotImplementedError(f"arc_estimation_method '{arc_estimation_method}' is not supported.")
     invQy = np.diag(1 / Qyy_diag)
 
-    _, echeck = _solve_float_ambiguities(A, stm_arcs["ambiguities"].data, invQy)  # Estimate initial residual
+    _, echeck, _ = _solve_float_ambiguities(A, stm_arcs["ambiguities"].data, invQy)  # Estimate initial residual
     OMT = np.diag(echeck.T @ invQy @ echeck).sum()  # Test statistics for Overall Model Test
 
     # Setup test parameters
@@ -396,12 +421,16 @@ def _mht_network_adjustment(
         _, k1, kb, _ = pretest(n_con, ALPHA0, GAMMA0)
         kb_dict[n_con] = kb
 
+    # By default, set max_iterations_adjustment to the number of arcs
+    if max_iterations_adjustment is None:
+        max_iterations_adjustment = stm_arcs.sizes["space"]
+
     # Iteratively remove arcs/points until OMT and all arc statistics pass the test
     stm_pnts_updated = stm_pnts.copy()
     stm_arcs_updated = stm_arcs.copy()
     TT1max = TT1_THRES + 1.0  # Initial TT1_max to trigger the while loop
     niter = 0
-    while (OMT >= OMT_THRES) and (TT1max >= TT1_THRES) and (niter <= stm_arcs.sizes["space"]):
+    while (OMT >= OMT_THRES) and (TT1max >= TT1_THRES) and (niter < max_iterations_adjustment):
         # The iteration stops when one of the following conditions is met:
         # 1) overall model test pass: OMT < OMT_THRES (very rare case)
         # 2) all arc test statistics smaller than threshold: max(TT1) < TT1_THRES (most common case)
@@ -442,6 +471,9 @@ def _mht_network_adjustment(
             stm_arcs_updated, stm_pnts_updated, min_connections=min_connections_to_ensure
         )
 
+        # Ensure the network is a single connected component after arc/point removal
+        stm_arcs_updated, stm_pnts_updated = _ensure_single_network(stm_arcs_updated, stm_pnts_updated)
+
         # Make sure the reference point is still in stm_pnts_updated, by checking its azimuth and range
         mask_refpnt = (stm_pnts_updated["azimuth"].values == azimuth_refpnt) & (
             stm_pnts_updated["range"].values == range_refpnt
@@ -465,7 +497,9 @@ def _mht_network_adjustment(
             idx_refpnt,
             sparse_mode,
         )  # Update A matrix
-        _, echeck = _solve_float_ambiguities(A, stm_arcs_updated["ambiguities"].data, invQy)  # Estimate residual again
+        _, echeck, _ = _solve_float_ambiguities(
+            A, stm_arcs_updated["ambiguities"].data, invQy
+        )  # Estimate residual again
         OMT = np.diag(echeck.T @ invQy @ echeck).sum()  # Update OMT statistic
 
         niter += 1
@@ -499,14 +533,10 @@ def _mht_network_adjustment_reject_one(
         raise NotImplementedError("Currently only diagonal VCM is supported. Qyy_diag should be an 1d array.")
 
     # Solve ambiguities as float
-    _, echeck = _solve_float_ambiguities(A, y, invQy)
+    _, echeck, invAtQyA = _solve_float_ambiguities(A, y, invQy)
 
     # Post-priori VCM of residuals
-    try:
-        Qxx = np.linalg.inv(A.T @ invQy @ A)
-    except np.linalg.LinAlgError:
-        Qxx = np.linalg.pinv(A.T @ invQy @ A)  # matrix is singular, so pseudo inverse is necessary
-    Qecheck = Qyy - (A @ Qxx @ A.T)  # TODO: check how to handle large Qecheck
+    Qecheck = Qyy - (A @ invAtQyA @ A.T)  # TODO: check how to handle large Qecheck
 
     # Test statistics TT1 per arc
     Qecheck_diag = np.array(np.diag(Qecheck).flatten()).squeeze()
@@ -515,23 +545,26 @@ def _mht_network_adjustment_reject_one(
     TT1max = max(TT1)
 
     # Test statistics per point
-    TTq = np.zeros(N_points)
-    for pnt_idx in range(N_points):
-        arcs_idx = np.where(A[:, pnt_idx] != 0)[0]  # Arcs connected to this point
-        arcs_idx = arcs_idx[1:]  # Drop one arc to create basis, see e.g. verhoef97
-        echeck_point = echeck[arcs_idx, :]  # Relevant echeck of this point
-        Qecheck_point = Qecheck[arcs_idx, :][:, arcs_idx]  # Relevant Qecheck of this point
-
-        # Compute the test statistic for this point
-        try:
-            Tq = np.sum(
-                np.diag(echeck_point.T @ np.linalg.inv(Qecheck_point) @ echeck_point)
-            )  # Before adjust for degree of freedom
-        except np.linalg.LinAlgError:
-            # In case Qecheck_point is singular
-            # Assign a very small value to avoid selecting this point for removal
-            Tq = -np.inf
-        TTq[pnt_idx] = Tq / kb_dict[len(arcs_idx)]
+    # Build arc-point connectivity mask and
+    connected_mask = A != 0
+    # Drop one connected arc per point to create the basis (see e.g. verhoef97).
+    has_connection = connected_mask.any(axis=0)
+    first_connected_idx = np.argmax(connected_mask, axis=0)
+    selected_mask = connected_mask.copy()
+    selected_mask[first_connected_idx[has_connection], np.where(has_connection)[0]] = False
+    # Tq for point q: sum_i(sum_t(e_i,t^2) / Qe_i) over selected arcs i connected to point q.
+    e2_sum = np.sum(echeck**2, axis=1)
+    e2_sum_weighted = e2_sum / np.abs(Qecheck_diag)
+    Tq_num = selected_mask.T @ e2_sum_weighted
+    # Find where to calculate TTq based on connectivity
+    narcs_connected = selected_mask.sum(axis=0).astype(int)
+    kb_vals = np.array([kb_dict.get(d, np.nan) for d in narcs_connected], dtype=float)
+    valid = (narcs_connected > 0) & np.isfinite(kb_vals) & (kb_vals != 0)
+    # Calculate TTq for points with valid kb values
+    # assign -inf to invalid ones to make sure they won't be selected for removal
+    TTq = np.full(N_points, -np.inf, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        TTq[valid] = Tq_num[valid] / kb_vals[valid]
     TTqmax = max(TTq)
 
     # Decision one removal strategy
@@ -597,7 +630,7 @@ def _ambiguities_adjustment(
     for epoch in range(stm_pnts.sizes["time"]):
         logger.debug(f"Adjusting ambiguities for epoch {epoch}")
         y = stm_arcs["ambiguities"].isel(time=epoch).data
-        acheck_ifg, echeck_ifg = _solve_float_ambiguities(A, y, invQy)
+        acheck_ifg, echeck_ifg, _ = _solve_float_ambiguities(A, y, invQy)
         OMT = echeck_ifg.T @ invQy @ echeck_ifg
         idx_previous_arc_fix = -1  # Avoid fixing the same arc again in the same epoch
 
@@ -620,7 +653,7 @@ def _ambiguities_adjustment(
             idx_previous_arc_fix = idx_max_echeck  # record the fixed arc index
 
             # Recalculate OMT
-            acheck_ifg, echeck_ifg = _solve_float_ambiguities(A, y, invQy)
+            acheck_ifg, echeck_ifg, _ = _solve_float_ambiguities(A, y, invQy)
             OMT = echeck_ifg.T @ invQy @ echeck_ifg
 
             logger.debug(f"Fixing arc index {idx_max_echeck}, new OMT={OMT:.2e}")
@@ -677,6 +710,75 @@ def _ensure_network_min_connections(
     return stm_arcs, stm_pnts
 
 
+def _ensure_single_network(stm_arcs: xr.Dataset, stm_pnts: xr.Dataset) -> tuple[xr.Dataset, xr.Dataset]:
+    """Ensure the network is connected and discard the smaller disconnected sub-network(s)."""
+    # Create networkx graph
+    # Note that arc sources and targets are indices of the points
+    # The "space" coordinate of the point STM is not necessarily the same as the index
+    G = nx.Graph()
+    G.add_nodes_from(np.arange(stm_pnts.sizes["space"]))  # Use point indices as node identities
+    G.add_edges_from(
+        zip(
+            stm_arcs["source"].values,
+            stm_arcs["target"].values,
+            strict=False,
+        )
+    )
+
+    # Get list of connected components
+    list_components = [cc for cc in nx.connected_components(G)]
+
+    # If there are multiple connected components, keep only the largest one and discard the others
+    if len(list_components) > 1:
+        nodes_largest = max(list_components, key=len)  # set of node indices in the largest connected component
+
+        # Check if the largest component is significantly larger than the second largest one
+        if (len(nodes_largest) / stm_pnts.sizes["space"]) < LARGEST_COMPONENT_THRES:
+            raise RuntimeError(
+                f"The largest connected component contains only {len(nodes_largest)} points, which is less than "
+                f"{LARGEST_COMPONENT_THRES * 100:.1f}% of the total {stm_pnts.sizes['space']} points. "
+                "In this case DePSI cannot automatically decide which component to keep. "
+                "This may indicate a problem with the network formation. "
+                "Please check the input data and parameters."
+            )
+
+        mask_arcs = xr.DataArray(
+            np.isin(stm_arcs["source"].values, list(nodes_largest))
+            & np.isin(stm_arcs["target"].values, list(nodes_largest)),
+            dims=["space"],
+        )
+        stm_arcs_output = stm_arcs.where(mask_arcs, drop=True)
+        stm_pnts_output = stm_pnts.isel(space=list(nodes_largest))
+
+        # Update the source and target indices in stm_arcs_output to match the new stm_pnts_output
+        idx_map = {old_idx: new_idx for new_idx, old_idx in enumerate(sorted(nodes_largest))}
+        stm_arcs_output_updated = stm_arcs_output.copy()
+        stm_arcs_output_updated["source"] = xr.DataArray(
+            np.vectorize(idx_map.get)(stm_arcs_output["source"].values), dims="space"
+        )
+        stm_arcs_output_updated["target"] = xr.DataArray(
+            np.vectorize(idx_map.get)(stm_arcs_output["target"].values), dims="space"
+        )
+        stm_arcs_output = stm_arcs_output_updated
+
+        n_components = len(list_components)
+        logger.info("Separated components detected in the network!")
+        logger.info(f"Network has {n_components} connected components.")
+        logger.info(
+            f"Keeping only the largest component with {stm_pnts_output.sizes['space']} points "
+            f"and {stm_arcs_output.sizes['space']} arcs."
+        )
+        logger.info(
+            f"Discarded {stm_pnts.sizes['space'] - stm_pnts_output.sizes['space']} points "
+            f"and {stm_arcs.sizes['space'] - stm_arcs_output.sizes['space']} arcs."
+        )
+    else:
+        stm_arcs_output = stm_arcs
+        stm_pnts_output = stm_pnts
+
+    return stm_arcs_output, stm_pnts_output
+
+
 def _solve_float_ambiguities(A, y, invQy, sparse_mode: bool = False):
     """Solve ambiguities as a float based on Least-Squares."""
     # Solve ambiguities as they are float numbers
@@ -684,6 +786,7 @@ def _solve_float_ambiguities(A, y, invQy, sparse_mode: bool = False):
     # With A a sparse matrix
     # And stochastic model Qyy taken into account
     invQyA = invQy @ A  # Avoid repeated computation in vectorized lsmr
+    invAtQyA = np.linalg.inv(A.T @ invQyA)
 
     if sparse_mode:
 
@@ -695,13 +798,10 @@ def _solve_float_ambiguities(A, y, invQy, sparse_mode: bool = False):
 
         acheck = lsmr(y.T).T  # float ambiguity estimation
     else:
-        try:
-            acheck = np.linalg.inv(A.T @ invQy @ A) @ (A.T @ invQy @ y)
-        except np.linalg.LinAlgError:
-            acheck = np.linalg.pinv(A.T @ invQy @ A) @ (A.T @ invQy @ y)
+        acheck = invAtQyA @ (A.T @ invQy @ y)
     echeck = y - A @ acheck  # residuals estimation
 
-    return acheck, echeck
+    return acheck, echeck, invAtQyA
 
 
 def _remove_network_points_min_connections(
