@@ -716,12 +716,12 @@ def _ensure_single_network(stm_arcs: xr.Dataset, stm_pnts: xr.Dataset) -> tuple[
     # Note that arc sources and targets are indices of the points
     # The "space" coordinate of the point STM is not necessarily the same as the index
     G = nx.Graph()
-    G.add_nodes_from(np.arange(stm_pnts.sizes["space"]))  # Use point indices as node identities
+    G.add_nodes_from(np.arange(stm_pnts.sizes["space"]))  # Use point indices as node identifiers
     G.add_edges_from(
         zip(
             stm_arcs["source"].values,
             stm_arcs["target"].values,
-            strict=False,
+            strict=True,
         )
     )
 
