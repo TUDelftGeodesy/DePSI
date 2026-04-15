@@ -375,7 +375,7 @@ if start_at_checkpoint < 1:
         (stm["phase_minus_atmo"] - stm["phase_minus_atmo"].sel(time=stm.ps_sd_mother) + np.pi) % (2 * np.pi) - np.pi
 
     print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Checkpoint 1: saving to zarr...")
-    stm = stm.chunk({"time": 100, "space": "auto"})
+    stm = stm.chunk({"time": -1, "space": "auto"})
     stm.to_zarr(stm_save_path.format("4atmo"), mode="w")
     print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Checkpoint 1: Saved! Reloading...")
 
