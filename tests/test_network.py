@@ -235,7 +235,7 @@ class TestNetworkEnsure:
         """Keep the network unchanged when there is only one connected component."""
         stm_arcs, stm_pnts = _build_network_components(component_sizes)
 
-        stm_arcs_out, stm_pnts_out = _ensure_single_network(stm_arcs, stm_pnts)
+        stm_arcs_out, stm_pnts_out = _ensure_single_network(stm_arcs, stm_pnts, largest_component_ratio=0.8)
 
         assert stm_pnts_out.sizes["space"] == stm_pnts.sizes["space"]
         assert stm_arcs_out.sizes["space"] == stm_arcs.sizes["space"]
@@ -243,19 +243,15 @@ class TestNetworkEnsure:
         assert np.array_equal(stm_arcs_out["target"].values, stm_arcs["target"].values)
 
     @pytest.mark.parametrize(
-        "component_sizes",
-        [
-            [9, 1],
-            [17, 2, 1],
-            [41, 3, 2, 2, 2],
-        ],
+        ["component_sizes", "largest_component_ratio"],
+        [([15, 1, 1, 1], 0.8), ([8, 6], 0.5), ([9, 1, 1], 0.8), ([5, 3, 2], 0.4)],
     )
-    def test_ensure_single_network_keep_largest_significant(self, component_sizes):
+    def test_ensure_single_network_keep_largest_significant(self, component_sizes, largest_component_ratio):
         """Keep only the largest component when it is significant enough."""
         stm_arcs, stm_pnts = _build_network_components(component_sizes)
         largest_size = max(component_sizes)
 
-        stm_arcs_out, stm_pnts_out = _ensure_single_network(stm_arcs, stm_pnts)
+        stm_arcs_out, stm_pnts_out = _ensure_single_network(stm_arcs, stm_pnts, largest_component_ratio)
 
         assert stm_pnts_out.sizes["space"] == largest_size
         assert stm_arcs_out.sizes["space"] == largest_size - 1
@@ -274,10 +270,11 @@ class TestNetworkEnsure:
     )
     def test_ensure_single_network_raise_when_largest_not_significant(self, component_sizes):
         """Raise when the largest component is not clearly dominant."""
+        largest_component_ratio = 0.8
         stm_arcs, stm_pnts = _build_network_components(component_sizes)
 
         with pytest.raises(RuntimeError):
-            _ensure_single_network(stm_arcs, stm_pnts)
+            _ensure_single_network(stm_arcs, stm_pnts, largest_component_ratio)
 
 
 class TestNetworkUnwrap:

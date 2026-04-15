@@ -33,9 +33,6 @@ OMT_THRES = 1e-10
 # If for all arcs max(TT1) < TT1_THRES, stop rejection iteration
 # For most cases this threshold is triggered in rejection phase
 TT1_THRES = 1.0
-# Threshold fraction for the largest component in the network
-# The largest component in a network should contain at least 80% of the points
-LARGEST_COMPONENT_THRES = 0.8
 
 
 def spatial_integration(
@@ -46,6 +43,7 @@ def spatial_integration(
     threshold_arc_quality: float = 0.5,
     idx_refpnt: int | None = None,
     min_arc_connections: int = 3,
+    largest_component_ratio: float = 0.8,
     parallel: bool = False,
     sparse_mode: bool = False,
     ensure_network_while_mht: bool = False,
@@ -95,6 +93,11 @@ def spatial_integration(
         as the reference point.
     min_arc_connections : int, optional
         Minimum number of connections for arcs, by default 3
+    largest_component_ratio : float, optional
+        Threshold for determining the largest component when multiple components exist in the network, by default 0.8.
+        When removing arcs/points, it may happen that the network is split into multiple disconnected components.
+        In this case, only the largest component is kept and the others are discarded.
+        The largest component should contain at least this fraction of the total points, otherwise an error is raised.
     parallel : bool, optional
         Whether to use parallel processing, by default False
     sparse_mode : bool, optional
@@ -163,7 +166,7 @@ def spatial_integration(
     stm_arcs, stm_pnts = _ensure_network_min_connections(stm_arcs, stm_pnts, min_arc_connections)
 
     # Ensure the network is a single connected component after arc selection and point removal
-    stm_arcs, stm_pnts = _ensure_single_network(stm_arcs, stm_pnts)
+    stm_arcs, stm_pnts = _ensure_single_network(stm_arcs, stm_pnts, largest_component_ratio)
 
     # Select reference point as the source pnt of arcs with highest temp_coh
     if idx_refpnt is None:
@@ -198,6 +201,7 @@ def spatial_integration(
             sparse_mode,
             arc_estimation_method,
             max_iterations_adjustment,
+            largest_component_ratio,
         )
 
         # Update idx_refpnt after MHT adjustment
@@ -368,6 +372,7 @@ def _mht_network_adjustment(
     sparse_mode: bool,
     arc_estimation_method: str,
     max_iterations_adjustment: int,
+    largest_component_ratio: float,
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """Adjust the network by removing bad arcs/points by applying MHT.
 
@@ -394,6 +399,8 @@ def _mht_network_adjustment(
         Method used for arc estimation.
     max_iterations_adjustment : int
         Maximum number of iterations for network adjustment.
+    largest_component_ratio : float
+        Threshold for determining the largest component when multiple components exist in the network.
 
     Returns
     -------
@@ -472,7 +479,9 @@ def _mht_network_adjustment(
         )
 
         # Ensure the network is a single connected component after arc/point removal
-        stm_arcs_updated, stm_pnts_updated = _ensure_single_network(stm_arcs_updated, stm_pnts_updated)
+        stm_arcs_updated, stm_pnts_updated = _ensure_single_network(
+            stm_arcs_updated, stm_pnts_updated, largest_component_ratio
+        )
 
         # Make sure the reference point is still in stm_pnts_updated, by checking its azimuth and range
         mask_refpnt = (stm_pnts_updated["azimuth"].values == azimuth_refpnt) & (
@@ -710,15 +719,20 @@ def _ensure_network_min_connections(
     return stm_arcs, stm_pnts
 
 
-def _ensure_single_network(stm_arcs: xr.Dataset, stm_pnts: xr.Dataset) -> tuple[xr.Dataset, xr.Dataset]:
+def _ensure_single_network(
+    stm_arcs: xr.Dataset, stm_pnts: xr.Dataset, largest_component_ratio: float
+) -> tuple[xr.Dataset, xr.Dataset]:
     """Ensure the network is connected and discard the smaller disconnected sub-network(s).
 
     This function utilizes the NetworkX library to identify connected components in the network
     formed by stm_arcs and stm_pnts. When building the graph, the point indices are used as node identifiers,
     and the "source" and "target" coordinates in stm_arcs are used to add edges between the corresponding nodes.
-
     Note that "source" and "target" coordinates in stm_arcs are indices of the points STM stm_pnts,
     but not necessarily the same as the "space" coordinate of stm_pnts.
+
+    If there are multiple connected components, only the largest one is kept and the others are discarded.
+    However, if the largest component is smaller than a certain ratio (largest_component_ratio) of the total
+    points, an error is raised.
     """
     G = nx.Graph()
     G.add_nodes_from(np.arange(stm_pnts.sizes["space"]))  # Use point indices as node identifiers
@@ -738,10 +752,10 @@ def _ensure_single_network(stm_arcs: xr.Dataset, stm_pnts: xr.Dataset) -> tuple[
         nodes_largest = max(list_components, key=len)  # set of node indices in the largest connected component
 
         # Check if the largest component is significantly larger than the second largest one
-        if (len(nodes_largest) / stm_pnts.sizes["space"]) < LARGEST_COMPONENT_THRES:
+        if (len(nodes_largest) / stm_pnts.sizes["space"]) < largest_component_ratio:
             raise RuntimeError(
                 f"The largest connected component contains only {len(nodes_largest)} points, which is less than "
-                f"{LARGEST_COMPONENT_THRES * 100:.1f}% of the total {stm_pnts.sizes['space']} points. "
+                f"{largest_component_ratio * 100:.1f}% of the total {stm_pnts.sizes['space']} points. "
                 "In this case DePSI cannot automatically decide which component to keep. "
                 "This may indicate a problem with the network formation. "
                 "Please check the input data and parameters."
