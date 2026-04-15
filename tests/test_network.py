@@ -105,7 +105,6 @@ def _build_network_components(component_sizes: list[int]) -> tuple[xr.Dataset, x
             target.append(idx + 1)
         offset += size
 
-    n_arcs = len(source)
     stm_arcs = xr.Dataset(
         coords={
             "source": ("space", np.array(source, dtype=int)),
