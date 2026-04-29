@@ -33,9 +33,6 @@ OMT_THRES = 1e-10
 # If for all arcs max(TT1) < TT1_THRES, stop rejection iteration
 # For most cases this threshold is triggered in rejection phase
 TT1_THRES = 1.0
-# Threshold fraction for the largest component in the network
-# The largest component in a network should contain at least 80% of the points
-LARGEST_COMPONENT_THRES = 0.8
 
 
 def spatial_integration(
@@ -46,12 +43,13 @@ def spatial_integration(
     threshold_arc_quality: float = 0.5,
     idx_refpnt: int | None = None,
     min_arc_connections: int = 3,
+    largest_component_ratio: float = 0.8,
     parallel: bool = False,
     sparse_mode: bool = False,
     ensure_network_while_mht: bool = False,
     arc_estimation_method: Literal["periodogram"] = "periodogram",
-    skip_network_adjustment: bool = False,
-    max_iterations_adjustment: int = None,
+    skip_network_adaptation: bool = False,
+    max_iterations_adaptation: int = None,
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """Spatially integrate the ambiguities of network arcs to points.
 
@@ -95,22 +93,28 @@ def spatial_integration(
         as the reference point.
     min_arc_connections : int, optional
         Minimum number of connections for arcs, by default 3
+    largest_component_ratio : float, optional
+        Threshold for determining the largest component when multiple components exist in the network, by default 0.8.
+        When removing arcs/points, it may happen that the network is split into multiple disconnected components.
+        In this case, only the largest component is kept and the others are discarded.
+        The largest component should contain at least this fraction of the total points, otherwise an error is raised.
+        Hence, when an error should be raised at all times, set this value to 1.0 .
     parallel : bool, optional
         Whether to use parallel processing, by default False
     sparse_mode : bool, optional
         Whether to use sparse matrix format for large networks, by default False
     ensure_network_while_mht : bool, optional
-        Whether to ensure minimum connections in MHT network adjustment, by default False
+        Whether to ensure minimum connections in MHT network adaptation, by default False
     arc_estimation_method : Literal["periodogram"], optional
         Method used for arc estimation, by default "periodogram".
         This constrains the method used for VCM computation.
-    skip_network_adjustment : bool, optional
-        whether to skip network adjustment by MHT, by default False.
+    skip_network_adaptation : bool, optional
+        Whether to skip network adaptation by MHT, by default False.
         When enabling this option, it is recommended to set the threshold_arc_quality to a
         high value (e.g. 0.75) to ensure only high-quality arcs are selected for spatial
         integration.
-    max_iterations_adjustment : int, optional
-        Maximum number of iterations for network adjustment.
+    max_iterations_adaptation : int, optional
+        Maximum number of iterations for network adaptation.
         If None, the maximum number if iterations will be the number of arcs.
 
     Returns
@@ -163,7 +167,7 @@ def spatial_integration(
     stm_arcs, stm_pnts = _ensure_network_min_connections(stm_arcs, stm_pnts, min_arc_connections)
 
     # Ensure the network is a single connected component after arc selection and point removal
-    stm_arcs, stm_pnts = _ensure_single_network(stm_arcs, stm_pnts)
+    stm_arcs, stm_pnts = _ensure_single_network(stm_arcs, stm_pnts, largest_component_ratio)
 
     # Select reference point as the source pnt of arcs with highest temp_coh
     if idx_refpnt is None:
@@ -184,11 +188,11 @@ def spatial_integration(
         idx_refpnt = np.where(mask_refpnt)[0][0]
 
     # Adjust the network by removing bad arcs/points using MHT
-    if skip_network_adjustment:
-        logger.info("Skipping MHT network adjustment step.")
+    if skip_network_adaptation:
+        logger.info("Skipping MHT network adaptation step.")
         stm_arcs_adjusted, stm_pnts_adjusted = stm_arcs, stm_pnts
     else:
-        stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adjustment(
+        stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adaptation(
             stm_arcs,
             stm_pnts,
             idx_refpnt,
@@ -197,17 +201,18 @@ def spatial_integration(
             ensure_network_while_mht,
             sparse_mode,
             arc_estimation_method,
-            max_iterations_adjustment,
+            max_iterations_adaptation,
+            largest_component_ratio,
         )
 
-        # Update idx_refpnt after MHT adjustment
+        # Update idx_refpnt after MHT adaptation
         idx_refpnt = np.where(
             (stm_pnts_adjusted["azimuth"].values == azimuth_refpnt)
             & (stm_pnts_adjusted["range"].values == range_refpnt)
         )[0][0]
 
     # Adjust ambiguities to fix unwrapping errors
-    stm_arcs_output, stm_pnts_output, idx_refpnt = _ambiguities_adjustment(
+    stm_arcs_output, stm_pnts_output, idx_refpnt = _ambiguity_adaptation(
         stm_arcs_adjusted,
         stm_pnts_adjusted,
         idx_refpnt,
@@ -358,7 +363,7 @@ def form_network(
     return arcs
 
 
-def _mht_network_adjustment(
+def _mht_network_adaptation(
     stm_arcs: xr.Dataset,
     stm_pnts: xr.Dataset,
     idx_refpnt: int,
@@ -367,7 +372,8 @@ def _mht_network_adjustment(
     ensure_network_while_mht: bool,
     sparse_mode: bool,
     arc_estimation_method: str,
-    max_iterations_adjustment: int,
+    max_iterations_adaptation: int,
+    largest_component_ratio: float,
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """Adjust the network by removing bad arcs/points by applying MHT.
 
@@ -387,13 +393,15 @@ def _mht_network_adjustment(
     range_refpnt : int | float
         Range coordinate of the reference point.
     ensure_network_while_mht : bool
-        Whether to ensure minimum connections in MHT network adjustment.
+        Whether to ensure minimum connections in MHT network adaptation.
     sparse_mode : bool
         Whether to use sparse matrix format for large networks.
     arc_estimation_method : str
         Method used for arc estimation.
-    max_iterations_adjustment : int
-        Maximum number of iterations for network adjustment.
+    max_iterations_adaptation : int
+        Maximum number of iterations for network adaptation.
+    largest_component_ratio : float
+        Threshold for determining the largest component when multiple components exist in the network.
 
     Returns
     -------
@@ -421,16 +429,16 @@ def _mht_network_adjustment(
         _, k1, kb, _ = pretest(n_con, ALPHA0, GAMMA0)
         kb_dict[n_con] = kb
 
-    # By default, set max_iterations_adjustment to the number of arcs
-    if max_iterations_adjustment is None:
-        max_iterations_adjustment = stm_arcs.sizes["space"]
+    # By default, set max_iterations_adaptation to the number of arcs
+    if max_iterations_adaptation is None:
+        max_iterations_adaptation = stm_arcs.sizes["space"]
 
     # Iteratively remove arcs/points until OMT and all arc statistics pass the test
     stm_pnts_updated = stm_pnts.copy()
     stm_arcs_updated = stm_arcs.copy()
     TT1max = TT1_THRES + 1.0  # Initial TT1_max to trigger the while loop
     niter = 0
-    while (OMT >= OMT_THRES) and (TT1max >= TT1_THRES) and (niter < max_iterations_adjustment):
+    while (OMT >= OMT_THRES) and (TT1max >= TT1_THRES) and (niter < max_iterations_adaptation):
         # The iteration stops when one of the following conditions is met:
         # 1) overall model test pass: OMT < OMT_THRES (very rare case)
         # 2) all arc test statistics smaller than threshold: max(TT1) < TT1_THRES (most common case)
@@ -439,7 +447,7 @@ def _mht_network_adjustment(
 
         # Because OMT failed, choose from two Ha: 1) remove an arc; 2) remove a point
         # Decision is made based on flag_rm
-        flag_rm, idx_rm, TT1max, TTqmax = _mht_network_adjustment_reject_one(
+        flag_rm, idx_rm, TT1max, TTqmax = _mht_network_adaptation_reject_one(
             A, stm_arcs_updated["ambiguities"].data, Qyy_diag, k1, kb_dict
         )
 
@@ -472,7 +480,9 @@ def _mht_network_adjustment(
         )
 
         # Ensure the network is a single connected component after arc/point removal
-        stm_arcs_updated, stm_pnts_updated = _ensure_single_network(stm_arcs_updated, stm_pnts_updated)
+        stm_arcs_updated, stm_pnts_updated = _ensure_single_network(
+            stm_arcs_updated, stm_pnts_updated, largest_component_ratio
+        )
 
         # Make sure the reference point is still in stm_pnts_updated, by checking its azimuth and range
         mask_refpnt = (stm_pnts_updated["azimuth"].values == azimuth_refpnt) & (
@@ -506,14 +516,14 @@ def _mht_network_adjustment(
 
     if niter >= stm_arcs.sizes["space"]:
         raise RuntimeError(
-            "Maximum number of iterations reached in MHT network adjustment. "
+            "Maximum number of iterations reached in MHT network adaptation. "
             "The network may still contain bad arcs or points."
         )
 
     return stm_arcs_updated, stm_pnts_updated
 
 
-def _mht_network_adjustment_reject_one(
+def _mht_network_adaptation_reject_one(
     A: np.ndarray | scipy.sparse.spmatrix,
     y: np.ndarray,
     Qyy_diag: np.ndarray,
@@ -530,7 +540,7 @@ def _mht_network_adjustment_reject_one(
         invQy = np.diag(1 / Qyy_diag)
         Qyy = np.diag(Qyy_diag)
     else:
-        raise NotImplementedError("Currently only diagonal VCM is supported. Qyy_diag should be an 1d array.")
+        raise NotImplementedError("Currently only diagonal VCM is supported. Qyy_diag should be a 1d array.")
 
     # Solve ambiguities as float
     _, echeck, invAtQyA = _solve_float_ambiguities(A, y, invQy)
@@ -578,7 +588,7 @@ def _mht_network_adjustment_reject_one(
     return flag_removal, idx_removal, TT1max, TTqmax
 
 
-def _ambiguities_adjustment(
+def _ambiguity_adaptation(
     stm_arcs: xr.Dataset,
     stm_pnts: xr.Dataset,
     idx_refpnt: int,
@@ -710,18 +720,28 @@ def _ensure_network_min_connections(
     return stm_arcs, stm_pnts
 
 
-def _ensure_single_network(stm_arcs: xr.Dataset, stm_pnts: xr.Dataset) -> tuple[xr.Dataset, xr.Dataset]:
-    """Ensure the network is connected and discard the smaller disconnected sub-network(s)."""
-    # Create networkx graph
-    # Note that arc sources and targets are indices of the points
-    # The "space" coordinate of the point STM is not necessarily the same as the index
+def _ensure_single_network(
+    stm_arcs: xr.Dataset, stm_pnts: xr.Dataset, largest_component_ratio: float
+) -> tuple[xr.Dataset, xr.Dataset]:
+    """Ensure the network is connected and discard the smaller disconnected sub-network(s).
+
+    This function utilizes the NetworkX library to identify connected components in the network
+    formed by stm_arcs and stm_pnts. When building the graph, the point indices are used as node identifiers,
+    and the "source" and "target" coordinates in stm_arcs are used to add edges between the corresponding nodes.
+    Note that "source" and "target" coordinates in stm_arcs are indices of the points STM stm_pnts,
+    but not necessarily the same as the "space" coordinate of stm_pnts.
+
+    If there are multiple connected components, only the largest one is kept and the others are discarded.
+    However, if the largest component is smaller than a certain ratio (largest_component_ratio) of the total
+    points, an error is raised.
+    """
     G = nx.Graph()
-    G.add_nodes_from(np.arange(stm_pnts.sizes["space"]))  # Use point indices as node identities
+    G.add_nodes_from(np.arange(stm_pnts.sizes["space"]))  # Use point indices as node identifiers
     G.add_edges_from(
         zip(
             stm_arcs["source"].values,
             stm_arcs["target"].values,
-            strict=False,
+            strict=True,
         )
     )
 
@@ -733,10 +753,10 @@ def _ensure_single_network(stm_arcs: xr.Dataset, stm_pnts: xr.Dataset) -> tuple[
         nodes_largest = max(list_components, key=len)  # set of node indices in the largest connected component
 
         # Check if the largest component is significantly larger than the second largest one
-        if (len(nodes_largest) / stm_pnts.sizes["space"]) < LARGEST_COMPONENT_THRES:
+        if (len(nodes_largest) / stm_pnts.sizes["space"]) < largest_component_ratio:
             raise RuntimeError(
                 f"The largest connected component contains only {len(nodes_largest)} points, which is less than "
-                f"{LARGEST_COMPONENT_THRES * 100:.1f}% of the total {stm_pnts.sizes['space']} points. "
+                f"{largest_component_ratio * 100:.1f}% of the total {stm_pnts.sizes['space']} points. "
                 "In this case DePSI cannot automatically decide which component to keep. "
                 "This may indicate a problem with the network formation. "
                 "Please check the input data and parameters."

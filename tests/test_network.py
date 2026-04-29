@@ -105,10 +105,8 @@ def _build_network_components(component_sizes: list[int]) -> tuple[xr.Dataset, x
             target.append(idx + 1)
         offset += size
 
-    n_arcs = len(source)
     stm_arcs = xr.Dataset(
         coords={
-            "space": ("space", np.arange(n_arcs)),
             "source": ("space", np.array(source, dtype=int)),
             "target": ("space", np.array(target, dtype=int)),
         }
@@ -237,7 +235,7 @@ class TestNetworkEnsure:
         """Keep the network unchanged when there is only one connected component."""
         stm_arcs, stm_pnts = _build_network_components(component_sizes)
 
-        stm_arcs_out, stm_pnts_out = _ensure_single_network(stm_arcs, stm_pnts)
+        stm_arcs_out, stm_pnts_out = _ensure_single_network(stm_arcs, stm_pnts, largest_component_ratio=0.8)
 
         assert stm_pnts_out.sizes["space"] == stm_pnts.sizes["space"]
         assert stm_arcs_out.sizes["space"] == stm_arcs.sizes["space"]
@@ -245,19 +243,15 @@ class TestNetworkEnsure:
         assert np.array_equal(stm_arcs_out["target"].values, stm_arcs["target"].values)
 
     @pytest.mark.parametrize(
-        "component_sizes",
-        [
-            [9, 1],
-            [17, 2, 1],
-            [41, 3, 2, 2, 2],
-        ],
+        ["component_sizes", "largest_component_ratio"],
+        [([15, 1, 1, 1], 0.8), ([8, 6], 0.5), ([9, 1, 1], 0.8), ([5, 3, 2], 0.4)],
     )
-    def test_ensure_single_network_keep_largest_significant(self, component_sizes):
+    def test_ensure_single_network_keep_largest_significant(self, component_sizes, largest_component_ratio):
         """Keep only the largest component when it is significant enough."""
         stm_arcs, stm_pnts = _build_network_components(component_sizes)
         largest_size = max(component_sizes)
 
-        stm_arcs_out, stm_pnts_out = _ensure_single_network(stm_arcs, stm_pnts)
+        stm_arcs_out, stm_pnts_out = _ensure_single_network(stm_arcs, stm_pnts, largest_component_ratio)
 
         assert stm_pnts_out.sizes["space"] == largest_size
         assert stm_arcs_out.sizes["space"] == largest_size - 1
@@ -276,15 +270,16 @@ class TestNetworkEnsure:
     )
     def test_ensure_single_network_raise_when_largest_not_significant(self, component_sizes):
         """Raise when the largest component is not clearly dominant."""
+        largest_component_ratio = 0.8
         stm_arcs, stm_pnts = _build_network_components(component_sizes)
 
         with pytest.raises(RuntimeError):
-            _ensure_single_network(stm_arcs, stm_pnts)
+            _ensure_single_network(stm_arcs, stm_pnts, largest_component_ratio)
 
 
 class TestNetworkUnwrap:
     @pytest.mark.parametrize(
-        ["id_ref", "idx_err_space", "idx_err_time", "error_values", "skip_network_adjustment"],
+        ["id_ref", "idx_err_space", "idx_err_time", "error_values", "skip_network_adaptation"],
         [
             (3, [], [], [], False),  # No error
             (3, [2, 11], [7, 13], [-1, 1], False),  # Two errors in arc ambiguities
@@ -292,7 +287,7 @@ class TestNetworkUnwrap:
             (9, [0, 4, 8], [5, 10, 15], [1, -100, 1], False),  # Three errors, one large, but should be corrected
         ],
     )
-    def test_spatial_integration(self, id_ref, idx_err_space, idx_err_time, error_values, skip_network_adjustment):
+    def test_spatial_integration(self, id_ref, idx_err_space, idx_err_time, error_values, skip_network_adaptation):
         """Test spatial unwrapping based on arc ambiguities.
 
         Build points with true value of ambiguities.
@@ -360,7 +355,7 @@ class TestNetworkUnwrap:
         stm_arcs["ambiguities"] = (("space", "time"), ambigs + ambigs_errors)
 
         stm_arcs_output, stm_pnts_output = spatial_integration(
-            stm_pnts, stm_arcs, idx_refpnt=id_ref, key_sdphase="phase", skip_network_adjustment=skip_network_adjustment
+            stm_pnts, stm_arcs, idx_refpnt=id_ref, key_sdphase="phase", skip_network_adaptation=skip_network_adaptation
         )
 
         # Verify output dimensions, no points should be rejected
