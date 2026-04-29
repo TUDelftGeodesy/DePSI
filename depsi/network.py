@@ -48,8 +48,8 @@ def spatial_integration(
     sparse_mode: bool = False,
     ensure_network_while_mht: bool = False,
     arc_estimation_method: Literal["periodogram"] = "periodogram",
-    skip_network_adjustment: bool = False,
-    max_iterations_adjustment: int = None,
+    skip_network_adaptation: bool = False,
+    max_iterations_adaptation: int = None,
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """Spatially integrate the ambiguities of network arcs to points.
 
@@ -97,23 +97,24 @@ def spatial_integration(
         Threshold for determining the largest component when multiple components exist in the network, by default 0.8.
         When removing arcs/points, it may happen that the network is split into multiple disconnected components.
         In this case, only the largest component is kept and the others are discarded.
-        The largest component should contain at least this fraction of the total points, otherwise an error is raised. Hence, when an error should be raised at all times, set this value to 1.0 .
+        The largest component should contain at least this fraction of the total points, otherwise an error is raised.
+        Hence, when an error should be raised at all times, set this value to 1.0 .
     parallel : bool, optional
         Whether to use parallel processing, by default False
     sparse_mode : bool, optional
         Whether to use sparse matrix format for large networks, by default False
     ensure_network_while_mht : bool, optional
-        Whether to ensure minimum connections in MHT network adjustment, by default False
+        Whether to ensure minimum connections in MHT network adaptation, by default False
     arc_estimation_method : Literal["periodogram"], optional
         Method used for arc estimation, by default "periodogram".
         This constrains the method used for VCM computation.
-    skip_network_adjustment : bool, optional
+    skip_network_adaptation : bool, optional
         Whether to skip network adaptation by MHT, by default False.
         When enabling this option, it is recommended to set the threshold_arc_quality to a
         high value (e.g. 0.75) to ensure only high-quality arcs are selected for spatial
         integration.
-    max_iterations_adjustment : int, optional
-        Maximum number of iterations for network adjustment.
+    max_iterations_adaptation : int, optional
+        Maximum number of iterations for network adaptation.
         If None, the maximum number if iterations will be the number of arcs.
 
     Returns
@@ -187,11 +188,11 @@ def spatial_integration(
         idx_refpnt = np.where(mask_refpnt)[0][0]
 
     # Adjust the network by removing bad arcs/points using MHT
-    if skip_network_adjustment:
-        logger.info("Skipping MHT network adjustment step.")
+    if skip_network_adaptation:
+        logger.info("Skipping MHT network adaptation step.")
         stm_arcs_adjusted, stm_pnts_adjusted = stm_arcs, stm_pnts
     else:
-        stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adjustment(
+        stm_arcs_adjusted, stm_pnts_adjusted = _mht_network_adaptation(
             stm_arcs,
             stm_pnts,
             idx_refpnt,
@@ -200,18 +201,18 @@ def spatial_integration(
             ensure_network_while_mht,
             sparse_mode,
             arc_estimation_method,
-            max_iterations_adjustment,
+            max_iterations_adaptation,
             largest_component_ratio,
         )
 
-        # Update idx_refpnt after MHT adjustment
+        # Update idx_refpnt after MHT adaptation
         idx_refpnt = np.where(
             (stm_pnts_adjusted["azimuth"].values == azimuth_refpnt)
             & (stm_pnts_adjusted["range"].values == range_refpnt)
         )[0][0]
 
     # Adjust ambiguities to fix unwrapping errors
-    stm_arcs_output, stm_pnts_output, idx_refpnt = _ambiguities_adjustment(
+    stm_arcs_output, stm_pnts_output, idx_refpnt = _ambiguity_adaptation(
         stm_arcs_adjusted,
         stm_pnts_adjusted,
         idx_refpnt,
@@ -362,7 +363,7 @@ def form_network(
     return arcs
 
 
-def _mht_network_adjustment(
+def _mht_network_adaptation(
     stm_arcs: xr.Dataset,
     stm_pnts: xr.Dataset,
     idx_refpnt: int,
@@ -371,7 +372,7 @@ def _mht_network_adjustment(
     ensure_network_while_mht: bool,
     sparse_mode: bool,
     arc_estimation_method: str,
-    max_iterations_adjustment: int,
+    max_iterations_adaptation: int,
     largest_component_ratio: float,
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """Adjust the network by removing bad arcs/points by applying MHT.
@@ -392,13 +393,13 @@ def _mht_network_adjustment(
     range_refpnt : int | float
         Range coordinate of the reference point.
     ensure_network_while_mht : bool
-        Whether to ensure minimum connections in MHT network adjustment.
+        Whether to ensure minimum connections in MHT network adaptation.
     sparse_mode : bool
         Whether to use sparse matrix format for large networks.
     arc_estimation_method : str
         Method used for arc estimation.
-    max_iterations_adjustment : int
-        Maximum number of iterations for network adjustment.
+    max_iterations_adaptation : int
+        Maximum number of iterations for network adaptation.
     largest_component_ratio : float
         Threshold for determining the largest component when multiple components exist in the network.
 
@@ -428,16 +429,16 @@ def _mht_network_adjustment(
         _, k1, kb, _ = pretest(n_con, ALPHA0, GAMMA0)
         kb_dict[n_con] = kb
 
-    # By default, set max_iterations_adjustment to the number of arcs
-    if max_iterations_adjustment is None:
-        max_iterations_adjustment = stm_arcs.sizes["space"]
+    # By default, set max_iterations_adaptation to the number of arcs
+    if max_iterations_adaptation is None:
+        max_iterations_adaptation = stm_arcs.sizes["space"]
 
     # Iteratively remove arcs/points until OMT and all arc statistics pass the test
     stm_pnts_updated = stm_pnts.copy()
     stm_arcs_updated = stm_arcs.copy()
     TT1max = TT1_THRES + 1.0  # Initial TT1_max to trigger the while loop
     niter = 0
-    while (OMT >= OMT_THRES) and (TT1max >= TT1_THRES) and (niter < max_iterations_adjustment):
+    while (OMT >= OMT_THRES) and (TT1max >= TT1_THRES) and (niter < max_iterations_adaptation):
         # The iteration stops when one of the following conditions is met:
         # 1) overall model test pass: OMT < OMT_THRES (very rare case)
         # 2) all arc test statistics smaller than threshold: max(TT1) < TT1_THRES (most common case)
@@ -446,7 +447,7 @@ def _mht_network_adjustment(
 
         # Because OMT failed, choose from two Ha: 1) remove an arc; 2) remove a point
         # Decision is made based on flag_rm
-        flag_rm, idx_rm, TT1max, TTqmax = _mht_network_adjustment_reject_one(
+        flag_rm, idx_rm, TT1max, TTqmax = _mht_network_adaptation_reject_one(
             A, stm_arcs_updated["ambiguities"].data, Qyy_diag, k1, kb_dict
         )
 
@@ -515,14 +516,14 @@ def _mht_network_adjustment(
 
     if niter >= stm_arcs.sizes["space"]:
         raise RuntimeError(
-            "Maximum number of iterations reached in MHT network adjustment. "
+            "Maximum number of iterations reached in MHT network adaptation. "
             "The network may still contain bad arcs or points."
         )
 
     return stm_arcs_updated, stm_pnts_updated
 
 
-def _mht_network_adjustment_reject_one(
+def _mht_network_adaptation_reject_one(
     A: np.ndarray | scipy.sparse.spmatrix,
     y: np.ndarray,
     Qyy_diag: np.ndarray,
@@ -587,7 +588,7 @@ def _mht_network_adjustment_reject_one(
     return flag_removal, idx_removal, TT1max, TTqmax
 
 
-def _ambiguities_adjustment(
+def _ambiguity_adaptation(
     stm_arcs: xr.Dataset,
     stm_pnts: xr.Dataset,
     idx_refpnt: int,
