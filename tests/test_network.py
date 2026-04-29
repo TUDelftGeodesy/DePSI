@@ -6,9 +6,9 @@ import xarray as xr
 
 from depsi.network import (
     _ensure_network_min_connections,
+    _ensure_single_network,
     _network_relation_matrix,
     _remove_network_points_min_connections,
-    _solve_float_ambiguities,
     form_network,
     spatial_integration,
 )
@@ -88,6 +88,31 @@ def arcs_random(stm_random):
     arcs["temp_coh"] = (("space"), temp_coh)
 
     return arcs
+
+
+def _build_network_components(component_sizes: list[int]) -> tuple[xr.Dataset, xr.Dataset]:
+    """Build coordinate only point/arcs STMs from connected-component sizes."""
+    n_points = int(sum(component_sizes))
+    stm_pnts = xr.Dataset(coords={"space": ("space", np.arange(n_points))})
+
+    source = []
+    target = []
+    offset = 0
+    for size in component_sizes:
+        # Build each component as a simple chain graph.
+        for idx in range(offset, offset + size - 1):
+            source.append(idx)
+            target.append(idx + 1)
+        offset += size
+
+    stm_arcs = xr.Dataset(
+        coords={
+            "source": ("space", np.array(source, dtype=int)),
+            "target": ("space", np.array(target, dtype=int)),
+        }
+    )
+
+    return stm_arcs, stm_pnts
 
 
 class TestNetworkFormation:
@@ -205,17 +230,64 @@ class TestNetworkEnsure:
         # Should remove the point with index 1
         assert stm_updated.sizes["space"] == stm_random.sizes["space"] - 1
 
+    @pytest.mark.parametrize("component_sizes", [[12]])
+    def test_ensure_single_network_no_separated_part(self, component_sizes):
+        """Keep the network unchanged when there is only one connected component."""
+        stm_arcs, stm_pnts = _build_network_components(component_sizes)
+
+        stm_arcs_out, stm_pnts_out = _ensure_single_network(stm_arcs, stm_pnts, largest_component_ratio=0.8)
+
+        assert stm_pnts_out.sizes["space"] == stm_pnts.sizes["space"]
+        assert stm_arcs_out.sizes["space"] == stm_arcs.sizes["space"]
+        assert np.array_equal(stm_arcs_out["source"].values, stm_arcs["source"].values)
+        assert np.array_equal(stm_arcs_out["target"].values, stm_arcs["target"].values)
+
+    @pytest.mark.parametrize(
+        ["component_sizes", "largest_component_ratio"],
+        [([15, 1, 1, 1], 0.8), ([8, 6], 0.5), ([9, 1, 1], 0.8), ([5, 3, 2], 0.4)],
+    )
+    def test_ensure_single_network_keep_largest_significant(self, component_sizes, largest_component_ratio):
+        """Keep only the largest component when it is significant enough."""
+        stm_arcs, stm_pnts = _build_network_components(component_sizes)
+        largest_size = max(component_sizes)
+
+        stm_arcs_out, stm_pnts_out = _ensure_single_network(stm_arcs, stm_pnts, largest_component_ratio)
+
+        assert stm_pnts_out.sizes["space"] == largest_size
+        assert stm_arcs_out.sizes["space"] == largest_size - 1
+        assert np.all(stm_arcs_out["source"].values >= 0)
+        assert np.all(stm_arcs_out["target"].values >= 0)
+        assert np.all(stm_arcs_out["source"].values < largest_size)
+        assert np.all(stm_arcs_out["target"].values < largest_size)
+
+    @pytest.mark.parametrize(
+        "component_sizes",
+        [
+            [6, 4],
+            [8, 7, 1],
+            [10, 9, 1, 1],
+        ],
+    )
+    def test_ensure_single_network_raise_when_largest_not_significant(self, component_sizes):
+        """Raise when the largest component is not clearly dominant."""
+        largest_component_ratio = 0.8
+        stm_arcs, stm_pnts = _build_network_components(component_sizes)
+
+        with pytest.raises(RuntimeError):
+            _ensure_single_network(stm_arcs, stm_pnts, largest_component_ratio)
+
 
 class TestNetworkUnwrap:
     @pytest.mark.parametrize(
-        ["id_ref", "idx_err_space", "idx_err_time", "error_values"],
+        ["id_ref", "idx_err_space", "idx_err_time", "error_values", "skip_network_adaptation"],
         [
-            (3, [], [], []),  # No error
-            (3, [2, 11], [7, 13], [-1, 1]),  # Two errors in arc ambiguities
-            (9, [0, 4, 8], [5, 10, 15], [1, -100, 1]),  # Three errors, one large, but should be corrected
+            (3, [], [], [], False),  # No error
+            (3, [2, 11], [7, 13], [-1, 1], False),  # Two errors in arc ambiguities
+            (3, [2, 11], [7, 13], [-1, 1], True),  # Two errors, skip network adjustment, should still be corrected
+            (9, [0, 4, 8], [5, 10, 15], [1, -100, 1], False),  # Three errors, one large, but should be corrected
         ],
     )
-    def test_spatial_integration(self, id_ref, idx_err_space, idx_err_time, error_values):
+    def test_spatial_integration(self, id_ref, idx_err_space, idx_err_time, error_values, skip_network_adaptation):
         """Test spatial unwrapping based on arc ambiguities.
 
         Build points with true value of ambiguities.
@@ -283,7 +355,7 @@ class TestNetworkUnwrap:
         stm_arcs["ambiguities"] = (("space", "time"), ambigs + ambigs_errors)
 
         stm_arcs_output, stm_pnts_output = spatial_integration(
-            stm_pnts, stm_arcs, idx_refpnt=id_ref, key_sdphase="phase"
+            stm_pnts, stm_arcs, idx_refpnt=id_ref, key_sdphase="phase", skip_network_adaptation=skip_network_adaptation
         )
 
         # Verify output dimensions, no points should be rejected
@@ -428,14 +500,3 @@ class TestNetworkUnwrap:
 
         assert A.shape == A_exp.shape
         assert np.all(A.todense() == A_exp)
-
-
-def test__solve_float_ambiguities_rankdeficient_a():
-    A = np.array(
-        [[1, 1, 3], [1, 2, 3], [1, 3, 3], [1, 2, 3]]
-    )  # x1 and x3 are linearly dependent (columns 1 and 3). A.T @ A is singular
-    invQy = np.eye(4)
-    y = np.array([1, 2, 3, 2.5]).T
-    acheck, echeck = _solve_float_ambiguities(A, y, invQy)
-    assert acheck.shape == (3,)
-    assert echeck.shape == (4,)
