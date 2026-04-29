@@ -97,7 +97,7 @@ def spatial_integration(
         Threshold for determining the largest component when multiple components exist in the network, by default 0.8.
         When removing arcs/points, it may happen that the network is split into multiple disconnected components.
         In this case, only the largest component is kept and the others are discarded.
-        The largest component should contain at least this fraction of the total points, otherwise an error is raised.
+        The largest component should contain at least this fraction of the total points, otherwise an error is raised. Hence, when an error should be raised at all times, set this value to 1.0 .
     parallel : bool, optional
         Whether to use parallel processing, by default False
     sparse_mode : bool, optional
@@ -108,7 +108,7 @@ def spatial_integration(
         Method used for arc estimation, by default "periodogram".
         This constrains the method used for VCM computation.
     skip_network_adjustment : bool, optional
-        whether to skip network adjustment by MHT, by default False.
+        Whether to skip network adaptation by MHT, by default False.
         When enabling this option, it is recommended to set the threshold_arc_quality to a
         high value (e.g. 0.75) to ensure only high-quality arcs are selected for spatial
         integration.
@@ -539,7 +539,7 @@ def _mht_network_adjustment_reject_one(
         invQy = np.diag(1 / Qyy_diag)
         Qyy = np.diag(Qyy_diag)
     else:
-        raise NotImplementedError("Currently only diagonal VCM is supported. Qyy_diag should be an 1d array.")
+        raise NotImplementedError("Currently only diagonal VCM is supported. Qyy_diag should be a 1d array.")
 
     # Solve ambiguities as float
     _, echeck, invAtQyA = _solve_float_ambiguities(A, y, invQy)
