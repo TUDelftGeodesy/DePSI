@@ -671,76 +671,81 @@ def export_to_csv(
 
     f = open(save_path, "w")
     f.write(",".join(headers) + "\n")
-    for point in stm["space"].values:
-        point_values = []
-        for value in headers:
-            match value:
-                case "ID":
-                    az = int(stm.azimuth.sel(space=point).values)
-                    r = int(stm.range.sel(space=point).values)
-                    point_values.append(f"{point_annotation_label}_az{az:0>8d}r{r:0>8d}")
-                case "X (RD) [m]":
-                    if "x_euclidean_proj_epsg28992" in stm.variables.keys():
-                        point_values.append(round(float(stm.x_euclidean_proj_epsg28992.sel(space=point).values), 2))
-                    else:
-                        point_values.append("NULL")
-                case "Y (RD) [m]":
-                    if "y_euclidean_proj_epsg28992" in stm.variables.keys():
-                        point_values.append(round(float(stm.y_euclidean_proj_epsg28992.sel(space=point).values), 2))
-                    else:
-                        point_values.append("NULL")
-                case "H [m-NAP]":
-                    if "rd_h" in stm.variables.keys():
-                        # point_values.append(round(float(stm.rd_h.sel(space=point).values), 4))
-                        point_values.append("NULL")
-                    else:
-                        point_values.append("NULL")
-                case "Lat (WGS84) [deg]":
-                    point_values.append(round(float(stm.lat.sel(space=point).values), 8))
-                case "Lon (WGS84) [deg]":
-                    point_values.append(round(float(stm.lon.sel(space=point).values), 8))
-                case "h (WGS84) [m]":
-                    point_values.append(round(float(stm.h.sel(space=point).values), 3))
-                case "Azimuth":
-                    point_values.append(int(stm.azimuth.sel(space=point).values))
-                case "Range":
-                    point_values.append(int(stm.range.sel(space=point).values))
-                case "Std velocity [mm/y]":
-                    # point_values.append(round(float(stm.linear_std.sel(space=point).values), 3))
-                    point_values.append("NULL")
-                case "STC [mm]":
-                    point_values.append(round(float(stm.stc.sel(space=point).values), 3))
-                case "Coherence [0-1]":
-                    # point_values.append(round(float(stm.coherence.sel(space=point).values), 4))
-                    point_values.append("NULL")
-                case "Std [mm]":
-                    # point_values.append(round(float(stm.ts_std.sel(space=point).values), 3))
-                    point_values.append("NULL")
-                case _:
-                    if value in model_parameter_layer_names:
-                        if ts_proj == "vertical":
-                            point_values.append(round(float(stm[f"{value}_pov"].sel(space=point).values), 5))
-                        elif ts_proj == "los":
-                            point_values.append(round(float(stm[value].sel(space=point).values), 5))
-                    elif value in fmt_dates:
-                        if ts_proj == "vertical":
-                            point_values.append(
-                                round(
-                                    float(stm.unwraped_phase_pov.sel(space=point).isel(time=fmt_dates.index(value))), 5
-                                )
-                            )
-                        elif ts_proj == "los":
-                            point_values.append(
-                                round(float(stm.unwrapped_phase.sel(space=point).isel(time=fmt_dates.index(value))), 5)
-                            )
-                    elif value[:2] == "a_" and value[2:] in fmt_dates:
-                        point_values.append(
-                            round(float(stm.amplitude.sel(space=point).isel(time=fmt_dates.index(value[2:]))), 3)
+    columns = []
+    for value in headers:
+        match value:
+            case "ID":
+                az = stm.azimuth.values
+                r = stm.range.values
+                columns.append(
+                    [f"{point_annotation_label}_az{int(az[i]):0>8d}r{int(r[i]):0>8d}" for i in range(len(r))]
+                )
+            case "X (RD) [m]":
+                if "x_euclidean_proj_epsg28992" in stm.variables.keys():
+                    columns.append([round(float(val), 2) for val in stm.x_euclidean_proj_epsg28992.values])
+                else:
+                    columns.append(["NULL" for _ in range(len(stm["points"].values))])
+            case "Y (RD) [m]":
+                if "y_euclidean_proj_epsg28992" in stm.variables.keys():
+                    columns.append([round(float(val), 2) for val in stm.y_euclidean_proj_epsg28992.values])
+                else:
+                    columns.append(["NULL" for _ in range(len(stm.azimuth.values))])
+            case "H [m-NAP]":
+                if "rd_h" in stm.variables.keys():
+                    columns.append(["NULL" for _ in range(len(stm.space.values))])
+                else:
+                    columns.append(["NULL" for _ in range(len(stm.space.values))])
+            case "Lat (WGS84) [deg]":
+                columns.append([round(float(val), 8) for val in stm.lat.values])
+            case "Lon (WGS84) [deg]":
+                columns.append([round(float(val), 8) for val in stm.lon.values])
+            case "h (WGS84) [m]":
+                columns.append([round(float(val), 3) for val in stm.h.values])
+            case "Azimuth":
+                columns.append([int(val) for val in stm.azimuth.values])
+            case "Range":
+                columns.append([int(val) for val in stm.range.values])
+            case "Std velocity [mm/y]":
+                # point_values.append(round(float(stm.linear_std.sel(space=point).values), 3))
+                columns.append(["NULL" for _ in range(len(stm.space.values))])
+            case "STC [mm]":
+                columns.append([round(float(val), 3) for val in stm.stc.values])
+            case "Coherence [0-1]":
+                # point_values.append(round(float(stm.coherence.sel(space=point).values), 4))
+                columns.append(["NULL" for _ in range(len(stm.space.values))])
+            case "Std [mm]":
+                # point_values.append(round(float(stm.ts_std.sel(space=point).values), 3))
+                columns.append(["NULL" for _ in range(len(stm.space.values))])
+            case _:
+                if value in model_parameter_layer_names:
+                    if ts_proj == "vertical":
+                        columns.append([round(float(val), 5) for val in stm[f"{value}_pov"].values])
+                    elif ts_proj == "los":
+                        columns.append([round(float(val), 5) for val in stm[value].values])
+                elif value in fmt_dates:
+                    if ts_proj == "vertical":
+                        columns.append(
+                            [
+                                round(float(val), 5)
+                                for val in stm.unwrapped_phase_pov.isel(time=fmt_dates.index(value)).values
+                            ]
                         )
-                    else:
-                        raise ValueError(f"Requested header {value} but this is undefined!")
+                    elif ts_proj == "los":
+                        columns.append(
+                            [
+                                round(float(val), 5)
+                                for val in stm.unwrapped_phase.isel(time=fmt_dates.index(value)).values
+                            ]
+                        )
+                elif value[:2] == "a_" and value[2:] in fmt_dates:
+                    columns.append(
+                        [round(float(val), 3) for val in stm.amplitude.isel(time=fmt_dates.index(value[2:])).values]
+                    )
+                else:
+                    raise ValueError(f"Requested header {value} but this is undefined!")
 
-        f.write(",".join([str(p) for p in point_values]) + "\n")
+    for pt in range(len(columns[0])):
+        f.write(",".join([str(columns[col][pt]) for col in range(len(columns))]) + "\n")
     f.close()
 
 
@@ -831,62 +836,63 @@ def export_to_skygeo_portal(
 
     f = open(save_path, "w")
     f.write(",".join(headers) + "\n")
-    for point in stm["space"].values:
-        point_values = []
-        for value in headers:
-            match value:
-                case "pnt_id":
-                    az = int(stm.azimuth.sel(space=point).values)
-                    r = int(stm.range.sel(space=point).values)
-                    point_values.append(f"{point_annotation_label}_az{az:0>8d}r{r:0>8d}")
-                case "pnt_lat":
-                    point_values.append(round(float(stm.lat.sel(space=point).values), 8))
-                case "pnt_lon":
-                    point_values.append(round(float(stm.lon.sel(space=point).values), 8))
-                case "pnt_demheight":
-                    point_values.append(round(float(stm.h.sel(space=point).values), 3))
-                case "pnt_azimuth":
-                    point_values.append(int(stm.azimuth.sel(space=point).values))
-                case "pnt_range":
-                    point_values.append(int(stm.range.sel(space=point).values))
-                case "pnt_quality":
-                    # point_values.append(round(float(stm.ens_coh_local.sel(space=point).values), 3))
-                    point_values.append(1)
-                case "pnt_linear":
+    columns = []
+    for value in headers:
+        match value:
+            case "pnt_id":
+                az = stm.azimuth.values
+                r = stm.range.values
+                columns.append(
+                    [f"{point_annotation_label}_az{int(az[i]):0>8d}r{int(r[i]):0>8d}" for i in range(len(r))]
+                )
+            case "pnt_lat":
+                columns.append([round(float(val), 8) for val in stm.lat.values])
+            case "pnt_lon":
+                columns.append([round(float(val), 8) for val in stm.lon.values])
+            case "pnt_demheight":
+                columns.append([round(float(val), 3) for val in stm.h.values])
+            case "pnt_azimuth":
+                columns.append([int(val) for val in stm.azimuth.values])
+            case "pnt_range":
+                columns.append([int(val) for val in stm.range.values])
+            case "pnt_quality":
+                # point_values.append(round(float(stm.ens_coh_local.sel(space=point).values), 3))
+                columns.append([1 for _ in range(len(stm.space.values))])
+            case "pnt_linear":
+                if ts_proj == "vertical":
+                    columns.append([round(float(val), 5) for val in stm.pnt_velocity_pov.values])
+                elif ts_proj == "los":
+                    columns.append([round(float(val), 5) for val in stm.pnt_velocity.values])
+            case _:
+                if value[:2] == "d_" and value[2:] in fmt_dates:
                     if ts_proj == "vertical":
-                        point_values.append(round(float(stm.pnt_velocity_pov.sel(space=point).values), 5))
-                    elif ts_proj == "los":
-                        point_values.append(round(float(stm.pnt_velocity.sel(space=point).values), 5))
-                case _:
-                    if value[:2] == "d_" and value[2:] in fmt_dates:
-                        if ts_proj == "vertical":
-                            point_values.append(
-                                round(
-                                    float(
-                                        stm.unwrapped_phase_pov.sel(space=point).isel(time=fmt_dates.index(value[2:]))
-                                    ),
-                                    5,
-                                )
-                            )
-                        elif ts_proj == "los":
-                            point_values.append(
-                                round(
-                                    float(stm.unwrapped_phase.sel(space=point).isel(time=fmt_dates.index(value[2:]))), 5
-                                )
-                            )
-                    elif value[:2] == "a_" and value[2:] in fmt_dates:
-                        point_values.append(
-                            round(float(stm.amplitude.sel(space=point).isel(time=fmt_dates.index(value[2:]))), 3)
+                        columns.append(
+                            [
+                                round(float(val), 5)
+                                for val in stm.unwrapped_phase_pov.isel(time=fmt_dates.index(value[2:])).values
+                            ]
                         )
-                    elif value in model_parameter_layer_names:
-                        if ts_proj == "vertical":
-                            point_values.append(round(float(stm[f"{value}_pov"].sel(space=point).values), 5))
-                        elif ts_proj == "los":
-                            point_values.append(round(float(stm[value].sel(space=point).values), 5))
-                    else:
-                        raise ValueError(f"Requested header {value} but this is undefined!")
+                    elif ts_proj == "los":
+                        columns.append(
+                            [
+                                round(float(val), 5)
+                                for val in stm.unwrapped_phase.isel(time=fmt_dates.index(value[2:])).values
+                            ]
+                        )
+                elif value[:2] == "a_" and value[2:] in fmt_dates:
+                    columns.append(
+                        [round(float(val), 3) for val in stm.amplitude.isel(time=fmt_dates.index(value[2:])).values]
+                    )
+                elif value in model_parameter_layer_names:
+                    if ts_proj == "vertical":
+                        columns.append([round(float(val), 5) for val in stm[f"{value}_pov"].values])
+                    elif ts_proj == "los":
+                        columns.append([round(float(val), 5) for val in stm[value].values])
+                else:
+                    raise ValueError(f"Requested header {value} but this is undefined!")
 
-        f.write(",".join([str(p) for p in point_values]) + "\n")
+    for pt in range(len(columns[0])):
+        f.write(",".join([str(columns[col][pt]) for col in range(len(columns))]) + "\n")
     f.close()
 
     ref_point_idx = [stm.idx_refpnt]
