@@ -4,11 +4,11 @@
   <img src="assets/depsi_snapshot.gif" alt="DePSI Snapshot" style="width:40%; height:auto;">
 </div>
 
+**This repository holds a beta version of DePSI. The code is still under development and should still be properly tested and documented. Still, you are invited to have a look at the current code base and send us your suggestions.**
+
 DePSI (van Leijen, 2014) is an open source Python software package for Persistent Scatterer Interferometric SAR (PS-InSAR) processing. It provides a comprehensive suite of functions to identify Persistent Scatterer (PS) points from a time series of interferometric SAR data, and estimate their deformation time series based on customizable assumptions, such as a predefined deformation model.
 
 DePSI was originally implemented in MATLAB in 2014. The Python implementation of DePSI is motivated by acconmondating the classic DePSI algorithm into a modern software framework, enabling easier maintenance and contribution from the InSAR community. The Python version also enables the support of parallel computing and handling large datasets by leveraging `Dask` and `Xarray` libraries.
-
-For the original MATLAB version, which is static without further development, please refer to the [MATLAB branch](https://github.com/TUDelftGeodesy/DePSI/tree/stable) of this repository.
 
 ## Installation
 

@@ -6,7 +6,7 @@ The Python implementation of DePSI is under development. At present you can only
 
 We strongly recommend using `uv` to handle the Python environment during development process. Please refer to the [uv documentation](https://docs.astral.sh/uv/) for installation instructions of `uv` 
 
-Before you start, make sure you have access to the correct DePSI repository. You can contribute to the pubilic DePSI repository by forking it to your own GitHub account. If you are a member of the TUDelftGeodesy organization, you can also contribute to the group DePSI repository.
+Before you start, make sure you have access to the correct DePSI repository. You can contribute to the public DePSI repository by forking it to your own GitHub account. If you are a member of the TUDelftGeodesy organization, you can also contribute to the group DePSI repository.
 
 Clone this GitHub repository, then `cd` into the cloned repository.
 

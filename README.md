@@ -33,4 +33,4 @@ Apache Software License 2.0
 
 ## References
 
-[1] [Van Leijen, Frederik Johannes. "Persistent scatterer interferometry based on geodetic estimation theory." (2014).](https://repository.tudelft.nl/record/uuid:5dba48d7-ee26-4449-b674-caa8df93e71e)
+[1] [Van Leijen, F.J., 2014. "Persistent scatterer interferometry based on geodetic estimation theory." Delft University of Technology, The Netherlands.](https://repository.tudelft.nl/record/uuid:5dba48d7-ee26-4449-b674-caa8df93e71e)

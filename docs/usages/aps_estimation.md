@@ -1,4 +1,4 @@
-# Atmospheric phase screen estimation
+# Atmospheric Phase Screen estimation
 
 In DePSI, Atmospheric Phase Screen (APS) is estimated using Kriging methods from the residual phase of network points after removing modeled deformation, assuming the APS is a spatially correlated and temporally uncorrelated signal. In background, we use the `pykrige` library to perform Kriging interpolation.
 
