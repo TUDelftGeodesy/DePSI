@@ -499,10 +499,6 @@ def read_rcs_csv(file_path):
     ----------
     file_path : str
         Path to the CSV file to load.
-    skip_rows : int, optional
-        Number of rows to skip before reading the actual data. Default is 5.
-    delimiter : str, optional
-        The delimiter used in the CSV file. Default is tab (`\t`).
 
     Returns
     -------

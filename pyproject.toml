@@ -12,13 +12,13 @@ dependencies = [
     "pykrige",
     "sarxarray>=1.2.3",
     "scipy",
-    "stmtools",
+    "stmtools>=0.1.4",
     "ruptures",
     "networkx",
     "drama",
     "asf_search",
     "sparse",
-    "scikit-learn"
+    "scikit-learn",
 ]
 description = "Python package for interferometric synthetic aperture radar (InSAR) time series processing."
 readme = "README.md"
@@ -37,7 +37,7 @@ classifiers=[
     'Programming Language :: Python :: 3.12',
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest",
     "pytest-cov",
@@ -89,7 +89,7 @@ lint.ignore = [
 ] # docstring style
 
 line-length = 120
-exclude = ["docs", "build", "*.ipynb", "scripts/*", "depsi/LAMBDA.py", "examples/scripts/*"]
+exclude = ["docs", "build", "*.ipynb", "scripts/*", "depsi/LAMBDA.py", "experiments/*"]
 # Allow unused variables when underscore-prefixed.
 lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 target-version = "py310"
