@@ -11,7 +11,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/depsi.svg?colorB=blue)](https://pypi.python.org/project/depsi/)
 
-[![Build and pytest](https://github.com/TUDelftGeodesy/DePSI_group/actions/workflows/build.yml/badge.svg)](https://github.com/TUDelftGeodesy/DePSI_group/actions/workflows/build.yml)
+[![Build and pytest](https://github.com/TUDelftGeodesy/DePSI/actions/workflows/build.yml/badge.svg)](https://github.com/TUDelftGeodesy/DePSI/actions/workflows/build.yml)
 
 [![License](https://img.shields.io/github/license/TUDelftGeodesy/DePSI)](https://opensource.org/licenses/Apache-2.0)
 
