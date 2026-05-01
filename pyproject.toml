@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "depsi"
-version = "0.1.0"
+version = "0.1.1"
 requires-python = ">=3.10"
 dependencies = [
     "matplotlib",
@@ -87,11 +87,11 @@ lint.ignore = [
 "D100", "D101", "D104", "D105", "D106", "D107", "D203", "D213", "D413",
 "N803", "N806" # Allow capital letters in variables
 ] # docstring style
+# Allow unused variables when underscore-prefixed.
+lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 line-length = 120
 exclude = ["docs", "build", "*.ipynb", "scripts/*", "depsi/LAMBDA.py", "experiments/*"]
-# Allow unused variables when underscore-prefixed.
-lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 target-version = "py310"
 
 [tool.ruff.lint.per-file-ignores]
