@@ -6,7 +6,11 @@
   <img src="docs/assets/depsi_snapshot.gif" alt="DePSI Snapshot" style="width:100%; height:auto;">
 </td>
 <td width="35%" valign="middle">
-  
+
+[![DOI](https://zenodo.org/badge/618377671.svg)](https://doi.org/10.5281/zenodo.19951332)
+
+[![PyPI](https://img.shields.io/pypi/v/depsi.svg?colorB=blue)](https://pypi.python.org/project/depsi/)
+
 [![Build and pytest](https://github.com/TUDelftGeodesy/DePSI_group/actions/workflows/build.yml/badge.svg)](https://github.com/TUDelftGeodesy/DePSI_group/actions/workflows/build.yml)
 
 [![License](https://img.shields.io/github/license/TUDelftGeodesy/DePSI)](https://opensource.org/licenses/Apache-2.0)
