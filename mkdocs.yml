@@ -1,18 +1,31 @@
 site_name: "DePSI: Delft PS-InSAR processing package"
-repo_url: https://github.com/TUDelftGeodesy/DePSI
-repo_name: DePSI
+site_url: https://tudelftgeodesy.github.io/DePSI_group
+repo_url: https://github.com/TUDelftGeodesy/DePSI_group
+repo_name: DePSI_group
 
 nav:
-  - Getting started: 
-    - About DePSI: index.md
-  - Usage:
-    - SLC methods: usages/slc.md
-  - API Reference: api_reference.md
-  - Developer Guide: dev_guide.md
+  - About DePSI: index.md
+  - Install DePSI: installation.md
+  - API Reference:
+    - depsi.classification: api/classification.md
+    - depsi.arc_estimation: api/arc_estimation.md
+    - depsi.network: api/network.md
+    - depsi.atmosphere_estimation: api/atmosphere_estimation.md
+    - depsi.densification: api/densification.md
+    - depsi.transformations: api/transformations.md
+    - depsi.io: api/io.md
+  - Contributing: 
+    - Contributing guide: CONTRIBUTING.md
+    - Practical info for developers: dev_guide.md
+    - Code of conduct: CODE_OF_CONDUCT.md
+  - Example Notebooks:
+    - DePSI example workflow: notebooks/demo_depsi_full.ipynb
+    - SARXarray and STMTools Dependencies of DePSI: notebooks/demo_sarxarray_and_stmtools.ipynb
 
 
 theme:
   name: material
+  custom_dir: docs/notebooks/download_button
   palette:
     # Palette toggle for light mode
     - scheme: default
@@ -56,3 +69,5 @@ markdown_extensions:
 
 extra:
   generator: false
+  version:
+    provider: mike

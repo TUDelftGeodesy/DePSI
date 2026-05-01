@@ -1,10 +1,13 @@
 """Functions for scatterer selection related operations."""
 
+from datetime import datetime
 from typing import Literal
 
 import numpy as np
 import xarray as xr
 from scipy.spatial import KDTree
+
+from depsi.utils import crop_slc_spacetime, npdatetime64_to_datetime
 
 
 def ps_selection(
@@ -13,6 +16,8 @@ def ps_selection(
     method: Literal["nad", "nmad"] = "nad",
     output_chunks: int = 10000,
     mem_persist: bool = False,
+    ps_selection_start_date: datetime | str | None = None,
+    ps_selection_end_date: datetime | str | int | None = None,
 ) -> xr.Dataset:
     """Select Persistent Scatterers (PS) from an SLC stack, and return a Space-Time Matrix.
 
@@ -22,6 +27,10 @@ def ps_selection(
     The original `azimuth` and `range` coordinates will be persisted.
     The computed NAD or NMAD will be added to the output dataset as a new variable. It can be persisted in
     memory if `mem_persist` is True.
+    The original time axis will be preserved in all cases. If `ps_selection_start_date` and `ps_selection_end_date`
+    are provided, the selection will only use the images in the provided time window. However, the full time axis
+    will be preserved and returned. In this case, the layers `time_selection_nmad` / `time_selection_nad` and
+    `full_ts_nmad` / `full_ts_nad` are thus different.
 
     Parameters
     ----------
@@ -29,7 +38,7 @@ def ps_selection(
         Input SLC stack. It should have the following dimensions: ("azimuth", "range", "time").
         There should be a `amplitude` variable in the dataset.
     threshold : float
-        Threshold value for selection.
+        Threshold value for selection for "nad" / "nmad".
     method : Literal["nad", "nmad"], optional
         Method of selection, by default "nad".
         - "nad": Normalized Amplitude Dispersion
@@ -38,40 +47,80 @@ def ps_selection(
         Chunk size in the `space` dimension, by default 10000
     mem_persist : bool, optional
         If true persist the NAD or NMAD in memory, by default False.
-
+    ps_selection_start_date : datetime | str | None, optional
+        the start date of the time window to be used for the ps_selection, in one of three formats:
+        - datetime object
+        - str object, formatted as YYYYMMDD
+        - None, no cropping in time requested for the ps_selection (default)
+    ps_selection_end_date : datetime | str | int | None, optional
+        the end date of the time window to be used for the ps_selection, in one of four formats:
+        - datetime object
+        - str object, formatted as YYYYMMDD
+        - int object, which is interpreted as the number of images intended in the crop (including the start date). If
+            more images are requested than exist since the start date, all images from start_date until the last image
+            are provided.
+        - None, no cropping in time requested for the ps_selection (default)
 
     Returns
     -------
     xr.Dataset
-        Selected STM, in form of an xarray.Dataset with two dimensions: (space, time).
+        Selected STM, in form of an xarray.Dataset with dimensions:
+        - space ( # PS selected)
+        - time ( # epochs of input dataset)
+        with coordinates:
+        - time: epoch in np.datetime64 format
+        - space: index of the PS
+        - azimuth: azimuth coordinate of the PS
+        - range: range coordinate of the PS
+        with attributes:
+        - ps_selection_start_date: the epoch of the first image used for the PS selection
+        - ps_selection_end_date: the epoch of the last image used for the PS selection
+        with variables:
+        - h2ph (space, time): the height to phase conversion
+        - lat (space): latitude of the PS
+        - lon (space): longitude of the PS
+        - complex (space, time): the complex value of the PS at each epoch
+        - amplitude (space, time): the amplitude of the PS at each epoch
+        - phase (space, time): the phase of the PS at each epoch
+        - time_selection_nad / time_selection_nmad (space): the value used for selection of the PS, dependent on method
+        - full_ts_nad (space): the Normalized Amplitude Dispersion of the PS
+        - full_ts_nmad (space): the Normalized Median Amplitude Dispersion of the PS
+        - pnt_class (space): 1 for all selected PS
 
     Raises
     ------
     NotImplementedError
         Raised when an unsupported method is provided.
     """
+    # define the PS selection functions based on the method. This is in the function since it requires
+    # _nad_block and _nmad_block to already be defined.
+    ps_selection_functions = {
+        "nad": _nad_block,
+        "nmad": _nmad_block,
+    }
+
     # Make sure there is no temporal chunk
     # since later a block function assumes all temporal data is available in a spatial block
     slcs = slcs.chunk({"time": -1})
 
-    # Calculate selection mask
-    match method:
-        case "nad":
-            nad = xr.map_blocks(
-                _nad_block, slcs["amplitude"], template=slcs["amplitude"].isel(time=0).drop_vars("time")
-            )
-            nad = nad.compute() if mem_persist else nad
-            slcs = slcs.assign(pnt_nad=nad)
-            mask = nad < threshold
-        case "nmad":
-            nmad = xr.map_blocks(
-                _nmad_block, slcs["amplitude"], template=slcs["amplitude"].isel(time=0).drop_vars("time")
-            )
-            nmad = nmad.compute() if mem_persist else nmad
-            slcs = slcs.assign(pnt_nmad=nmad)
-            mask = nmad < threshold
-        case _:
-            raise NotImplementedError
+    # Apply the time crop for the SLC selection if requested
+    if ps_selection_start_date is not None:
+        selection_slcs = crop_slc_spacetime(slcs, start_date=ps_selection_start_date, end_date=ps_selection_end_date)
+    else:
+        selection_slcs = slcs
+
+    if method not in ps_selection_functions.keys():
+        raise NotImplementedError(f"Know methods {ps_selection_functions.keys()} but {method} was requested!")
+
+    # Calculate the selection mask
+    nad_nmad = xr.map_blocks(
+        ps_selection_functions[method],
+        selection_slcs["amplitude"],
+        template=selection_slcs["amplitude"].isel(time=0).drop_vars("time"),
+    )
+    nad_nmad = nad_nmad.compute() if mem_persist else nad_nmad
+    slcs = slcs.assign({f"time_selection_{method}": nad_nmad})
+    mask = nad_nmad < threshold
 
     # Get the 1D index on space dimension
     mask_1d = mask.stack(space=("azimuth", "range")).drop_vars(["azimuth", "range", "space"])  # Drop multi-index coords
@@ -100,7 +149,7 @@ def ps_selection(
     # Re-order the dimensions to community preferred ("space", "time") order
     stm_masked = stm_masked.transpose("space", "time")
 
-    # Rechunk is needed because after apply maksing, the chunksize will be inconsistant
+    # Rechunk is needed because after apply masking, the chunksize will be inconsistent
     stm_masked = stm_masked.chunk(
         {
             "space": output_chunks,
@@ -115,14 +164,30 @@ def ps_selection(
         }
     )
 
+    # add full timeseries NAD and NMAD
+    nad = xr.map_blocks(
+        _nad_block, stm_masked["amplitude"], template=stm_masked["amplitude"].isel(time=0).drop_vars("time")
+    )
+    nmad = xr.map_blocks(
+        _nmad_block, stm_masked["amplitude"], template=stm_masked["amplitude"].isel(time=0).drop_vars("time")
+    )
+    stm_masked = stm_masked.assign({"full_ts_nmad": (["space"], nmad.data)})
+    stm_masked = stm_masked.assign({"full_ts_nad": (["space"], nad.data)})
+
+    # Add selection date attributes
+    start_date = npdatetime64_to_datetime(selection_slcs["time"].values[0])
+    end_date = npdatetime64_to_datetime(selection_slcs["time"].values[-1])
+    stm_masked.attrs["ps_selection_start_date"] = start_date.strftime("%Y%m%d")
+    stm_masked.attrs["ps_selection_end_date"] = end_date.strftime("%Y%m%d")
+
+    # Add the classification flag
+    stm_masked = stm_masked.assign({"pnt_class": (["space"], np.ones_like(stm_masked.space.values).astype(np.int8))})
+
     # Compute NAD or NMAD if mem_persist is True
     # This only evaluate a very short task graph, since NAD or NMAD is already in memory
     if mem_persist:
-        match method:
-            case "nad":
-                stm_masked["pnt_nad"] = stm_masked["pnt_nad"].compute()
-            case "nmad":
-                stm_masked["pnt_nmad"] = stm_masked["pnt_nmad"].compute()
+        for key in [f"time_selection_{method}", "full_ts_nad", "full_ts_nmad"]:
+            stm_masked[key] = stm_masked[key].compute()
 
     return stm_masked
 
@@ -131,7 +196,7 @@ def network_stm_selection(
     stm: xr.Dataset,
     min_dist: int | float,
     include_index: list[int] = None,
-    sortby_var: str = "pnt_nmad",
+    sortby_var: str = "time_selection_nmad",
     crs: int | str = "radar",
     x_var: str = "azimuth",
     y_var: str = "range",
@@ -154,11 +219,12 @@ def network_stm_selection(
     stm : xr.Dataset
         candidate Space-Time Matrix (STM).
     min_dist : int | float
-        Minimum distance between selected points.
+        Minimum distance between selected points. The unit is determined by `crs`.
+        When `crs` is "radar", the unit is the same as `azimuth_spacing` and `range_spacing`.
     include_index : list[int], optional
         Index of points in the candidate STM that must be included in the selection, by default None
     sortby_var : str, optional
-        Sorting metric for selecting points, by default "pnt_nmad"
+        Sorting metric for selecting points, by default "time_selection_nmad"
     crs : int | str, optional
         EPSG code of Coordinate Reference System of `x_var` and `y_var`, by default "radar".
         If crs is "radar", the distance will be calculated based on radar coordinates, and
@@ -168,9 +234,9 @@ def network_stm_selection(
     y_var : str, optional
         Data variable name for y coordinate, by default "range"
     azimuth_spacing : float, optional
-        Azimuth spacing, by default None. Required if crs is "radar".
+        Azimuth pixel spacing, by default None. Required if crs is "radar".
     range_spacing : float, optional
-        Range spacing, by default None. Required if crs is "radar".
+        Range pixel spacing, by default None. Required if crs is "radar".
 
     Returns
     -------

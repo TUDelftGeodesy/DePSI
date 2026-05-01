@@ -39,4 +39,4 @@ def _slc_complex_recontruct(mother_slc_complex, ifg_complex):
 
     The implementation equivalent to: (ifg_complex * mother_slc_complex.conj()) / (np.abs(mother_slc_complex) ** 2).
     """
-    return ifg_complex / mother_slc_complex
+    return np.conj(ifg_complex / mother_slc_complex)
