@@ -354,7 +354,8 @@ def crop_slc_spacetime(
         # first the last assertion
         assert "time" in slcs.keys(), "Expected axis 'time' in SLCs but it is not present!"
 
-        fmt_dates = np.array([npdatetime64_to_datetime(date) for date in slcs["time"].values])
+        fmt_dates_raw = [npdatetime64_to_datetime(date) for date in slcs["time"].values]
+        fmt_dates = np.array([datetime(date.year, date.month, date.day, tzinfo=pytz.UTC) for date in fmt_dates_raw])
         time_mask = (format_start_date <= fmt_dates) & (fmt_dates <= format_end_date)
         slcs = slcs.sel(time=slcs["time"].values[time_mask])
 
@@ -802,16 +803,16 @@ def concatenate_stms(
     reference_time_size = stm_list[0].sizes["time"]
     for idx, stm in enumerate(stm_list[1:], start=1):
         current_time_size = stm.sizes["time"]
-        assert (
-            current_time_size == reference_time_size
-        ), f"STM at index {idx} has time dimension size {current_time_size}, expected {reference_time_size}."
+        assert current_time_size == reference_time_size, (
+            f"STM at index {idx} has time dimension size {current_time_size}, expected {reference_time_size}."
+        )
 
     # All coordinates of all STMs should be 1D, only space or time dimension
     for idx, stm in enumerate(stm_list):
         for coord in stm.coords:
-            assert (
-                len(stm[coord].dims) == 1
-            ), f"Coordinate '{coord}' in STM at index {idx} is not 1D (dims {stm[coord].dims})."
+            assert len(stm[coord].dims) == 1, (
+                f"Coordinate '{coord}' in STM at index {idx} is not 1D (dims {stm[coord].dims})."
+            )
 
     # Identify and temporarily convert time-only variables to coords to prevent broadcasting during concat
     time_only_vars = set()
