@@ -18,7 +18,7 @@ Generate new pytest unit tests for DePSI functions using curated template archet
 
 ## Required References
 
-- unit_test_templates.md
+- catalog_archetypes.md
 
 ## Repository Conventions
 
@@ -54,7 +54,7 @@ Avoid these as default generated-test patterns:
   1. Select exactly one primary archetype from this skill, section "Primary Archetype Selection".
   2. If multiple archetypes are plausible, choose the most contract-relevant one first. 
   3. If none are plausible, raise an error and stop the process.
-3. Select the matching archetype entry in unit_test_templates.md, then instantiate from the corresponding file in templates/.
+3. Select the matching archetype entry in catalog_archetypes.md, then instantiate from the corresponding file in templates/.
 4. Generate unit test code according to the template, using the following rules:
   1. Keep test inputs minimal and explicit.
   2. Include key and shape assertions as fast guards when testing xarray dataset behavior.
