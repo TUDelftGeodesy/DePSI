@@ -60,7 +60,7 @@ pytest tests
 The [GitHub Actions](https://github.com/TUDelftGeodesy/DePSI/blob/main/.github/workflows/build.yml) will run the tests automatically for each push and pull-request
 on the `main` branch.
 
-## AI unit-test generation skill
+### Agent skill for unit-test generation
 
 This repository includes an agent skill for generating DePSI unit tests:
 
@@ -85,14 +85,16 @@ Write unit tests for `form_network` function in `depsi/network.py` and prefer th
 
 Expected behavior:
 
-- Source modules are read from `depsi/`.
-- Tests are added or updated in `tests/`, preferably `tests/test_<module>.py`.
-- The first generated case uses exactly one primary archetype from the skill.
+- Source modules are read from `depsi/<module>.py`.
+- Tests are added or updated in `tests/test_<module>.py`.
+- Per generated test case, exactly one primary archetype is selected from the Archetype templates file.
 - Generated tests follow existing pytest style and include meaningful contract-level assertions.
 
 Tip:
 
-- Ask for one function at a time to keep review and debugging focused.
+- It is preferred to provide the target module path as a context when using the skill. 
+- Generate unit tests for one function at a time to keep review and debugging focused.
+- When using the "fixture_io_template" archetype, a fixture file path must be provided. The skill will not generate a fixture file automatically.
 
 ## Documentation
 

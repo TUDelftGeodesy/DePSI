@@ -1,7 +1,7 @@
 ---
 name: generate-unittest
 description: 'Generate new pytest unit tests for DePSI functions using curated template archetypes. Use when adding new functions or improving test coverage.'
-argument-hint: '[module_path] [function_name] [optional_preferred_archetype]'
+argument-hint: '[module_path] [function_name] [optional_preferred_archetype] [optional_fixture_path]'
 user-invocable: true
 ---
 
@@ -14,6 +14,7 @@ Generate new pytest unit tests for DePSI functions using curated template archet
 - Target module path.
 - Target function name.
 - Optional preferred archetype if explicitly requested.
+- Optional fixture file path when the "fixture_io_template" archetype is selected.
 
 ## Required References
 
