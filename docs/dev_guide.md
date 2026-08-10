@@ -64,8 +64,8 @@ on the `main` branch.
 
 This repository includes an agent skill for generating DePSI unit tests:
 
-- Skill definition: `.github/skills/generate_unittest/SKILL.md`
-- Archetype templates: `.github/skills/generate_unittest/unit_test_templates.md`
+- Skill definition: `.github/skills/generate-unittest/SKILL.md`
+- Archetype templates: `.github/skills/generate-unittest/unit_test_templates.md`
 
 Use this skill in Copilot Chat by explicitly naming the module path and function name, with an optional preferred archetype defined in the Archetype templates file.
 
