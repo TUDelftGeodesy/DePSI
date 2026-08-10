@@ -60,6 +60,40 @@ pytest tests
 The [GitHub Actions](https://github.com/TUDelftGeodesy/DePSI/blob/main/.github/workflows/build.yml) will run the tests automatically for each push and pull-request
 on the `main` branch.
 
+## AI unit-test generation skill
+
+This repository includes an agent skill for generating DePSI unit tests:
+
+- Skill definition: `.github/skills/generate_unittest/SKILL.md`
+- Archetype templates: `.github/skills/generate_unittest/unit_test_templates.md`
+
+Use this skill in Copilot Chat by explicitly naming the module path and function name, with an optional preferred archetype defined in the Archetype templates file.
+
+Example prompts:
+
+Write unit tests for `form_network` function in `depsi/network.py`.
+
+```text
+/generate-unittest depsi/network.py form_network
+```
+
+Write unit tests for `form_network` function in `depsi/network.py` and prefer the `xarray_dataset_behavior_template` archetype.
+
+```text
+/generate-unittest depsi/network.py form_network xarray_dataset_behavior_template
+```
+
+Expected behavior:
+
+- Source modules are read from `depsi/`.
+- Tests are added or updated in `tests/`, preferably `tests/test_<module>.py`.
+- The first generated case uses exactly one primary archetype from the skill.
+- Generated tests follow existing pytest style and include meaningful contract-level assertions.
+
+Tip:
+
+- Ask for one function at a time to keep review and debugging focused.
+
 ## Documentation
 
 We use `mkdocs` for documentation. 
@@ -74,4 +108,4 @@ This will build and render the documentation at a local server. Follow the link 
 
 ## Parallelization
 
-We use `dask` in many functions for delayed computation and parallelization. Since DePSI operates with Xarray, in most cases, we us Xarray's interface with Dask Arrays, such as `xarray.apply_gufunc` or `xarray.map_blocks` to perform parallel computation. Please refer to the [Xarray Tutorial of Parallelizing Custom Functions](https://tutorial.xarray.dev/advanced/parallel-intro.html) as the best practices for implementing parallelization in DePSI.  
+We use `dask` in many functions for delayed computation and parallelization. Since DePSI operates with Xarray, in most cases, we use Xarray's interface with Dask Arrays, such as `xarray.apply_gufunc` or `xarray.map_blocks` to perform parallel computation. Please refer to the [Xarray Tutorial of Parallelizing Custom Functions](https://tutorial.xarray.dev/advanced/parallel-intro.html) as the best practices for implementing parallelization in DePSI.
