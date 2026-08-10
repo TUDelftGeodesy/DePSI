@@ -61,7 +61,7 @@ Avoid these as default generated-test patterns:
   3. Include one semantic invariant assertion tied to function behavior.
   4. Add one validation/error-path test when the API exposes meaningful validation.
   5. Avoid excluded patterns listed above.
-6. If multiple archetypes are plausible in step 2, generate additional test cases by repeating steps 2-4, selecting exactly one archetype per additional test case, until all plausible archetypes are covered.
+5. If multiple archetypes are plausible in step 2, generate additional test cases by repeating steps 2-4, selecting exactly one archetype per additional test case, until all plausible archetypes are covered.
 
 
 ## Output Contract
