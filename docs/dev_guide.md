@@ -83,11 +83,23 @@ Write unit tests for `form_network` function in `depsi/network.py` and prefer th
 /generate-unittest depsi/network.py form_network xarray_dataset_behavior_template
 ```
 
+The currently supported archetypes in `unit_test_templates.md` are:
+
+- `xarray_dataset_behavior_template`: dataset or DataArray transforms (STM/SLC) with contract checks on keys, shapes, attrs, and coordinates. Example: `tests/test_network::TestNetworkFormation::test_form_network_simulated_grid` for `depsi.network.form_network`.
+
+- `pure_numerical_template`: deterministic scalar or small-array functions with known expected outputs. Example: `tests/test_transformations::test_seconds_of_day` for `depsi.transformations.seconds_of_day`.
+
+- `synthetic_recovery_template`: estimation, inversion, or round-trip behavior that should recover known latent truth. Example: `tests/test_arc_estimation::test_periodogram` for `depsi.arc_estimation.periodogram`.
+
+- `validation_error_template`: explicit rejection behavior for invalid attrs, keys, options, dimensions, or metadata. Example: `tests/test_model_estimation::test_estimate_model_params_invalid_model` for `depsi.model_estimation.estimate_model_params`.
+
+- `fixture_io_template`: file readers, metadata parsers, and IO adapters requiring realistic fixture inputs. Example: `tests/test_io::test_read_rcs_csv` for `depsi.io.read_rcs_csv`.
+
 Expected behavior:
 
-- Source modules are read from `depsi/<module>.py`.
-- Tests are added or updated in `tests/test_<module>.py`.
-- Per generated test case, exactly one primary archetype is selected from the Archetype templates file.
+- Target function is read from `depsi/<module>.py`.
+- Relevant tests are added in `tests/test_<module>.py`.
+- Per generated test case, exactly one primary archetype is selected from the archetype templates file.
 - Generated tests follow existing pytest style and include meaningful contract-level assertions.
 
 Tip:
