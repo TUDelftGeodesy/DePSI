@@ -34,7 +34,7 @@ Choose exactly one primary archetype per generated test case:
 - `pure_numerical_template`: deterministic scalar or small-array transforms with explicit expected outputs.
 - `synthetic_recovery_template`: estimation, inversion, or round-trip behavior that should recover known latent truth.
 - `validation_error_template`: explicit rejection behavior for invalid attrs, keys, options, dimensions, or metadata.
-- `fixture_io_template`: parsers/readers where realistic files are required to validate contract-level fields.
+- `fixture_io_template`: parsers/readers where realistic files are required to validate contract-level fields. When this archetype is selected, always ask the user to provide a fixture file path.
 
 ## Excluded Patterns
 

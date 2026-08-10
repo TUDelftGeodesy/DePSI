@@ -175,6 +175,13 @@ Assertion checklist:
 When to use:
 - File readers, metadata parsers, and IO adapters requiring realistic fixture inputs.
 
+When to avoid:
+- The fixture file is absent for the target function.
+
+Template note:
+- When this template is used, always ask the user to provide a fixture file path and name.
+- Never generate a fixture file automatically.
+
 Required imports:
 ```python
 from pathlib import Path
@@ -193,11 +200,6 @@ def test_<function_name>_fixture_contract():
     assert <contract_field_1_check>
     assert <contract_field_2_check>
 ```
-
-Fixture policy note:
-- Reuse an existing file under `tests/data` when one already matches the parser or reader contract.
-- Add a new minimal fixture under `tests/data` only when realistic file content is required and no suitable fixture already exists.
-- Do not add a fixture when the behavior can be tested more clearly with synthetic in-memory data.
 
 Optional parser-normalization path:
 ```python
