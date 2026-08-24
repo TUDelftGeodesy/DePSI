@@ -81,13 +81,13 @@ def stm_partitioning(
       - nmad - the NMAD of the partition
       - mad - the MAD of the partition
       - quality_nmad_2sigma - the quality of the partition based on an empirical relation, see
-        `_nad_nmad_quality_metrics`, based on NMAD and 2-sigma
+        `nad_nmad_quality_metrics`, based on NMAD and 2-sigma
       - quality_nmad_mean - the quality of the partition based on an empirical relation, see
-        `_nad_nmad_quality_metrics`, based on NMAD and mean cloud
+        `nad_nmad_quality_metrics`, based on NMAD and mean cloud
       - quality_nad_2sigma - the quality of the partition based on an empirical relation, see
-        `_nad_nmad_quality_metrics`, based on NAD and 2-sigma
+        `nad_nmad_quality_metrics`, based on NAD and 2-sigma
       - quality_nad_mean - the quality of the partition based on an empirical relation, see
-        `_nad_nmad_quality_metrics`, based on NAD and mean cloud
+        `nad_nmad_quality_metrics`, based on NAD and mean cloud
       - amplitude_mean - the mean of the amplitude
       - amplitude_sigma - the standard deviation of the amplitude
       - amplitude_median - the median of the amplitude
@@ -139,7 +139,7 @@ def stm_partitioning(
         for output_variable in output_variables:
             if "quality" in output_variable:
                 _, var, metric = output_variable.split("_")
-                output = _nad_nmad_quality_metrics(partition_stats[f"partition_{var}"].data, var, metric)
+                output = nad_nmad_quality_metrics(partition_stats[f"partition_{var}"].data, var, metric)
             else:
                 output = partition_stats[f"partition_{output_variable}"].data
             stm = stm.assign({f"{output_variable_prefix}_{output_variable}": (["space", "time"], output)})
@@ -681,7 +681,7 @@ def _detect_outliers(
     return outliers_xarray
 
 
-def _nad_nmad_quality_metrics(
+def nad_nmad_quality_metrics(
     nad_nmad: xr.DataArray, input_mode: Literal["nad", "nmad"], output_mode: Literal["mean", "2sigma"] = "2sigma"
 ) -> xr.DataArray:
     """Estimate the quality metrics for NAD and NMAD.
