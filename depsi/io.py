@@ -1076,3 +1076,44 @@ def export_convex_hull_to_shapefile(stm: xr.Dataset, save_path: str, projection:
     )
 
     hull_gdf.to_file(save_path)
+
+
+def read_knmi_txt(file):
+    """Read precipitation and evapotranspiration data from the Royal Netherlands Meteorological Institute (KNMI).
+
+    This function reads a KNMI file, extracts daily precipitation (mm)
+    and potential evapotranspiration (mm), and returns it as a pd.DataFrame.
+
+    The KNMI file can be downloaded through
+    https://www.knmi.nl/nederland-nu/klimatologie/daggegevens.
+
+    Parameters
+    ----------
+    file : str
+        Path to the KNMI file with .txt format.
+
+    Returns
+    -------
+    pd.DataFrame
+        Daily temperature, precipitation, and evapotranspiration.
+    """
+    df_meteo = pd.DataFrame(
+        data=np.genfromtxt(
+            file,
+            delimiter=",",
+            skip_header=53,
+            missing_values="",
+            filling_values=np.nan,
+            usecols=(0, 1, 11, 16, 17, 22, 40),
+        ),
+        columns=["meteo_id", "datum", "tas", "t10n", "t10nh", "pr", "pet"],
+    )
+
+    df_meteo["meteo_id"] = df_meteo["meteo_id"].astype(int)
+    df_meteo["datum"] = pd.to_datetime(df_meteo["datum"].astype(str), format="%Y%m%d.0")
+    df_meteo["tas"] = df_meteo["tas"] / 10  # deg C (Daily mean temperature)
+    df_meteo["t10n"] = df_meteo["t10n"] / 10  # deg C (Minimum temperature at 10 cm above surface)
+    df_meteo["pr"] = df_meteo["pr"] / 10  # mm (Daily precipitation amount)
+    df_meteo["pet"] = df_meteo["pet"] / 10  # mm (Potential evapotranspiration (Makkink))
+
+    return df_meteo

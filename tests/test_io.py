@@ -92,3 +92,18 @@ def test_read_rcs_csv():
     for date_col in dates:
         assert date_col in df.columns, f"Date column '{date_col}' missing from DataFrame"
         assert pd.api.types.is_numeric_dtype(df[date_col]), f"Date column '{date_col}' is not numeric"
+
+
+def test_read_knmi_txt():
+    filepath = os.path.join(os.path.dirname(__file__), "data", "knmi", "etmgeg_280.txt")
+
+    df = io.read_knmi_txt(filepath)
+
+    required_cols = ["meteo_id", "datum", "pr", "pet"]
+    for col in required_cols:
+        assert col in df.columns, f"Required column '{col}' missing from DataFrame"
+
+    assert pd.api.types.is_numeric_dtype(df["meteo_id"]), "Column 'meteo_id' is not numeric"
+    assert pd.api.types.is_datetime64_any_dtype(df["datum"]), "Column 'datum' is not datetime"
+    assert pd.api.types.is_numeric_dtype(df["pr"]), "Column 'pr' is not numeric"
+    assert pd.api.types.is_numeric_dtype(df["pet"]), "Column 'pet' is not numeric"
