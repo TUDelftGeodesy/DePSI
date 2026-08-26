@@ -15,6 +15,7 @@ nav:
     - Densification: usages/densification.md
     - Geo-coding: usages/geocoding.md
     - Post-processing: usages/postprocessing.md
+    - DS selection: usages/ds_tutorial.md
     - Designate-targets selection: usages/dtd_selection.md
   - API Reference:
     - depsi.classification: api/classification.md

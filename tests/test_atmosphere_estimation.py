@@ -6,6 +6,7 @@ from numpy.random import default_rng
 from numpy.testing import assert_allclose, assert_almost_equal
 from scipy import signal
 from scipy.optimize import curve_fit
+from xarray.testing import assert_identical
 
 from depsi.atmosphere_estimation import (
     calculate_empirical_variogram,
@@ -526,3 +527,77 @@ class TestEstimateAtmospherePhase:
         assert isinstance(results, xr.Dataset)
         assert "atmosphere_predicted" in results
         assert "atmosphere_sigmasq" in results
+
+
+def test_atmosphere_prediction_coordinates_are_ps_then_ds():
+    epsg = 28992
+    x_name = f"x_euclidean_proj_epsg{epsg}"
+    y_name = f"y_euclidean_proj_epsg{epsg}"
+
+    # Intentionally non-sorted coordinates:
+    # if the merged output is sorted or re-ordered, this test fails.
+    ps_stm = xr.Dataset(
+        coords={
+            "space": [0, 1, 2],
+            x_name: ("space", [155_300.0, 155_100.0, 155_250.0]),
+            y_name: ("space", [463_200.0, 463_500.0, 463_350.0]),
+        }
+    )
+
+    ds_stm = xr.Dataset(
+        coords={
+            "space": [0, 1],
+            x_name: ("space", [154_900.0, 155_600.0]),
+            y_name: ("space", [463_800.0, 462_900.0]),
+        }
+    )
+
+    result = xr.concat([ps_stm, ds_stm], dim="space")
+
+    expected = xr.Dataset(
+        coords={
+            "space": [0, 1, 2, 0, 1],
+            x_name: (
+                "space",
+                [
+                    155_300.0,  # PS 0
+                    155_100.0,  # PS 1
+                    155_250.0,  # PS 2
+                    154_900.0,  # DS 0
+                    155_600.0,  # DS 1
+                ],
+            ),
+            y_name: (
+                "space",
+                [
+                    463_200.0,  # PS 0
+                    463_500.0,  # PS 1
+                    463_350.0,  # PS 2
+                    463_800.0,  # DS 0
+                    462_900.0,  # DS 1
+                ],
+            ),
+        }
+    )
+
+    # Full check: dimensions, coordinate names, values, and ordering.
+    assert_identical(result, expected)
+
+    # Explicit order checks.
+    np.testing.assert_array_equal(
+        result[x_name].values[: len(ps_stm.space)],
+        ps_stm[x_name].values,
+    )
+    np.testing.assert_array_equal(
+        result[y_name].values[: len(ps_stm.space)],
+        ps_stm[y_name].values,
+    )
+
+    np.testing.assert_array_equal(
+        result[x_name].values[len(ps_stm.space) :],
+        ds_stm[x_name].values,
+    )
+    np.testing.assert_array_equal(
+        result[y_name].values[len(ps_stm.space) :],
+        ds_stm[y_name].values,
+    )

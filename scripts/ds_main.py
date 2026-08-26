@@ -35,8 +35,6 @@ from depsi.utils import (
 )
 from depsi.viewing_geometry import add_local_viewing_geometry
 
-sys.path.append("/Users/ylumbangaol/Documents/S3/software/caroline_dev/DePSI_group/")
-# from depsi.ds_arc import arc_selection, ref_point_selection, arc_prep
 from depsi.ds import assign_parcel_id, ds_phase_estimation, _open_datatree_compat
 
 
@@ -45,17 +43,17 @@ from depsi.ds import assign_parcel_id, ds_phase_estimation, _open_datatree_compa
 #           INPUT VARIABLES             #
 #                                       #
 #########################################
-proj_dir = "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/insar/"
+proj_dir = "/projects/nieuwolda/insar/"
 run_name = "runp_test"
 log_filename = None #"runp_test_1sel.txt"  # Set to None to disable logging
 
 # - Contextual data path
-aoi_shp_filepath = "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/contextual_data/aoi/nieuwolda_aoi.shp"
-parcel_shp_filepath = "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/contextual_data/parcels/nieuwolda_attributes_for_depsi_test.shp"
-meteo_dir = "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/contextual_data/knmi/"
+aoi_shp_filepath = "/projects/nieuwolda/contextual_data/aoi/nieuwolda_aoi.shp"
+parcel_shp_filepath = "/projects/nieuwolda/contextual_data/parcels/nieuwolda_attributes_for_depsi_test.shp"
+meteo_dir = "/projects/nieuwolda/contextual_data/knmi/"
 
 # - Stack
-stack_root_dir = "/Users/ylumbangaol/Documents/S3/projects/nieuwolda/stacks/"
+stack_root_dir = "/projects/nieuwolda/stacks/"
 stack_prefix = "nl_nieuwolda"
 mission = "s1"
 wavelength = 0.055465763 # m
@@ -121,40 +119,22 @@ stc_max_dist = 100  # meters
 # - Viewing geometry
 orbit_mode = "IWS"
 orbit_resolution = 0.01
-orbit_file = "/Users/ylumbangaol/Documents/S3/software/caroline_dev/DePSI_group/config/drama/S1_XTI.cfg"
+orbit_file = "./config/drama/S1_XTI.cfg"
 
 # - Output settings
 filter_dict = {"h": [-2000, 2000]}
 output_types = ["csv_web_portal", "csv", "shapefile", "convex_hull"]
 
 # - DS analysis
-ds_id_list = None #[5, 68252, 68265, 68406, 68424, 68549, 64040, 64041, 64042, 64068]  # Options: None, list of ds_ids, specify only to reestimate esm phase for a subset of parcels
+ds_id_list = None # Options: None, list of ds_ids. Specify only to reestimate esm phase for a subset of parcels
 ds_multilooking_window = "polygon"
 ds_min_cells = 40
 ds_shp_test = None  # Options: None, "ks_test"
 ds_min_group_size = 4
 ds_coh_threshold = 0.2
 ds_min_seg_len = 10
-find_igrs = True
-ref_point_selection = "mix"
-igrs_codes = [
-    "NSCH",
-    "BORG",
-    "SCHW",
-    "SAPP",
-    "HEIL",
-    "BEER",
-    "OOSW"
-  ]
-igrs_locs = [
-    [53.1985855388889, 6.94298104444445],
-    [53.2893658694444, 7.01572047222222],
-    [53.2423098750000, 6.81515750000000],
-    [53.1561208694444, 6.80036562777778],
-    [53.1567150000000, 6.98407700000000],
-    [53.1623709694444, 7.09621321666667],
-    [53.2209816916667, 7.03745917222222]
-  ]
+igrs_codes = None
+igrs_locs = None
 
 # - zarr export & checkpoints
 # - Example: ps_stm_s1_asc_t088_4atmo.zarr
@@ -566,9 +546,8 @@ for i, stack_id in enumerate(stack_ids):
 
         # - Remove the atmosphere from the data
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Removing the atmospheric phase screens...")
-        ps_stm["phase_minus_atmo"] = (ps_stm["phase"] - ps_stm["atmosphere_predicted"] + np.pi) % (2 * np.pi) - np.pi
-        ps_stm["sd_phase_minus_atmo"] = \
-            (ps_stm["phase_minus_atmo"] - ps_stm["phase_minus_atmo"].sel(time=ps_stm.ps_sd_mother) + np.pi) % (2 * np.pi) - np.pi
+        ps_stm["sd_phase_minus_atmo"] = (ps_stm["sd_phase"] - ps_stm["atmosphere_predicted"] + np.pi) % (2 * np.pi) - np.pi
+        ds_stm["ds_phi_aps_full"] = (ds_stm["ds_phi_esm_full"] - ds_stm["atmosphere_predicted"] + np.pi) % (2 * np.pi) - np.pi
 
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Atmospheric phase screen done. Saving to zarr...")
         ps_stm = ps_stm.chunk({"time": -1, "space": "auto"})

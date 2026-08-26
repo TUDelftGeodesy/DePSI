@@ -70,6 +70,7 @@ Follow `depsi_main.py` for PS related settings. For DS settings:
 - mother_epochs         : list of mother epoch in datetime format
 - start_date		    : desired start date of time series for analysis in datetime format
 - end_date			    : desired end date of time series for analysis in datetime format
+- ds_id_list            : None or list of parcel IDs. Specify only to reestimate esm phase for a subset of parcels
 - ds_multilooking_window: boundary for multilooking, current implementation is polygon only
 - ds_min_cells			: minimum number of pixels inside the boundary
 - ds_shp_test			: option to do statistical homogeneous test
@@ -79,8 +80,8 @@ Follow `depsi_main.py` for PS related settings. For DS settings:
 - ds_min_group_size     : minimum number of parcel to form a group
 - igrs_codes            : list of IGRS station codes if choose igrs as reference point
 - igrs_locs             : list of IGRS locs (lat,lon) if choose igrs as reference point
-- ps_stm_save_name      : filename to save ps_stm (example: ps_stm_{stack_id}_{checkpoint}.zarr)
-- ds_stm_save_name      : filename to save ds_stm (example: ds_stm_{stack_id}.zarr)
+- ps_stm_save_name      : filename to save PS STM (example: ps_stm_{stack_id}_{checkpoint}.zarr)
+- ds_dtree_save_name    : filename to save DS DataTree (example: ds_stm_{stack_id}.zarr)
 
 ## Project directory structure
 
@@ -105,12 +106,13 @@ nieuwolda
 │   │   ├── phase_estimation
 │   │   │   ├── s1_dsc_t037
 │   │   │   │   ├── id_pixel_s1_dsc_t037.h5
-│   │   │   │   ├── ds_{ds_id}_s1_dsc_t037.h5
 │   │   │   │   ├── ...
 │   │   │   ├── ...
 │   │   │   │   ├── ...
 │   │   │   │   ├── ...
 │   │   ├── stm
-│   │   │   ├── ds_stm_s1_dsc_t037.zarr
-│   │   │   ├── ps_stm_s1_dsc_t037.zarr
+│   │   │   ├── ds_dtree_s1_dsc_t037.zarr
+│   │   │   ├── ps_stm_s1_dsc_t037_1sel.zarr
+│   │   │   ├── ps_stm_s1_dsc_t037_2atmo.zarr
+│   │   │   ├── ...
 ```
