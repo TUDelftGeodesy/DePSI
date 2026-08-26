@@ -10,7 +10,7 @@ paths:
   #npixels_file: "/home/parallels/Sprint_Mobyle/DePSI_group/examples/scripts/data/stack/nl_groningen_s1_dsc_t037/cropped_stack/npixels_crp.txt"
 
   # Step 2 Paths for deciding to run RADAR CODING TOOLBOX, get targets radard coordinates.
-  rcs_output_folder: "/home/parallels/Sprint_Mobyle/DePSI_group/examples/scripts/data/dtd_results/nl_groningen_s1_dsc_t037_test/RadarCoordinates/"
+  rcs_output_folder: "/home/parallels/CarolineRadarCodingToolbox1/Caroline-Radar-Coding-Toolbox/results/nl_groningen_s1_dsc_t037_test1/"
   rcsAnalizer: "/home/parallels/CarolineRadarCodingToolbox1/Caroline-Radar-Coding-Toolbox/detectDesignatedTargets.py"
   rcs_AnalizerArgs: "/home/parallels/Sprint_Mobyle/DePSI_group/examples/scripts/data/dtd_results/radar_coding_prep/nl_groningen_s1_dsct037.parms"
 

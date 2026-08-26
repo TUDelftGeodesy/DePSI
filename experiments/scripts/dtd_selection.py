@@ -137,7 +137,7 @@ if __name__ == "__main__":
     # Specify folders and files to be used:
     print("STEP 0 - LOAD INPUT PARAMS")
     # Load the YAML parameters containing folders and files to be used:
-    params = load_ymlparams("/home/parallels/Sprint_Mobyle/DePSI_group/examples/scripts/data/dtd_params.yml")
+    params = load_ymlparams("/home/parallels/Sprint_Mobyle/DePSI_group/experiments/scripts/data/dtd_params.yml")
 
     if params is None:
         raise ValueError("Failed to load parameters from ''.")
