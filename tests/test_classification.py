@@ -5,10 +5,121 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.classification import _idx_within_distance, _nad_block, _nmad_block, network_stm_selection, ps_selection
+from depsi.classification import (
+    _idx_within_distance,
+    _nad_block,
+    _nmad_block,
+    designated_target_selection,
+    network_stm_selection,
+    ps_selection,
+)
 
 # Create a random number generator
 rng = np.random.default_rng(42)
+
+
+@pytest.fixture
+def _designated_target_selection_inputs():
+    times = np.array(
+        ["2015-01-01", "2015-01-02", "2015-01-03"],
+        dtype="datetime64[ns]",
+    )
+    complex_values = np.arange(36).reshape(4, 3, 3) + 1j * np.arange(100, 136).reshape(4, 3, 3)
+    amplitude_values = np.abs(complex_values)
+    phase_values = np.angle(complex_values)
+
+    slcs = xr.Dataset(
+        data_vars={
+            "complex": (("azimuth", "range", "time"), complex_values),
+            "amplitude": (("azimuth", "range", "time"), amplitude_values),
+            "phase": (("azimuth", "range", "time"), phase_values),
+        },
+        coords={
+            "azimuth": np.array([10.0, 20.0, 30.0, 40.0]),
+            "range": np.array([100.0, 200.0, 300.0]),
+            "time": times,
+        },
+    )
+    targets = xr.Dataset(
+        data_vars={
+            "lat": ("space", np.array([51.0, 52.0, 53.0, 54.0])),
+            "lon": ("space", np.array([4.1, 4.2, 4.3, 4.4])),
+            "height": ("space", np.array([1.0, 2.0, 3.0, 4.0])),
+            "validation": ("space", np.array([0, 1, -1, 0])),
+            "existing_flag": (
+                ("space", "time"),
+                np.array(
+                    [
+                        [1, 1, 0],
+                        [1, 0, 0],
+                        [0, 1, 1],
+                        [1, 1, 1],
+                    ]
+                ),
+            ),
+        },
+        coords={
+            "space": np.arange(4),
+            "target": ("space", np.array(["T1", "T2", "T3", "T4"])),
+            "azimuth_subpixel": ("space", np.array([10.2, 99.0, 28.9, 40.0])),
+            "range_subpixel": ("space", np.array([190.0, 200.0, 290.0, 100.0])),
+            "time": times,
+        },
+    )
+
+    return slcs, targets, complex_values
+
+
+def test_designated_target_selection_selects_in_bounds_targets(
+    _designated_target_selection_inputs,
+):
+    slcs, targets, complex_values = _designated_target_selection_inputs
+
+    res = designated_target_selection(slcs, targets)
+
+    assert res["complex"].dims == ("space", "time")
+    assert res.sizes["space"] == 3
+    assert res.sizes["time"] == 3
+    np.testing.assert_array_equal(res["space"].values, np.arange(3))
+    np.testing.assert_array_equal(res["target"].values, np.array(["T1", "T3", "T4"]))
+    np.testing.assert_allclose(res["azimuth_subpixel"].values, np.array([10.2, 28.9, 40.0]))
+    np.testing.assert_allclose(res["range_subpixel"].values, np.array([190.0, 290.0, 100.0]))
+    np.testing.assert_allclose(res["azimuth"].values, np.array([10.0, 30.0, 40.0]))
+    np.testing.assert_allclose(res["range"].values, np.array([200.0, 300.0, 100.0]))
+    np.testing.assert_allclose(res["lat"].values, np.array([51.0, 53.0, 54.0]))
+    np.testing.assert_array_equal(res["validation"].values, np.array([0, -1, 0]))
+    np.testing.assert_array_equal(res["existing_flag"].values, np.array([[1, 1, 0], [0, 1, 1], [1, 1, 1]]))
+    np.testing.assert_array_equal(res["complex"].values, complex_values[[0, 2, 3], [1, 2, 0], :])
+
+
+def test_designated_target_selection_rejects_mismatched_times(
+    _designated_target_selection_inputs,
+):
+    slcs, targets, _ = _designated_target_selection_inputs
+    targets = targets.assign_coords(time=targets["time"].values + np.timedelta64(1, "D"))
+
+    with pytest.raises(ValueError, match="acquisition epochs"):
+        designated_target_selection(slcs, targets)
+
+
+def test_designated_target_selection_rejects_invalid_validation_values(
+    _designated_target_selection_inputs,
+):
+    slcs, targets, _ = _designated_target_selection_inputs
+    targets["validation"] = ("space", np.array([0, 2, -1, 0]))
+
+    with pytest.raises(ValueError, match="`validation`"):
+        designated_target_selection(slcs, targets)
+
+
+def test_designated_target_selection_rejects_out_of_bounds_targets(
+    _designated_target_selection_inputs,
+):
+    slcs, targets, _ = _designated_target_selection_inputs
+    targets = targets.assign_coords(azimuth_subpixel=("space", np.full(targets.sizes["space"], -1.0)))
+
+    with pytest.raises(ValueError, match="No designated targets"):
+        designated_target_selection(slcs, targets)
 
 
 def test_ps_selection_nad():
