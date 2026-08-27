@@ -69,29 +69,41 @@ def test_get_targets_from_slc():
 
 def test_read_rcs_csv():
     # Define the CSV path inside the test
-    DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "s1_dsc037_RC.csv")
+    data_path = os.path.join(os.path.dirname(__file__), "data", "s1_dsc037_RC.csv")
 
     # Read CSV using the function under test
-    df, dates = io.read_rcs_csv(DATA_PATH)
+    dataset = io.read_rcs_csv(data_path)
 
-    # 1️⃣ Check that the '*****' row existed in the original file
-    with open(DATA_PATH) as f:
+    # Check that the '*****' row existed in the original file
+    with open(data_path) as f:
         content = f.read()
     assert "*****" in content, "Metadata markers '*****' not found in CSV file"
 
-    # 2️⃣ Check required columns exist
-    required_cols = ["Range", "Azimuth", "Lat", "Lon", "Height"]
-    for col in required_cols:
-        assert col in df.columns, f"Required column '{col}' missing from DataFrame"
+    assert isinstance(dataset, xr.Dataset)
+    assert set(dataset.dims) == {"space", "time"}
+    assert dataset.sizes["space"] == 24
+    assert dataset.sizes["time"] == 422
 
-    # 3️⃣ Check required columns are numeric (float)
-    for col in required_cols:
-        assert pd.api.types.is_numeric_dtype(df[col]), f"Column '{col}' is not numeric"
+    expected_coords = {"space", "time", "target", "azimuth_subpixel", "range_subpixel"}
+    assert expected_coords.issubset(dataset.coords)
 
-    # 4️⃣ Check date columns are present and numeric
-    for date_col in dates:
-        assert date_col in df.columns, f"Date column '{date_col}' missing from DataFrame"
-        assert pd.api.types.is_numeric_dtype(df[date_col]), f"Date column '{date_col}' is not numeric"
+    expected_data_vars = {"lat", "lon", "height", "validation", "existing_flag"}
+    assert expected_data_vars.issubset(dataset.data_vars)
+
+    for coord in ["azimuth_subpixel", "range_subpixel"]:
+        assert dataset[coord].dims == ("space",)
+        assert np.issubdtype(dataset[coord].dtype, np.floating)
+
+    for var in ["lat", "lon", "height"]:
+        assert dataset[var].dims == ("space",)
+        assert np.issubdtype(dataset[var].dtype, np.floating)
+
+    assert dataset["validation"].dims == ("space",)
+    assert np.isin(dataset["validation"].values, [-1, 0, 1]).all()
+
+    assert dataset["existing_flag"].dims == ("space", "time")
+    assert np.isin(dataset["existing_flag"].values, [0, 1]).all()
+    assert np.issubdtype(dataset["time"].dtype, np.datetime64)
 
 
 def test_read_knmi_txt():

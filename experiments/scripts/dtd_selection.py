@@ -194,7 +194,7 @@ if __name__ == "__main__":
             "existing_flag": (["space", "time"], dt_df.iloc[:, 7:].values),
         },
         coords={
-            "target": ("space", dt_df["ID"].values),
+            "target": ("space", dt_df["ID"].to_numpy(dtype=object)),
             "range": ("space", dt_df["Range"].values),
             "azimuth": ("space", dt_df["Azimuth"].values),
             "lat": ("space", dt_df["Lat"].values),
@@ -212,10 +212,10 @@ if __name__ == "__main__":
     for name in matching_scatterers.coords["target"].values:
         tgt = matching_scatterers.where(matching_scatterers["target"] == name, drop=True)
         target_names[name] = {
-            "lon": float(tgt["lon"].values),
-            "lat": float(tgt["lat"].values),
-            "azimuth": float(tgt["azimuth"].values),
-            "range": float(tgt["range"].values),
+            "lon": tgt["lon"].values.item(),
+            "lat": tgt["lat"].values.item(),
+            "azimuth": tgt["azimuth"].values.item(),
+            "range": tgt["range"].values.item(),
         }
 
     matching_scatterers.attrs = target_names

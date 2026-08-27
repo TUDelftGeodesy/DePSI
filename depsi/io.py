@@ -490,62 +490,174 @@ def read_slc_stack(
 
 
 def read_rcs_csv(file_path):
-    r"""Load an STM-like CSV resulting from the RadarCoding Toolbox.
+    r"""Load designated-target data resulting from the Radar Coding Toolbox.
 
-    Load an STM-like CSV resulting from the RadarCoding Toolbox, filter out metadata or header marked by
-    '*****' markers, and extract dates from the header.
+    Load a CSV resulting from the Radar Coding Toolbox, filter out metadata
+    marked by '*****' markers, and convert the target information and
+    acquisition-dependent existence flags to an xarray.Dataset.
 
     Parameters
     ----------
     file_path : str
-        Path to the CSV file to load.
+        Path to the Radar Coding Toolbox CSV file to load.
 
     Returns
     -------
-    pd.DataFrame
-        The cleaned DataFrame containing the STM with 0/1 flags indicating the existence of the targets' data.
-    list of str
-        A list of date strings extracted from the header.
+    xr.Dataset
+        Designated-target dataset with dimensions:
+
+        - space ( # designated targets)
+        - time ( # acquisition epochs)
+
+        with coordinates:
+
+        - space: index of the designated target
+        - time: acquisition epoch in np.datetime64 format
+        - target (space): identifier of the designated target
+        - azimuth_subpixel (space): subpixel azimuth position of the target
+        - range_subpixel (space): subpixel range position of the target
+
+        with variables:
+
+        - lat (space): latitude of the designated target
+        - lon (space): longitude of the designated target
+        - height (space): height of the designated target
+        - validation (space): validation of the temporal stability of the
+          Radar Cross Section (RCS), i.e. the strength of the target's radar
+          reflectivity. Expected values are:
+          - 0: stable RCS
+          - -1 or 1: non-stable RCS
+        - existing_flag (space, time): binary indicator describing whether
+          the designated target exists at each acquisition epoch. Expected
+          values are:
+          - 0: target does not exist
+          - 1: target exists
+
+    Raises
+    ------
+    ValueError
+        Raised when the metadata block cannot be identified.
+    ValueError
+        Raised when required Radar Coding columns are missing.
+    ValueError
+        Raised when acquisition columns cannot be interpreted as dates.
+    ValueError
+        Raised when `validation` contains values other than -1, 0, or 1.
+    ValueError
+        Raised when `existing_flag` contains values other than 0 or 1.
     """
+    # Read the file to find metadata and filter lines
+    with open(file_path) as file:
+        lines = file.readlines()
+
+    # Find the indices of lines containing '*****'
+    marker_indices = [i for i, line in enumerate(lines) if "*****" in line]
+
+    if len(marker_indices) < 2:
+        raise ValueError("Could not identify the metadata block marked by '*****'.")
+
+    start_idx = marker_indices[0]
+    end_idx = marker_indices[1]
+
+    # Filter out the content between the '*****' markers
+    filtered_lines = lines[:start_idx] + lines[end_idx + 1 :]
+
+    # Load the cleaned data into a DataFrame
+    df = pd.read_csv(StringIO("".join(filtered_lines)))
+
+    # Columns containing target-level information
+    target_columns = [
+        "ID",
+        "Validation",
+        "Range",
+        "Azimuth",
+        "Lat",
+        "Lon",
+        "Height",
+    ]
+
+    # Check required columns
+    missing_columns = set(target_columns) - set(df.columns)
+
+    if missing_columns:
+        raise ValueError(f"Radar Coding file is missing required columns: {missing_columns}")
+
+    # All remaining columns should represent acquisition epochs
+    date_columns = [column for column in df.columns if column not in target_columns]
+
+    if not date_columns:
+        raise ValueError("No acquisition-date columns found in the Radar Coding file.")
+
+    # Convert acquisition epochs to datetime64
     try:
-        # Read the file to find metadata and filter lines
-        with open(file_path) as file:
-            lines = file.readlines()
+        time = pd.to_datetime(
+            date_columns,
+            format="%Y%m%d",
+            errors="raise",
+        )
+    except ValueError as e:
+        raise ValueError("Acquisition columns should have the format YYYYMMDD.") from e
 
-        # Find the indices of lines containing '*****'
-        start_idx = None
-        end_idx = None
-        for i, line in enumerate(lines):
-            if "*****" in line:
-                if start_idx is None:
-                    start_idx = i  # First occurrence of '*****'
-                else:
-                    end_idx = i  # Second occurrence of '*****'
-                    break
+    # Extract and validate RCS stability information
+    validation = df["Validation"].to_numpy()
 
-        # Filter out the content between the '*****' markers
-        filtered_lines = lines[:start_idx] + lines[end_idx + 1 :]
+    if not np.isin(validation, [-1, 0, 1]).all():
+        raise ValueError("`Validation` should only contain the values -1, 0, or 1.")
 
-        # Join the filtered lines into a single string for pandas to read
-        filtered_data = "".join(filtered_lines)
+    # Extract and validate target existence information
+    existing_flag = df[date_columns].to_numpy()
 
-        # Load the cleaned data into a DataFrame
-        df = pd.read_csv(StringIO(filtered_data))
+    if not np.isin(existing_flag, [0, 1]).all():
+        raise ValueError("Acquisition columns should only contain the values 0 or 1.")
 
-        # Extract the header row (first row of the DataFrame)
-        header_row = df.iloc[0]
+    # Convert Radar Coding output to designated-target dataset
+    targets = xr.Dataset(
+        data_vars={
+            "lat": (
+                ["space"],
+                df["Lat"].to_numpy(dtype=float),
+            ),
+            "lon": (
+                ["space"],
+                df["Lon"].to_numpy(dtype=float),
+            ),
+            "height": (
+                ["space"],
+                df["Height"].to_numpy(dtype=float),
+            ),
+            "validation": (
+                ["space"],
+                validation.astype(np.int8),
+            ),
+            "existing_flag": (
+                ["space", "time"],
+                existing_flag.astype(np.int8),
+            ),
+        },
+        coords={
+            "space": (
+                ["space"],
+                np.arange(len(df)),
+            ),
+            "time": time,
+            "target": (
+                ["space"],
+                df["ID"].to_numpy(dtype=object),
+            ),
+            "azimuth_subpixel": (
+                ["space"],
+                df["Azimuth"].to_numpy(dtype=float),
+            ),
+            "range_subpixel": (
+                ["space"],
+                df["Range"].to_numpy(dtype=float),
+            ),
+        },
+    )
 
-        # Get the columns starting from the 8th index onward (i.e., index 7 corresponds to 20150430)
-        dates = header_row.index[7:].tolist()
+    print(f"Radar Coding (RC) Toolbox output file '{file_path}' successfully loaded.")
 
-        # Print success message
-        print(f"Radar Coding (RC) Toolbox output file '{file_path}' successfully loaded.")
-
-        return df, dates
-
-    except Exception as e:
-        # If an error occurs, print the error message
-        raise RuntimeError(f"Error loading the Radar Coding (RC) Toolbox output file '{file_path}") from e
+    return targets
 
 
 def get_targets_from_slc(slc_stack, targets):
