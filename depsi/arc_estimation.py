@@ -721,12 +721,16 @@ def arc_estimation_xarray_input(
         filter_length_complex, dd_arc, np.angle(dd_arc), jump_percentage_2pi
     )
 
-    # Compute different columns for the A matrices and construct to one A matrix
-    A_cr = md.a_cross_range(cr2ph_arc)
-    A_off = md.a_offset(len(Btemporal))
-    A_lin = md.a_velocity(Btemporal, m2ph)
-    A_temp = md.a_temperature(temp)
-    A_arc = np.column_stack((A_cr, A_temp, A_off, A_lin))
+    # Compute the A matrix. Column order (cross_range, temperature, offset, velocity) must match how
+    # x_hat_arc_ph is indexed positionally below (and elsewhere in this function).
+    A_arc = md.construct_design_matrix(
+        ["cross_range", "temperature", "offset", "velocity"],
+        m2ph,
+        cross_range=cr2ph_arc,
+        temperature=temp,
+        n_epochs=len(Btemporal),
+        time=Btemporal,
+    )
 
     # Define the observation vector for the arc, which is based on the 'unwrapped' phase based on the filter
     y_arc = np.reshape(phase_arc_unwrap, (len(phase_arc_unwrap), 1))
@@ -1166,13 +1170,16 @@ def arc_estimation_control_network(
             filter_length_complex, dd_arc, np.angle(dd_arc), jump_percentage_2pi
         )
 
-        # Contruct the A matrices for functional model
-        # Compute different columns for the A matrices and construct to one A matrix
-        A_cr = md.a_cross_range(cr2ph_arc)
-        A_off = md.a_offset(len(Btemporal))
-        A_lin = md.a_velocity(Btemporal, m2ph)
-        A_temp = md.a_temperature(temp)
-        A_arc = np.column_stack((A_cr, A_temp, A_off, A_lin))
+        # Compute the A matrix. Column order (cross_range, temperature, offset, velocity) must match how
+        # x_hat_arc_ph is indexed positionally below (and elsewhere in this function).
+        A_arc = md.construct_design_matrix(
+            ["cross_range", "temperature", "offset", "velocity"],
+            m2ph,
+            cross_range=cr2ph_arc,
+            temperature=temp,
+            n_epochs=len(Btemporal),
+            time=Btemporal,
+        )
 
         # Define the observation vector for the arc, which is based on the 'unwrapped' phase based on the filter
         y_arc = np.reshape(phase_arc_unwrap, (len(phase_arc_unwrap), 1))
