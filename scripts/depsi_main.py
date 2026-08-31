@@ -370,9 +370,7 @@ if start_at_checkpoint < 1:
     stm["atmosphere_sigmasq"] = atmosphere["atmosphere_sigmasq"].transpose("space", "time")
 
     print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Removing the atmospheric phase screens...")
-    stm["phase_minus_atmo"] = (stm["phase"] - stm["atmosphere_predicted"] + np.pi) % (2 * np.pi) - np.pi
-    stm["sd_phase_minus_atmo"] = \
-        (stm["phase_minus_atmo"] - stm["phase_minus_atmo"].sel(time=stm.ps_sd_mother) + np.pi) % (2 * np.pi) - np.pi
+    stm["sd_phase_minus_atmo"] = (stm["sd_phase"] - stm["atmosphere_predicted"] + np.pi) % (2 * np.pi) - np.pi
 
     print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Checkpoint 1: saving to zarr...")
     stm = stm.chunk({"time": -1, "space": "auto"})
@@ -441,6 +439,7 @@ if start_at_checkpoint < 2:
     _, stm_firstordernetwork = spatial_integration(
         stm_network_pnts,
         stm_network_arcs,
+        key_sdphase="sd_phase_minus_atmo",
         key_arc_quality="temp_coh",
         threshold_arc_quality=arc_quality_threshold,
         idx_refpnt=reference_point_index,

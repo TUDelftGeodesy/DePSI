@@ -1,6 +1,7 @@
 import itertools
 import multiprocessing as mp
 import os
+from datetime import datetime
 
 import geopandas as gpd
 import matplotlib as mpl
@@ -9,6 +10,9 @@ import pandas as pd
 import shapely.geometry as sg
 import xarray as xr
 from scipy import stats
+from scipy.spatial import cKDTree
+
+from depsi.densification import _determine_dens_connections
 
 DS_REQUIRED_ATTR_KEYS = ("stack_id", "wavelength", "prf", "az_bw", "r_fs", "r_bw")
 
@@ -129,6 +133,7 @@ def ds_phase_estimation(
     shp_test: str | None = None,
     min_seg_len: int = 10,
     coh_threshold: float = 0.2,
+    mother_epoch: datetime | None = None,
     ds_filepath: str = None,
 ) -> xr.DataTree:
     """Estimate equivalent single mother (ESM) phase to each parcel.
@@ -168,6 +173,8 @@ def ds_phase_estimation(
         Minimum segment length to perform phase linking, by default 10.
     coh_threshold : float, optional
         Coherence threshold to perform phase linking, by default 0.2.
+    mother_epoch : datetime or None, optional
+        Mother epoch to assign the ESM phase estimates, by default None which will take the first epoch.
     ds_filepath : str, optional
         Filepath to check whether the datatree exists, by default None.
 
@@ -234,7 +241,13 @@ def ds_phase_estimation(
 
             ## Full complex coherence-based phase estimation (ESM)
             cpxopt = _phase_linking(ds_cpx_coh, regularization=0, estimator="emi")
-            ds_phi_esm_full = np.angle(cpxopt[0])
+            mother_idx = np.where(slc_stack.time.values == mother_epoch)[0][0] if mother_epoch is not None else 0
+            ds_phi_esm_full = np.angle(cpxopt[:, mother_idx])  # Gives form S - M (S * conj(M))
+
+            ## h2ph variables
+            h2ph_stack = slc_stack["h2ph"].values
+            sel = np.where(ds_mask == ds_id)
+            h2ph_mean = np.nanmean(h2ph_stack[sel], axis=0)
 
             ## z2ph constants
             if ds_mean_ia is None or np.isnan(ds_mean_ia):
@@ -284,7 +297,8 @@ It will be computed later if orbit file config is provided."
             stm["ds_phi_esm_block"].values[idx] = ds_phi_esm_block
             stm["ds_nsegments"].values[idx] = nsegments
             stm["ds_segments"].values[idx] = ds_segments
-            stm["local_incident_angle"].values[idx] = ds_mean_ia
+            stm["h2ph"].values[idx] = h2ph_mean
+            stm["local_incidence_angle"].values[idx] = ds_mean_ia
             stm["z2ph"].values[idx] = z2ph
             stm["meteo_id"].values[idx] = meteo_id
             stm["crop_id"].values[idx] = crop_id
@@ -373,7 +387,8 @@ def _ds_dt_init(
         ds_phi_esm_block=(["space", "time"], np.full((nspace, ntime), np.nan)),
         ds_nsegments=(["space"], np.zeros((nspace,), dtype=int)),
         ds_segments=(["space", "time"], np.zeros((nspace, ntime), dtype=int)),
-        local_incident_angle=(["space"], np.full((nspace,), np.nan)),
+        h2ph=(["space", "time"], np.full((nspace, ntime), np.nan)),
+        local_incidence_angle=(["space"], np.full((nspace,), np.nan)),
         z2ph=(["space"], np.full((nspace,), np.nan)),
         meteo_id=(["space"], np.full((nspace,), np.nan)),
         crop_id=(["space"], np.full((nspace,), np.nan)),
@@ -438,8 +453,8 @@ def _coherence_matrix(slc_stack, ds_mask, ds_id, shp_test=None):
     """
     ## Extract data from the stack
     cpx_stack = slc_stack["complex"].values
-    if "incident_angle" in slc_stack.data_vars:
-        ia = slc_stack["incident_angle"].values
+    if "incidence_angle" in slc_stack.data_vars:
+        ia = slc_stack["incidence_angle"].values
     else:
         ia = np.nan
 
@@ -461,8 +476,8 @@ def _coherence_matrix(slc_stack, ds_mask, ds_id, shp_test=None):
     npixels = cpx_sel.shape[0]
 
     ## Mean intensity, amplitude, and incidence angle
-    mean_p = np.nanmean(np.abs(cpx_sel) ** 2, axis=0)
-    mean_amp = np.nanmean(np.abs(cpx_sel), axis=0)
+    mean_p = np.nanmean(np.abs(cpx_sel) ** 2, axis=0) if not np.isnan(cpx_sel).all() else np.nan
+    mean_amp = np.nanmean(np.abs(cpx_sel), axis=0) if not np.isnan(cpx_sel).all() else np.nan
     mean_ia = np.nanmean(ia_sel) if not np.isnan(ia).all() else np.nan
 
     ## Calculate coherence matrix and multilooking
@@ -527,7 +542,9 @@ def _shp_test(data, method="ks-test"):
         ksmat = ksmat.reshape(data.shape[0], data.shape[0])
         ksmat_sum = np.sum(ksmat, axis=1)
         idx = np.argwhere(ksmat_sum == np.max(ksmat_sum))[0, 0]
-        data = data[ksmat[idx].astype(bool)]
+        data_sorted_idx = np.argsort(np.abs(data))
+        data_sorted = data[data_sorted_idx]
+        data = data_sorted[ksmat[idx].astype(bool)]
 
     else:
         raise NotImplementedError("This module is not yet implemented.")
@@ -668,3 +685,178 @@ def _open_datatree_compat(zarr_path: str) -> xr.DataTree:
             if os.path.isdir(os.path.join(zarr_path, group_name)):
                 dt_dict[group_name] = xr.open_zarr(zarr_path, group=group_name, consolidated=False)
         return xr.DataTree.from_dict(dt_dict)
+
+
+def select_common_fop_ref(
+    ps_stm_list: list, proj_crs: int, dist_ub: float = 20.0, quality_var: str = "full_ts_nad"
+) -> tuple[np.ndarray, np.ndarray]:
+    """Select a common reference point and common points from the first order points across tracks.
+
+    Parameters
+    ----------
+    ps_stm_list : list
+        List of PS STM datasets from different tracks.
+    proj_crs : int
+        The EPSG code for the coordinate reference system used for projecting the geographic coordinates.
+        The PS STM datasets must contain projected coordinates in this CRS as
+        "x_euclidean_proj_epsg{proj_crs}" and "y_euclidean_proj_epsg{proj_crs}".
+    dist_ub : float, optional
+        The upper bound for the distance between PS points across tracks, by default 20.0.
+        Points with distance below this value are considerd common points across tracks.
+    quality_var : str, optional
+        The name of the quality variable in the PS STM datasets to consider for selecting the reference point,
+        by default "full_ts_nad".
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        Tuple containing the selected common reference point indices,
+        and the indices of the common points in each PS STM dataset.
+    """
+    for i in range(len(ps_stm_list)):
+        ps_stm = ps_stm_list[i]
+        if (
+            f"x_euclidean_proj_epsg{proj_crs}" not in ps_stm.coords
+            or f"y_euclidean_proj_epsg{proj_crs}" not in ps_stm.coords
+        ):
+            raise ValueError(
+                f"PS STM dataset does not contain projected coordinates in EPSG:{proj_crs}. "
+                f"Expected variables: 'x_euclidean_proj_epsg{proj_crs}' and 'y_euclidean_proj_epsg{proj_crs}'."
+            )
+
+    # - Store the original point indices before filtering out invalid points (NaN lon/lat).
+    # - This is necessary to maintain the correct reference point indices after filtering
+    # - since we do not save the filtered PS stms.
+    pnt_idxs_ori = []
+    for i in range(len(ps_stm_list)):
+        ps_stm = ps_stm_list[i]
+        mask = np.isfinite(ps_stm.lon) & np.isfinite(ps_stm.lat)
+        mask = mask.compute()
+        pnt_idxs_ori.append(np.nonzero(mask.values)[0])
+        stm_clean = ps_stm.isel(space=mask)
+        ps_stm_list[i] = stm_clean
+
+    ps_locs = []
+    for i in range(len(ps_stm_list)):
+        ps_x = ps_stm_list[i][f"x_euclidean_proj_epsg{proj_crs}"].values
+        ps_y = ps_stm_list[i][f"y_euclidean_proj_epsg{proj_crs}"].values
+        ps_loc = np.stack((ps_x, ps_y), axis=-1)
+        ps_locs.append(ps_loc)
+
+    common_locs = ps_locs[0]
+    for i in range(len(ps_stm_list)):
+        ps_loc = ps_locs[i]
+        tree = cKDTree(common_locs)
+        distances, idxs = tree.query(ps_loc, distance_upper_bound=dist_ub)
+        valid = np.isfinite(distances) & (idxs < common_locs.shape[0])
+        common_locs = common_locs[idxs[valid]]
+        if common_locs.shape[0] == 0:
+            raise ValueError("No common PS was found! Adjust tolerance.")
+
+    pnt_idx_candidates = np.zeros((len(ps_stm_list), common_locs.shape[0]), dtype=int)
+    for i in range(len(ps_stm_list)):
+        ps_loc = ps_locs[i]
+        tree = cKDTree(ps_loc)
+        distances, idxs = tree.query(common_locs, distance_upper_bound=dist_ub)
+        valid = np.isfinite(distances)
+        pnt_idx_candidates[i] = idxs[valid]
+
+    pnt_q_sum = np.zeros((common_locs.shape[0],))
+    for i in range(len(ps_stm_list)):
+        pnt_q = ps_stm_list[i][quality_var].values[pnt_idx_candidates[i, :]]
+        pnt_q_sum += pnt_q
+    min_q_idx = np.argmin(pnt_q_sum)
+    ref_idxs = pnt_idx_candidates[:, min_q_idx]
+
+    ref_idxs_ori = []
+    pnt_idx_candidates_ori = []
+    for pnt_idx_ori, ref_idx, pnt_idx_candidate in zip(pnt_idxs_ori, ref_idxs, pnt_idx_candidates, strict=True):
+        ref_idxs_ori.append(pnt_idx_ori[ref_idx])
+        pnt_idx_candidates_ori.append(pnt_idx_ori[pnt_idx_candidate])
+
+    return ref_idxs_ori, pnt_idx_candidates_ori
+
+
+def ps_ds_arc(
+    ps_stm: xr.Dataset,
+    ds_dtree: xr.DataTree,
+    n_connections: int = 1,
+    key_xcoord: str = "azimuth",
+    key_ycoord: str = "range",
+    key_h2ph: str = "h2ph",
+    key_sdphase_ps: str = "sd_phase",
+    key_sdphase_ds: str = "sd_phase",
+) -> xr.DataTree:
+    """Arc PS and DS targets based on the nearest neighbor search.
+
+    Parameters
+    ----------
+    ps_stm : xr.Dataset
+        STM dataset of first order points.
+    ds_dtree : xr.DataTree
+        DataTree containing the DS targets.
+    n_connections : int, optional
+        Number of connections, by default 1.
+    key_xcoord : str, optional
+        Key name for the x-coordinate in the STM datasets, by default "azimuth".
+    key_ycoord : str, optional
+        Key name for the y-coordinate in the STM datasets, by default "range".
+    key_h2ph : str, optional
+        Key name for the height-to-phase variable in the STM datasets, by default "h2ph".
+    key_sdphase_ps : str, optional
+        Key name for the single-difference of phase variable in the PS STM datasets, by default "sd_phase".
+    key_sdphase_ds : str, optional
+        Key name for the single-difference of phase variable in the DS STM datasets, by default "sd_phase".
+
+    Returns
+    -------
+    xr.DataTree
+        DataTree containing the PS and DS targets and their connections.
+    """
+    assert n_connections == 1, "Currently only n_connections=1 is supported."
+
+    ds_stm = ds_dtree["ds_stm"].to_dataset()
+
+    if key_h2ph not in ps_stm.data_vars or key_h2ph not in ds_stm.data_vars:
+        raise ValueError(f"Missing required variable '{key_h2ph}' in the PS or DS STM datasets.")
+    if key_sdphase_ps not in ps_stm.data_vars:
+        raise ValueError(f"Missing required variable '{key_sdphase_ps}' in the PS STM datasets.")
+    if key_sdphase_ds not in ds_stm.data_vars:
+        raise ValueError(f"Missing required variable '{key_sdphase_ds}' in the DS STM datasets.")
+
+    # - Query densification connections
+    idx_ds_pnts, idx_ps_pnts = _determine_dens_connections(ds_stm, ps_stm, n_connections, key_xcoord, key_ycoord)
+
+    # - Take the mean for arc h2ph
+    h2ph = (ds_stm[key_h2ph].isel(space=idx_ds_pnts).data + ps_stm[key_h2ph].isel(space=idx_ps_pnts).data) / 2
+
+    # - Double difference phase (dd_phase) calculation = W{target - source}
+    dd_phase = (
+        ds_stm[key_sdphase_ds].isel(space=idx_ds_pnts).data
+        - ps_stm[key_sdphase_ps].isel(space=idx_ps_pnts).data
+        + np.pi
+    ) % (2 * np.pi) - np.pi
+
+    arc_stm = xr.Dataset(
+        coords={
+            "idx_dens": (("space",), idx_ds_pnts),
+            "idx_network": (("space",), idx_ps_pnts),
+        },
+        data_vars={
+            "h2ph": (("space", "time"), h2ph),
+            "dd_phase": (("space", "time"), dd_phase),
+        },
+        attrs={"wavelength": ds_stm.attrs["wavelength"]},
+    )
+
+    ds_cpx_coh = ds_dtree["ds_cpx_coh"].to_dataset()
+    arc_dtree = xr.DataTree.from_dict(
+        {
+            "arc_stm": arc_stm,
+            "ps_stm": ps_stm,
+            "ds_stm": ds_stm,
+            "ds_cpx_coh": ds_cpx_coh,
+        },
+    )
+
+    return arc_dtree

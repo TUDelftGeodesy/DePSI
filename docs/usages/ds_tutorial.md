@@ -9,7 +9,7 @@ python ds_main.py
 The example script performs the following things in order:
 1. PS and DS selection
 2. Atmospheric phase screen
-3. Mixed arc formation (under development)
+3. PS-DS arc formation
 4. Displacement parameter estimation (under development)
 
 The first implementation will output one `xarray.Dataset` for PS and one `xarray.DataTree` for DS. The DS DataTree output will include two `xarray.Dataset` for the space-time matrix and the full complex coherence matrix. The DS space-time matrix has the following variables:
@@ -26,6 +26,7 @@ The first implementation will output one `xarray.Dataset` for PS and one `xarray
 - ds_phi_esm_block      : equivalent single mother phase based on coherent block matrix
 - ds_nsegments          : number of coherent segments/blocks
 - ds_segments           : start and stop indices in time for each segment
+- h2ph                  : height-to-phase factor
 - local_incident_angle  : indicence angle based on parcel centroid
 - z2ph                  : conversion from vertical height to line-of-sight phase
 - meteo_id              : ID of the closest meteorological stations
@@ -81,7 +82,8 @@ Follow `depsi_main.py` for PS related settings. For DS settings:
 - igrs_codes            : list of IGRS station codes if choose igrs as reference point
 - igrs_locs             : list of IGRS locs (lat,lon) if choose igrs as reference point
 - ps_stm_save_name      : filename to save PS STM (example: ps_stm_{stack_id}_{checkpoint}.zarr)
-- ds_dtree_save_name    : filename to save DS DataTree (example: ds_stm_{stack_id}.zarr)
+- ds_dtree_save_name    : filename to save DS DataTree (example: ds_dtree_{stack_id}.zarr)
+- arc_dtree_save_name   : filename to save PS-DS arc DataTree (example: arc_dtree_{stack_id}.zarr)
 
 ## Project directory structure
 

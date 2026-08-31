@@ -14,12 +14,13 @@ from depsi.arc_estimation import periodogram
 from depsi.atmosphere_estimation import estimate_atmosphere_phase
 from depsi.classification import network_stm_selection, ps_selection
 from depsi.densification import densification
+from depsi.ds import assign_parcel_id, ds_phase_estimation, _open_datatree_compat, select_common_fop_ref, ps_ds_arc
 from depsi.io import (
     export_to_csv,
     export_to_skygeo_portal,
     export_convex_hull_to_shapefile,
     export_to_shapefile,
-    read_knmi,
+    read_knmi_txt,
     read_slc_stack
 )
 from depsi.model_estimation import MODEL_NAMES_PARAMS, estimate_model_params
@@ -35,25 +36,24 @@ from depsi.utils import (
 )
 from depsi.viewing_geometry import add_local_viewing_geometry
 
-from depsi.ds import assign_parcel_id, ds_phase_estimation, _open_datatree_compat
-
 
 #########################################
 #                                       #
 #           INPUT VARIABLES             #
 #                                       #
 #########################################
-proj_dir = "/projects/nieuwolda/insar/"
+ROOT_DIR = ""
+proj_dir = ROOT_DIR + "/projects/nieuwolda/insar/"
 run_name = "runp_test"
 log_filename = None #"runp_test_1sel.txt"  # Set to None to disable logging
 
 # - Contextual data path
-aoi_shp_filepath = "/projects/nieuwolda/contextual_data/aoi/nieuwolda_aoi.shp"
-parcel_shp_filepath = "/projects/nieuwolda/contextual_data/parcels/nieuwolda_attributes_for_depsi_test.shp"
-meteo_dir = "/projects/nieuwolda/contextual_data/knmi/"
+aoi_shp_filepath = ROOT_DIR + "/projects/nieuwolda/contextual_data/aoi/nieuwolda_aoi.shp"
+parcel_shp_filepath = ROOT_DIR + "/projects/nieuwolda/contextual_data/parcels/nieuwolda_attributes_for_depsi_test.shp"
+meteo_dir = ROOT_DIR + "/projects/nieuwolda/contextual_data/knmi/"
 
 # - Stack
-stack_root_dir = "/projects/nieuwolda/stacks/"
+stack_root_dir = ROOT_DIR + "/projects/nieuwolda/stacks/"
 stack_prefix = "nl_nieuwolda"
 mission = "s1"
 wavelength = 0.055465763 # m
@@ -71,7 +71,7 @@ end_date = datetime(2020, 12, 31)
 
 # - PS selection
 ps_selection_method = "nad"
-threshold = 0.5
+threshold = 0.35
 chunks_ps_selection = 5000
 start_date_ps_selection = None
 end_date_ps_selection = None
@@ -119,7 +119,7 @@ stc_max_dist = 100  # meters
 # - Viewing geometry
 orbit_mode = "IWS"
 orbit_resolution = 0.01
-orbit_file = "./config/drama/S1_XTI.cfg"
+orbit_file = "../config/drama/S1_XTI.cfg"
 
 # - Output settings
 filter_dict = {"h": [-2000, 2000]}
@@ -141,6 +141,7 @@ igrs_locs = None
 # -          ds_stm_s1_asc_t088.zarr
 ps_stm_save_name = "ps_stm_{}_{}.zarr"
 ds_dtree_save_name = "ds_dtree_{}.zarr"
+arc_dtree_save_name = "arc_dtree_{}.zarr"
 ########################################
 
 
@@ -176,14 +177,14 @@ else:
 filelist = sorted(Path(meteo_dir).glob("**/etmgeg_*.txt"))
 f1 = [None] * len(filelist)
 for i, file in enumerate(filelist):
-    f1[i] = read_knmi(file)
+    f1[i] = read_knmi_txt(file)
 df_meteo = pd.concat(f1)
 
 
 # ========================================= #
 #           1. PS DS Selection              #
 # ========================================= #
-print("========== PS and DS selection ...")
+print("========== 1. PS and DS selection ...")
 for i, stack_id in enumerate(stack_ids):
     print(f"Processing stack {stack_id} ...")
     metadata = sarxarray.read_metadata(metadata_paths[i], driver="doris5")
@@ -202,8 +203,7 @@ for i, stack_id in enumerate(stack_ids):
     print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} PS selection ...")
     ps_filepath_1sel = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "1sel"))
     if os.path.isdir(ps_filepath_1sel):
-        print("PS stm file already exist. Loading ...")
-        ps_stm = xr.open_zarr(ps_filepath_1sel)
+        print("PS stm file already exist. Skipping ...")
     else:
         ps_stm = ps_selection(
                 slcs=slc_stack,
@@ -304,9 +304,7 @@ for i, stack_id in enumerate(stack_ids):
 
     # - DS phase estimation
     if os.path.isdir(ds_filepath) and ds_id_list is None:
-        print("DS datatree file already exist. Loading ...")
-        ds_dtree = _open_datatree_compat(ds_filepath)
-        ds_stm = ds_dtree["ds_stm"].to_dataset()
+        print("DS datatree file already exist. Skipping ...")
     else:
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} DS phase estimation ...")
         ds_dtree = ds_phase_estimation(
@@ -326,6 +324,7 @@ for i, stack_id in enumerate(stack_ids):
             coh_threshold=ds_coh_threshold,
             ds_filepath=ds_filepath,
         )
+        
         # - Add local incident angle
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Add local incidence angle...")
         ds_stm = ds_dtree["ds_stm"].to_dataset()
@@ -339,6 +338,7 @@ for i, stack_id in enumerate(stack_ids):
             )
             z2ph = (-4 * np.pi) / (wavelength) * np.cos(np.radians(ds_stm["local_incident_angle"].values))
             ds_stm = ds_stm.assign({"z2ph": (["space"], z2ph)})
+        
         # - Add projected coordinates for atmosphere estimation
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Adding Euclidean coordinates...")
         ds_crd_x, ds_crd_y = convert_geographic_coords_to_euclidean(
@@ -355,21 +355,27 @@ for i, stack_id in enumerate(stack_ids):
 
     print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} DS selection done.")
     print(f"PS and DS selection for stack {stack_id} done.")
+print("========== 1. PS and DS selection done.")
 
 
 # ========================================= #
 #        2. Atmospheric Phase Screen        #
 # ========================================= #
-print("========== Atmospheric phase screen ...")
+print("========== 2. Atmospheric phase screen ...")
 for i, stack_id in enumerate(stack_ids):
     print(f"Processing stack {stack_id} ...")
     metadata = sarxarray.read_metadata(metadata_paths[i], driver="doris5")
 
     ps_filepath_2atmo = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "2atmo"))
     if os.path.isdir(ps_filepath_2atmo):
-        print("PS stm atmospheric phase screen file already exist. Loading ...")
-        ps_stm = xr.open_zarr(ps_filepath_2atmo)
+        print("PS stm atmospheric phase screen file already exist. Skipping ...")
     else:
+        ps_filepath_1sel = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "1sel"))
+        if os.path.isdir(ps_filepath_1sel):
+            ps_stm = xr.open_zarr(ps_filepath_1sel, consolidated=True)
+        else:
+            raise FileNotFoundError(f"PS stm file {ps_filepath_1sel} not found. Please run PS selection first.")
+        
         # - Network construction
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Removing mother from network STM...")
         mother_epoch_index = np.where(ps_stm.time.values == ps_stm.sel(time=ps_stm.ps_sd_mother).time.values)[0][0]
@@ -378,7 +384,6 @@ for i, stack_id in enumerate(stack_ids):
         ps_stm_without_mother_epoch = ps_stm.isel(time=non_mother)
         
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Selecting first-order network points...")
-        # - This takes a while
         stm_network_pnts = network_stm_selection(
             stm=ps_stm_without_mother_epoch,
             min_dist=min_point_distance,
@@ -450,6 +455,7 @@ for i, stack_id in enumerate(stack_ids):
 
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Creating the atmosphere prediction coordinate dataset...")
         # - PS coordinates for the prediction of the atmospheric phase screens
+        print("PS coordinates...")
         ps_atmosphere_prediction_coords = xr.Dataset(
             coords={
                 f"x_euclidean_proj_epsg{euclidean_epsg_code_number}": (
@@ -463,11 +469,11 @@ for i, stack_id in enumerate(stack_ids):
         # - DS coordinates here so that it will be included in the evaluation of the atmospheric phase screens
         ds_filepath = os.path.join(stm_dir, ds_dtree_save_name.format(stack_id))
         if os.path.isdir(ds_filepath):
-            print("DS datatree file already exist. Loading ...")
             ds_dtree = _open_datatree_compat(ds_filepath)
             ds_stm = ds_dtree["ds_stm"].to_dataset()
         else:
-            raise FileNotFoundError(f"DS datatree file {ds_filepath} not found. Please run PS DS selection first.")
+            raise FileNotFoundError(f"DS datatree file {ds_filepath} not found. Please run DS selection first.")
+        print("DS coordinates...")
         ds_atmosphere_prediction_coords = xr.Dataset(
             coords={
                 f"x_euclidean_proj_epsg{euclidean_epsg_code_number}": (
@@ -481,6 +487,7 @@ for i, stack_id in enumerate(stack_ids):
 
         # - Merge them so that we have a single prediction coordinates including PS and DS
         # - Extract the number of PS and DS points for later splitting of the atmospheric phase screens result
+        print("Merging the atmosphere prediction coordinate dataset...")
         nps, nds = len(ps_stm.space), len(ds_stm.space)
         atmosphere_prediction_coords = xr.concat([ps_atmosphere_prediction_coords, ds_atmosphere_prediction_coords], dim="space")
 
@@ -524,21 +531,31 @@ for i, stack_id in enumerate(stack_ids):
             },
         )
 
+        # - Split the atmosphere for PS and DS points
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Splitting the atmospheric phase screens for PS and DS points...")
+        ps_aps = atmospheric_phase_screens.isel(space=slice(0, nps))
+        ds_aps = atmospheric_phase_screens.isel(space=slice(nps, nps + nds))
+
         # - Create the zero layer for the mother atmosphere to be appended to the interferometric atmospheric phase screens
-        mother_atmo_stm = xr.Dataset(
+        ps_mother_atmo_stm = xr.Dataset(
             data_vars={
                 "atmosphere_predicted": ("space", np.zeros((len(ps_stm.space), ))),
                 "atmosphere_sigmasq": ("space", np.zeros((len(ps_stm.space), ))), },
             coords=ps_stm["phase"].sel(time=ps_stm.ps_sd_mother).coords
         )
 
-        atmosphere = xr.concat([atmospheric_phase_screens, mother_atmo_stm], dim="time").sortby("time")
+        ds_mother_atmo_stm = xr.Dataset(
+            data_vars={
+                "atmosphere_predicted": ("space", np.zeros((len(ds_stm.space), ))),
+                "atmosphere_sigmasq": ("space", np.zeros((len(ds_stm.space), ))), },
+            coords=ds_stm["ds_phi_esm_full"].sel(time=mother_epochs[i]).coords
+        )
 
-        # - Split the atmosphere for PS and DS points
-        ps_atmosphere = atmosphere.isel(space=slice(0, nps))
-        ds_atmosphere = atmosphere.isel(space=slice(nps, nps + nds))
+        ps_atmosphere = xr.concat([ps_aps, ps_mother_atmo_stm], dim="time").sortby("time")
+        ds_atmosphere = xr.concat([ds_aps, ds_mother_atmo_stm], dim="time").sortby("time")
 
         # - Add the atmosphere into the original STM
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Adding the atmospheric phase screens into the STM...")
         ps_stm["atmosphere_predicted"] = ps_atmosphere["atmosphere_predicted"].transpose("space", "time")
         ps_stm["atmosphere_sigmasq"] = ps_atmosphere["atmosphere_sigmasq"].transpose("space", "time")
         ds_stm["atmosphere_predicted"] = ds_atmosphere["atmosphere_predicted"].transpose("space", "time")
@@ -556,22 +573,32 @@ for i, stack_id in enumerate(stack_ids):
         ds_dtree.to_zarr(ds_filepath, mode="w")
         print("Saved!")
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} APS for stack {stack_id} done.")
+print("========== 2. Atmospheric phase screen done.")
 
 
 # ========================================= #
-#         3. PS First Order Network         #
+#          3a. PS First Order Points        #
 # ========================================= #
-print("========== PS 1st order points ...")
+print("========== 3a. PS first order points selection ...")
+stm_network_pnts_list = []
 for i, stack_id in enumerate(stack_ids):
     print(f"Processing stack {stack_id} ...")
     metadata = sarxarray.read_metadata(metadata_paths[i], driver="doris5")
 
-    ps_filepath_3netpts = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "3netpnts"))
-    if os.path.isdir(ps_filepath_3netpts):
-        print("PS stm network points files already exist. Loading ...")
-        stm_pnts_output = xr.open_zarr(ps_filepath_3netpts)
+    ps_filepath_3fop = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "3fop"))
+    if os.path.isdir(ps_filepath_3fop):
+        print("PS stm first order points files already exist. Loading ...")
+        stm_network_pnts = xr.open_zarr(ps_filepath_3fop)
+        stm_network_pnts_list.append(stm_network_pnts)
     else:
-        # - Network construction
+        ps_filepath_2atmo = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "2atmo"))
+        if os.path.isdir(ps_filepath_2atmo):
+            print("PS stm atmospheric phase screen file already exist. Loading ...")
+            ps_stm = xr.open_zarr(ps_filepath_2atmo)
+        else:
+            raise FileNotFoundError(f"PS stm atmospheric phase screen file {ps_filepath_2atmo} not found. Please run APS estimation first.")
+
+        # - First order points selection
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Removing mother from network STM...")
         mother_epoch_index = np.where(ps_stm.time.values == ps_stm.sel(time=ps_stm.ps_sd_mother).time.values)[0][0]
         non_mother = [True] * len(ps_stm.time.values)
@@ -591,7 +618,67 @@ for i, stack_id in enumerate(stack_ids):
             y_var=network_y_crds,
             include_index=None
         )
+
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Append first-order network points to the list...")
+        stm_network_pnts = stm_network_pnts.chunk({"time": -1, "space": "auto"})
+        stm_network_pnts.to_zarr(ps_filepath_3fop, mode="w", zarr_format=2)
+        stm_network_pnts_list.append(stm_network_pnts)
+
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Selecting first order PS points for stack {stack_id} done.")
+print("========== 3a. PS first order points selection done.")
+
+
+# ========================================= #
+#        3b. Reference Point Selection      #
+# ========================================= #
+print("========== 3b. Common first order points and reference point selection ...")
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Selecting common points and a reference point...")
+ps_ref_idxs, common_fop_idxs = select_common_fop_ref(
+    ps_stm_list=stm_network_pnts_list,
+    proj_crs=euclidean_epsg_code_number,
+    dist_ub=5.0,
+    quality_var="full_ts_" + ps_selection_method,
+)
+
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Assigning the selected reference point index to stm...")
+for i, stack_id in enumerate(stack_ids):
+    print(f"Checking if the selected reference point index is present in the first order network points for stack {stack_id}...")
+    ps_filepath_3fopn = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "3fopn"))
+    if os.path.isdir(ps_filepath_3fopn):
+        print(f"Reference point index has been assigned for stack {stack_id}. Skipping assignment.")
+    else:
+        stm_network_pnts = stm_network_pnts_list[i]
+        stm_network_pnts_space = stm_network_pnts["space"].values
+        ref_pnt_space = stm_network_pnts_space[ps_ref_idxs[i]]
+        stm_network_pnts = stm_network_pnts.isel(space=common_fop_idxs[i])
+        ps_ref_idx = np.where(stm_network_pnts["space"].values == ref_pnt_space)[0][0]
+        stm_network_pnts = stm_network_pnts.assign_attrs({"ps_ref_idx": ps_ref_idx})
+        stm_network_pnts = stm_network_pnts.chunk({"time": -1, "space": "auto"})
+        stm_network_pnts.to_zarr(ps_filepath_3fopn, mode="w", zarr_format=2)
+
+print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Reference point selection done.")
+print("========== 3b. Common first order points and reference point selection done.")
+
+
+# ========================================= #
+#         3c. PS First Order Network        #
+# ========================================= #
+print("========== 3c. PS first order network spatial integration ...")
+for i, stack_id in enumerate(stack_ids):
+    print(f"Processing stack {stack_id} ...")
+    metadata = sarxarray.read_metadata(metadata_paths[i], driver="doris5")
+
+    ps_filepath_3fon = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "3fon"))
+    if os.path.isdir(ps_filepath_3fon):
+        print("PS stm first order network file already exist. Skipping...")
+    else:
+        ps_filepath_3fopn = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "3fopn"))
+        if os.path.isdir(ps_filepath_3fopn):
+            stm_network_pnts = xr.open_zarr(ps_filepath_3fopn)
+        else:
+            raise FileNotFoundError(f"PS stm first order points file {ps_filepath_3fopn} not found. Please run PS first order points selection first.")
         
+        # - Network construction
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Forming first-order network...")
         stm_network_arcs = form_network(
             stm_network_pnts,
@@ -608,7 +695,7 @@ for i, stack_id in enumerate(stack_ids):
         )
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Formed first-order network with {len(stm_network_pnts.space)} "
               f"points and {len(stm_network_arcs.space)} arcs.")
-                
+                        
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating ambiguities through periodogram...")
         _, ambiguities, _, _, ens_coh = periodogram(
             stm_network_arcs,
@@ -616,50 +703,191 @@ for i, stack_id in enumerate(stack_ids):
             key_h2ph='h2ph',
             key_Btemporal='Btemp',
             min_steps=min_periodogram_iterations,
-                    )
+        )
         stm_network_arcs["ambiguities"] = ambiguities
         stm_network_arcs["temp_coh"] = ens_coh
-
+        
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Computing periodogram output...")
         stm_network_pnts = stm_network_pnts.compute()
         stm_network_arcs = stm_network_arcs.compute()
-                                
+
         print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Integrating the spatial network...")
         _, stm_pnts_output = spatial_integration(
             stm_network_pnts,
             stm_network_arcs,
+            key_sdphase="sd_phase_minus_atmo",
             key_arc_quality="temp_coh",
             threshold_arc_quality=arc_quality_threshold,
-            idx_refpnt=reference_point_index,
+            idx_refpnt=stm_network_pnts.attrs["ps_ref_idx"],
         )
 
-        # - Save intermediate network for selecting common reference point
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Spatial integration done. Saving to zarr...")
         stm_pnts_output = stm_pnts_output.chunk({"time": -1, "space": "auto"})
-        stm_pnts_output.to_zarr(ps_filepath_3netpts, mode="w", zarr_format=2)
-
-        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} First order PS network for stack {stack_id} done.")
-
-
-# ========================================= #
-#        4. Reference Point Selection       #
-# ========================================= #
-print("========== Reference point selection ...")
-# - TODO: Implement reference point selection based on the common reference point across stacks
+        stm_pnts_output.to_zarr(ps_filepath_3fon, mode="w", zarr_format=2)
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} First order network spatial integration for stack {stack_id} done.")
+print("========== 3c. PS first order network spatial integration done.")
 
 
 # ========================================= #
 #            4. PS Densification            #
 # ========================================= #
-print("========== PS densification ...")
-# - TODO: Implement PS densification based on the selected reference point and the first order network
+print("========== 4. PS densification ...")
+for i, stack_id in enumerate(stack_ids):
+    print(f"Processing stack {stack_id} ...")
+    metadata = sarxarray.read_metadata(metadata_paths[i], driver="doris5")
+
+    ps_filepath_4dens = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "4dens"))
+    if os.path.isdir(ps_filepath_4dens):
+        print("PS stm densification file already exist. Skipping...")
+    else:
+        ps_filepath_3fon = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "3fon"))
+        if os.path.isdir(ps_filepath_3fon):
+            stm_pnts_output = xr.open_zarr(ps_filepath_3fon)
+        else:
+            raise FileNotFoundError(f"PS stm first order network file {ps_filepath_3fon} not found. Please run PS first order network formation first.")
+
+        ps_filepath_2atmo = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "2atmo"))
+        if os.path.isdir(ps_filepath_2atmo):
+            ps_stm = xr.open_zarr(ps_filepath_2atmo)
+        else:
+            raise FileNotFoundError(f"PS stm atmospheric phase screen file {ps_filepath_2atmo} not found. Please run APS estimation first.")
+
+        # - Prepare input for densification
+        mother_epoch_index = np.where(ps_stm.time.values == ps_stm.sel(time=ps_stm.ps_sd_mother).time.values)[0][0]
+        non_mother = [True] * len(ps_stm.time.values)
+        non_mother[mother_epoch_index] = False
+        stm_atmo_corr_without_mother_epoch = ps_stm.isel(time=non_mother)
+        stm_atmo_corr_without_mother_epoch = stm_atmo_corr_without_mother_epoch.chunk({"time": -1})
+
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Starting densification...")
+        stm_densified = densification(
+            stm_atmo_corr_without_mother_epoch,
+            stm_pnts_output,
+            idx_refpnt=stm_network_pnts.attrs["ps_ref_idx"],
+            n_connections=n_densification_connections,
+            key_sdphase="sd_phase_minus_atmo",
+            key_h2ph="sd_h2ph",
+            key_Btemporal="temporal_baseline"
+        )
+
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Estimating the model parameters...")
+        stm_densified, model_parameter_layer_names = estimate_model_params(
+            stm=stm_densified,
+            models=model_types,
+            key_observations="unwrapped_phase",
+            key_h2ph="sd_h2ph",
+            key_time="temporal_baseline"
+        )
+
+        # - Geocoding
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Starting geocoding...")
+        latlonh = radar_to_latlonh(
+            azimuth_coords=stm_densified.azimuth.values,
+            range_coords=stm_densified.range.values,
+            elevation=stm_densified.pnt_height.values,
+            metadata=metadata,
+        )
+
+        stm_densified["lat"].data = latlonh[0].flatten()
+        stm_densified["lon"].data = latlonh[1].flatten()
+        stm_densified["h"].data = latlonh[2].flatten()
+
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Calculating the unwrapped phase timeseries...")
+        stm_densified["unwrapped_phase"].data = stm_densified["unwrapped_phase"].values
+
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Calculating spatiotemporal consistency...")
+        stm_densified = compute_spatiotemporal_consistency(
+            stm_densified,
+            min_dist=stc_min_dist,
+            max_dist=stc_max_dist,
+            x_crd_layer_name="lon",
+            y_crd_layer_name="lat",
+            coordinate_type="geographic"
+        )
+
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Filtering scatterers...")
+        for layer in filter_dict.keys():
+            stm_densified = stm_point_filter(
+                stm=stm_densified,
+                layer_to_filter=layer,
+                vmin=filter_dict[layer][0],
+                vmax=filter_dict[layer][1],
+                return_removed=False
+            )
+
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Adding viewing geometry...")
+        stm_densified = add_local_viewing_geometry(
+            stm=stm_densified,
+            orbit_config_file=orbit_file,
+            orbit_res=orbit_resolution,
+            orbit_mode=orbit_mode,
+            orbit=stack_id
+        )
+
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Projecting phases and models onto the vertical...")
+        stm_densified["unwrapped_phase_pov"] = stm_densified["unwrapped_phase"] / np.cos(
+            np.radians(stm_densified["local_incidence_angle"])
+        )
+        for param in model_parameter_layer_names:
+            stm_densified[param].data = stm_densified[param].values
+            stm_densified[f"{param}_pov"] = stm_densified[param] / np.cos(np.radians(stm_densified["local_incidence_angle"]))
+
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Saving to zarr...")
+        stm_densified = stm_densified.chunk({"time": 100, "space": "auto"})
+        stm_densified.to_zarr(ps_filepath_4dens, mode="w", zarr_format=2)
+
+    print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} PS densification for stack {stack_id} done.")
+print("========== 4. PS densification done.")
 
 
 # ========================================= #
-#            5. DS Densification            #
+#          5. PS-DS Arc Formation           #
 # ========================================= #
-print("========== DS densification ...")
-# - TODO: Implement DS densification based on the selected reference point and the first order network
+print("========== 5. PS-DS arc formation ...")
+for i, stack_id in enumerate(stack_ids):
+    print(f"Processing stack {stack_id} ...")
+    metadata = sarxarray.read_metadata(metadata_paths[i], driver="doris5")
+
+    arc_filepath = os.path.join(stm_dir, arc_dtree_save_name.format(stack_id))
+    if os.path.isdir(arc_filepath):
+        print("PS-DS arc datatree file already exist. Skipping ...")
+    else:
+        print("Loading PS first order network file and DS datatree...")
+        ps_filepath_3fon = os.path.join(stm_dir, ps_stm_save_name.format(stack_id, "3fon"))
+        if os.path.isdir(ps_filepath_3fon):
+            stm_pnts_output = xr.open_zarr(ps_filepath_3fon)
+        else:
+            raise FileNotFoundError(f"PS stm first order network file {ps_filepath_3fon} not found. Please run PS first order network formation first.")
+
+        ds_filepath = os.path.join(stm_dir, ds_dtree_save_name.format(stack_id))
+        if os.path.isdir(ds_filepath):
+            ds_dtree = _open_datatree_compat(ds_filepath)
+        else:
+            raise FileNotFoundError(f"DS datatree file {ds_filepath} not found. Please run PS DS selection first.")
     
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} PS-DS arc formation...")
+        arc_dtree = ps_ds_arc(
+            stm_pnts_output, 
+            ds_dtree, 
+            n_connections=1, 
+            key_xcoord=f"x_euclidean_proj_epsg{euclidean_epsg_code_number}", 
+            key_ycoord=f"y_euclidean_proj_epsg{euclidean_epsg_code_number}",
+            key_h2ph="h2ph",
+            key_sd_phase_ps="sd_phase_minus_atmo",
+            key_sd_phase_ds="ds_phi_aps_full",
+        )
+
+        arc_dtree.to_zarr(arc_filepath, mode="w")
+        print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} PS-DS arc formation for {stack_id} done.")
+print("========== 5. PS-DS arc formation done.")
+
+
+# ========================================= #
+#     6. Displacement Model Parameters      #
+# ========================================= #
+print("========== 6. Displacement Model Parameters ...")
+# - TODO: Estimate displacement model parameters
+
 
 if log_filename is not None:
     sys.stdout.flush()

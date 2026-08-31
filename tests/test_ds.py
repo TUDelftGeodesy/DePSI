@@ -5,8 +5,18 @@ import pytest
 import xarray as xr
 from numpy.testing import assert_allclose
 from shapely.geometry import MultiPolygon, Polygon
+from xarray import DataTree
 
-from depsi.ds import _coherence_matrix, _phase_linking, _segmentation, assign_parcel_id, ds_phase_estimation
+from depsi.ds import (
+    _coherence_matrix,
+    _phase_linking,
+    _segmentation,
+    _shp_test,
+    assign_parcel_id,
+    ds_phase_estimation,
+    ps_ds_arc,
+    select_common_fop_ref,
+)
 
 
 @pytest.fixture
@@ -240,6 +250,16 @@ def ds_phase_inputs():
                     dtype=np.complex64,
                 ),
             ),
+            "h2ph": (
+                ("azimuth", "range", "time"),
+                np.array(
+                    [
+                        [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
+                        [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
+                    ],
+                    dtype=np.float32,
+                ),
+            ),
         },
         coords={
             "azimuth": np.array([0, 1]),
@@ -424,7 +444,7 @@ def simple_slc_stack():
         dtype=np.complex128,
     )
 
-    incident_angle = np.array(
+    incidence_angle = np.array(
         [
             [30.0, 31.0, 32.0],
             [33.0, 34.0, 35.0],
@@ -437,9 +457,9 @@ def simple_slc_stack():
                 ("azimuth", "range", "time"),
                 cpx_data,
             ),
-            "incident_angle": (
+            "incidence_angle": (
                 ("azimuth", "range"),
-                incident_angle,
+                incidence_angle,
             ),
         },
         coords={
@@ -790,3 +810,401 @@ def test_segmentation_discards_block_shorter_than_minimum():
 
     assert nsegments == 0
     assert blocks_idx == []
+
+
+def make_ps_stm(
+    x,
+    y,
+    *,
+    lon=None,
+    lat=None,
+    quality=None,
+    h2ph=None,
+    sd_phase=None,
+):
+    """Create a minimal PS STM-like Dataset for unit testing."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    n_space = len(x)
+
+    if lon is None:
+        lon = x + 4.0
+    if lat is None:
+        lat = y + 52.0
+    if quality is None:
+        quality = np.ones(n_space)
+    if h2ph is None:
+        h2ph = np.ones((n_space, 2))
+    if sd_phase is None:
+        sd_phase = np.zeros((n_space, 2))
+
+    return xr.Dataset(
+        data_vars={
+            "full_ts_nad": ("space", np.asarray(quality, dtype=float)),
+            "h2ph": (("space", "time"), np.asarray(h2ph, dtype=float)),
+            "sd_phase": (("space", "time"), np.asarray(sd_phase, dtype=float)),
+        },
+        coords={
+            "space": np.arange(n_space),
+            "time": np.array(["2024-01-01", "2024-01-02"], dtype="datetime64[ns]"),
+            "lon": ("space", np.asarray(lon, dtype=float)),
+            "lat": ("space", np.asarray(lat, dtype=float)),
+            "x_euclidean_proj_epsg28992": ("space", x),
+            "y_euclidean_proj_epsg28992": ("space", y),
+        },
+        attrs={"wavelength": 0.056},
+    )
+
+
+def make_ds_dtree(ds_stm, ds_cpx_coh=None):
+    """Wrap a DS STM Dataset in the DataTree structure expected by ps_ds_arc."""
+    if ds_cpx_coh is None:
+        ds_cpx_coh = xr.Dataset({"coherence": (("space", "time"), np.ones_like(ds_stm["sd_phase"].values))})
+
+    return DataTree.from_dict(
+        {
+            "ds_stm": ds_stm,
+            "ds_cpx_coh": ds_cpx_coh,
+        }
+    )
+
+
+def test_select_common_fop_ref_returns_common_points_and_best_reference():
+    # All three tracks have points within 20 m of each other.
+    # The second candidate has the smallest summed quality:
+    # 5 + 1 + 2 = 8, versus 10 + 8 + 9 = 27 for the first candidate.
+    track_1 = make_ps_stm(
+        x=[0.0, 100.0],
+        y=[0.0, 100.0],
+        quality=[10.0, 5.0],
+    )
+    track_2 = make_ps_stm(
+        x=[2.0, 102.0],
+        y=[1.0, 98.0],
+        quality=[8.0, 1.0],
+    )
+    track_3 = make_ps_stm(
+        x=[-2.0, 99.0],
+        y=[1.0, 101.0],
+        quality=[9.0, 2.0],
+    )
+
+    ref_idxs, pnt_idx_candidates = select_common_fop_ref(
+        ps_stm_list=[track_1, track_2, track_3],
+        proj_crs=28992,
+        dist_ub=20.0,
+    )
+
+    expected_candidates = np.array(
+        [
+            [0, 1],
+            [0, 1],
+            [0, 1],
+        ]
+    )
+
+    np.testing.assert_array_equal(pnt_idx_candidates, expected_candidates)
+    np.testing.assert_array_equal(ref_idxs, np.array([1, 1, 1]))
+
+
+def test_select_common_fop_ref_restores_original_indices_after_nan_filtering():
+    # The middle point of track_1 has invalid geographic coordinates.
+    # It is removed before matching, but returned indices must refer to
+    # the original unfiltered Dataset.
+    track_1 = make_ps_stm(
+        x=[0.0, 50.0, 100.0],
+        y=[0.0, 50.0, 100.0],
+        lon=[4.0, np.nan, 4.1],
+        lat=[52.0, 52.1, 52.2],
+        quality=[10.0, 999.0, 1.0],
+    )
+    track_2 = make_ps_stm(
+        x=[1.0, 101.0],
+        y=[1.0, 99.0],
+        quality=[5.0, 2.0],
+    )
+
+    ref_idxs, pnt_idx_candidates = select_common_fop_ref(
+        ps_stm_list=[track_1, track_2],
+        proj_crs=28992,
+        dist_ub=10.0,
+    )
+
+    expected_candidates = np.array(
+        [
+            [0, 2],
+            [0, 1],
+        ]
+    )
+
+    np.testing.assert_array_equal(pnt_idx_candidates, expected_candidates)
+    np.testing.assert_array_equal(ref_idxs, np.array([2, 1]))
+
+
+def test_select_common_fop_ref_raises_when_no_points_are_common():
+    track_1 = make_ps_stm(x=[0.0], y=[0.0])
+    track_2 = make_ps_stm(x=[1000.0], y=[1000.0])
+
+    with pytest.raises(ValueError, match="No common PS was found"):
+        select_common_fop_ref(
+            ps_stm_list=[track_1, track_2],
+            proj_crs=28992,
+            dist_ub=20.0,
+        )
+
+
+def test_ps_ds_arc_builds_expected_arc_dataset(monkeypatch):
+    ps_stm = make_ps_stm(
+        x=[0.0, 10.0, 20.0],
+        y=[0.0, 10.0, 20.0],
+        h2ph=[
+            [2.0, 4.0],
+            [10.0, 14.0],
+            [100.0, 200.0],
+        ],
+        sd_phase=[
+            [0.0, 0.0],
+            [0.2, -0.2],
+            [0.0, 0.0],
+        ],
+    )
+
+    ds_stm = make_ps_stm(
+        x=[1.0, 11.0],
+        y=[1.0, 11.0],
+        h2ph=[
+            [6.0, 8.0],
+            [14.0, 18.0],
+        ],
+        sd_phase=[
+            [0.1, 0.3],
+            [-0.3, 0.4],
+        ],
+    )
+
+    ds_cpx_coh = xr.Dataset(
+        {
+            "coh": (
+                ("space", "time"),
+                np.array([[0.9, 0.8], [0.7, 0.6]]),
+            )
+        }
+    )
+    ds_dtree = make_ds_dtree(ds_stm, ds_cpx_coh)
+
+    def fake_determine_connections(*args, **kwargs):
+        return np.array([0, 1]), np.array([1, 0])
+
+    monkeypatch.setattr(
+        "depsi.ds._determine_dens_connections",
+        fake_determine_connections,
+    )
+
+    result = ps_ds_arc(
+        ps_stm=ps_stm,
+        ds_dtree=ds_dtree,
+        n_connections=1,
+    )
+
+    arc_stm = result["arc_stm"].to_dataset()
+
+    assert set(result.children) == {"arc_stm", "ps_stm", "ds_stm", "ds_cpx_coh"}
+    assert arc_stm.attrs["wavelength"] == pytest.approx(0.056)
+
+    np.testing.assert_array_equal(arc_stm["idx_dens"].values, [0, 1])
+    np.testing.assert_array_equal(arc_stm["idx_network"].values, [1, 0])
+
+    # Arc h2ph is the average of connected DS and PS h2ph values.
+    expected_h2ph = np.array(
+        [
+            [(6.0 + 10.0) / 2, (8.0 + 14.0) / 2],
+            [(14.0 + 2.0) / 2, (18.0 + 4.0) / 2],
+        ]
+    )
+    np.testing.assert_allclose(arc_stm["h2ph"].values, expected_h2ph)
+
+    # dd_phase = wrapped(ds_phase - ps_phase), constrained to [-pi, pi).
+    expected_dd_phase = np.array(
+        [
+            [0.1 - 0.2, 0.3 - (-0.2)],
+            [-0.3 - 0.0, 0.4 - 0.0],
+        ]
+    )
+    np.testing.assert_allclose(arc_stm["dd_phase"].values, expected_dd_phase)
+
+
+def test_ps_ds_arc_wraps_double_difference_phase(monkeypatch):
+    ps_stm = make_ps_stm(
+        x=[0.0],
+        y=[0.0],
+        h2ph=[[1.0, 1.0]],
+        sd_phase=[[3.0, -3.0]],
+    )
+    ds_stm = make_ps_stm(
+        x=[1.0],
+        y=[1.0],
+        h2ph=[[3.0, 3.0]],
+        sd_phase=[[-3.0, 3.0]],
+    )
+
+    def fake_determine_connections(*args, **kwargs):
+        return np.array([0]), np.array([0])
+
+    monkeypatch.setattr(
+        "depsi.ds._determine_dens_connections",
+        fake_determine_connections,
+    )
+
+    result = ps_ds_arc(ps_stm, make_ds_dtree(ds_stm))
+    dd_phase = result["arc_stm"].to_dataset()["dd_phase"].values
+
+    raw_difference = np.array([[-3.0 - 3.0, 3.0 - (-3.0)]])
+    expected = (raw_difference + np.pi) % (2 * np.pi) - np.pi
+
+    np.testing.assert_allclose(dd_phase, expected)
+    assert np.all(dd_phase >= -np.pi)
+    assert np.all(dd_phase < np.pi)
+
+
+def test_ps_ds_arc_rejects_multiple_connections():
+    ps_stm = make_ps_stm(x=[0.0], y=[0.0])
+    ds_stm = make_ps_stm(x=[1.0], y=[1.0])
+
+    with pytest.raises(AssertionError, match="n_connections=1"):
+        ps_ds_arc(
+            ps_stm=ps_stm,
+            ds_dtree=make_ds_dtree(ds_stm),
+            n_connections=2,
+        )
+
+
+def test_ps_ds_arc_raises_for_missing_ps_sd_phase():
+    ps_stm = make_ps_stm(x=[0.0], y=[0.0]).drop_vars("sd_phase")
+    ds_stm = make_ps_stm(x=[1.0], y=[1.0])
+
+    with pytest.raises(ValueError, match="Missing required variable 'sd_phase'"):
+        ps_ds_arc(
+            ps_stm=ps_stm,
+            ds_dtree=make_ds_dtree(ds_stm),
+        )
+
+
+def test_ps_ds_arc_raises_for_missing_ds_sd_phase():
+    ps_stm = make_ps_stm(x=[0.0], y=[0.0])
+    ds_stm = make_ps_stm(x=[1.0], y=[1.0])
+    ds_dtree = make_ds_dtree(ds_stm)
+    ds_stm = ds_stm.drop_vars("sd_phase")
+    ds_dtree["ds_stm"] = ds_stm
+
+    with pytest.raises(ValueError, match="Missing required variable 'sd_phase'"):
+        ps_ds_arc(
+            ps_stm=ps_stm,
+            ds_dtree=ds_dtree,
+        )
+
+
+class DummyPool:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def map(self, function, iterable):
+        return [function(item) for item in iterable]
+
+
+def test_shp_test_keeps_pixels_matching_selected_reference(monkeypatch):
+    """Test deterministic SHP selection.
+
+    We prescribe a 3x3 p-value matrix:
+
+        [[0.90, 0.80, 0.01],
+         [0.80, 0.90, 0.01],
+         [0.01, 0.01, 0.90]]
+
+    With threshold p > 0.05:
+      - pixel 0 matches pixels 0 and 1: total = 2
+      - pixel 1 matches pixels 0 and 1: total = 2
+      - pixel 2 matches only itself   : total = 1
+
+    np.argmax selects the first maximum: row 0.
+    Thus, pixels at original positions 0 and 1 are retained.
+    """
+    data = np.array(
+        [
+            3.0 + 4.0j,  # magnitude = 5
+            1.0 + 0.0j,  # magnitude = 1
+            2.0 + 0.0j,  # magnitude = 2
+        ]
+    )
+
+    pvalue_lookup = {
+        (1.0, 1.0): 0.90,
+        (1.0, 2.0): 0.80,
+        (1.0, 5.0): 0.01,
+        (2.0, 1.0): 0.80,
+        (2.0, 2.0): 0.90,
+        (2.0, 5.0): 0.01,
+        (5.0, 1.0): 0.01,
+        (5.0, 2.0): 0.01,
+        (5.0, 5.0): 0.90,
+    }
+
+    def fake_kstest(pair):
+        sample_1, sample_2 = pair
+        key = (float(sample_1), float(sample_2))
+        return pvalue_lookup[key]
+
+    monkeypatch.setattr("depsi.ds.mp.Pool", DummyPool)
+    monkeypatch.setattr("depsi.ds._kstest", fake_kstest)
+
+    result = _shp_test(data, method="ks-test")
+
+    expected = np.array(
+        [
+            1.0 + 0.0j,  # magnitude = 1
+            2.0 + 0.0j,  # magnitude = 2
+        ]
+    )
+
+    np.testing.assert_array_equal(result, expected)
+
+
+def test_shp_test_empty_method_uses_ks_test_branch(monkeypatch):
+    """method='' is documented/implemented as an alias for 'ks-test'.
+
+    All p-values are > 0.05, so all pixels remain selected.
+    """
+    data = np.array(
+        [
+            3.0 + 4.0j,  # magnitude = 5
+            1.0 + 0.0j,  # magnitude = 1
+            2.0 + 0.0j,  # magnitude = 2
+        ]
+    )
+
+    monkeypatch.setattr("depsi.ds.mp.Pool", DummyPool)
+    monkeypatch.setattr("depsi.ds._kstest", lambda pair: 1.0)
+
+    result = _shp_test(data, method="")
+    expected = data[np.argsort(np.abs(data))]
+
+    np.testing.assert_array_equal(result, expected)
+
+
+def test_shp_test_rejects_unknown_method():
+    """An unimplemented SHP method should raise the documented error."""
+    data = np.array(
+        [
+            3.0 + 4.0j,  # magnitude = 5
+            1.0 + 0.0j,  # magnitude = 1
+            2.0 + 0.0j,  # magnitude = 2
+        ]
+    )
+
+    with pytest.raises(
+        NotImplementedError,
+        match="This module is not yet implemented",
+    ):
+        _shp_test(data, method="anderson-darling")
