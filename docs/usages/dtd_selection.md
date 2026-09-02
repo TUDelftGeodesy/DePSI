@@ -28,6 +28,98 @@ cropped stack or use matching radar coordinates.
 Targets outside the spatial extent of the SLC stack are discarded during
 selection.
 
+### Cropped and Original Stack Coordinates
+
+When the Radar Coding Toolbox is run on a cropped stack, the exported radar
+coordinates may be expressed in the local coordinate system of the cropped
+stack. In that case, the azimuth and range values are measured relative to the
+first line and first pixel of the crop.
+
+If the SLC stack used in DePSI is labelled with the original, uncropped radar
+coordinates, the Radar Coding Toolbox coordinates must first be shifted to the
+same coordinate system:
+
+```text
+azimuth_original = azimuth_cropped + first_line
+range_original   = range_cropped   + first_pixel
+```
+
+For DORIS cropped stacks, `first_line` and `first_pixel` are stored in the crop
+metadata files:
+
+```text
+nlines_crp.txt:
+<number_of_cropped_lines>
+<first_line_in_original_image>
+<last_line_in_original_image>
+
+npixels_crp.txt:
+<number_of_cropped_pixels>
+<first_pixel_in_original_image>
+<last_pixel_in_original_image>
+```
+
+The important requirement is not whether the coordinates are cropped or
+original-stack coordinates, but that `targets` and `slcs` use the same
+azimuth/range convention before calling `designated_target_selection`.
+
+### Subpixel Sample-Coordinate Convention
+
+The goal of designated target selection is to assign the SLC `complex`,
+`amplitude`, and `phase` values to a designated target using its precise
+subpixel radar coordinates.
+
+The SLC stack stores measurements at discrete integer radar sample coordinates,
+for example:
+
+```text
+..., 3279, 3280, 3281, ...
+```
+
+The Radar Coding Toolbox returns a continuous position in this same sample
+coordinate space. For example, a target may have:
+
+```text
+azimuth = 3280.244246
+range   = 25800.193768
+```
+
+When this fractional coordinate is mapped to an actual SLC sample, the nearest
+integer radar sample should be selected:
+
+```text
+(3280.244246, 25800.193768)
+        -> nearest
+(3280, 25800)
+
+(3280.244246, 25800.793768)
+        -> nearest
+(3280, 25801)
+```
+
+A lower-left pixel-cell interpretation can suggest using `floor`, but that
+mixes two coordinate conventions. If cell boundaries are described by
+lower-left coordinates, sample locations are shifted by half a pixel. Therefore:
+
+```text
+floor(radar_coordinate + 0.5)
+```
+
+is equivalent to selecting the nearest radar sample.
+
+For this reason, DePSI uses nearest-neighbor selection:
+
+```python
+slcs.sel(
+    azimuth=targets["azimuth_subpixel"],
+    range=targets["range_subpixel"],
+    method="nearest",
+)
+```
+
+This should not be replaced by a direct `floor()` of the Radar Coding Toolbox
+coordinates.
+
 ## Example
 
 ```python
