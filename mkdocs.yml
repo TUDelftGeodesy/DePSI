@@ -15,6 +15,7 @@ nav:
     - Densification: usages/densification.md
     - Geo-coding: usages/geocoding.md
     - Post-processing: usages/postprocessing.md
+    - Add Contextual information: usages/contextual_information.md
     - DS selection: usages/ds_tutorial.md
     - Designate-targets selection: usages/dtd_selection.md
   - API Reference:
@@ -23,6 +24,7 @@ nav:
     - depsi.network: api/network.md
     - depsi.atmosphere_estimation: api/atmosphere_estimation.md
     - depsi.densification: api/densification.md
+    - depsi.contextual_information: api/contextual_information.md
     - depsi.transformations: api/transformations.md
     - depsi.io: api/io.md
   - Contributing: 
@@ -31,6 +33,7 @@ nav:
     - Code of conduct: CODE_OF_CONDUCT.md
   - Example Notebooks:
     - DePSI example workflow: notebooks/demo_depsi_full.ipynb
+    - Add Contextual Information: notebooks/demo_get_and_add_contextualinformation.ipynb
     - SARXarray and STMTools Dependencies of DePSI: notebooks/demo_sarxarray_and_stmtools.ipynb
 
 

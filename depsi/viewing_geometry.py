@@ -101,6 +101,43 @@ def add_local_viewing_geometry(
     return stm
 
 
+def add_cross_range(stm: xr.Dataset) -> xr.Dataset:
+    """Add the crossrange (variable `sd_cr2ph`, dims `space`, `time`) to an STM.
+
+    Requires `sd_h2ph` and `local_incidence_angle` to already be present on the STM -- this function only
+    computes crossrange from them, it doesn't compute either itself. `sd_h2ph` is expected to already be
+    on the STM (e.g. from single-differencing); add `local_incidence_angle` first via
+    `add_local_viewing_geometry` if it isn't there yet.
+
+    Parameters
+    ----------
+    stm : xr.Dataset
+        Space-time matrix to add crossrange to. Must already have `sd_h2ph` and `local_incidence_angle`.
+
+    Returns
+    -------
+    xr.Dataset
+        The STM with `sd_cr2ph` added.
+
+    Raises
+    ------
+    ValueError
+        If `sd_h2ph` or `local_incidence_angle` is missing from `stm`.
+    """
+    if "sd_h2ph" not in stm:
+        raise ValueError(
+            "STM is missing 'sd_h2ph', required to compute crossrange. It should already be present on the "
+            "STM (e.g. from single-differencing), not something this function computes."
+        )
+    if "local_incidence_angle" not in stm:
+        raise ValueError(
+            "STM is missing 'local_incidence_angle', required to compute crossrange. Call "
+            "add_local_viewing_geometry first."
+        )
+    sd_cr2ph = stm["sd_h2ph"] * np.sin(np.radians(stm["local_incidence_angle"].data[:, np.newaxis]))
+    return stm.assign({"sd_cr2ph": (["space", "time"], sd_cr2ph.data)})
+
+
 def fit_plane_viewing_geometry(x, y, angle):
     """Fit a plane based on x and y coordinates and the corresponding incidence angle or azimuth of the ZDP.
 
