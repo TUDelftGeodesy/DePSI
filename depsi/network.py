@@ -2007,3 +2007,48 @@ def _network_relation_matrix(idx_source, idx_target, n_points, idx_refpnt, spars
         A = np.array(A.todense())
 
     return A
+
+
+def _independent_arcs(arcs: np.ndarray) -> np.ndarray:
+    """Select independent arcs from a list of arcs.
+
+    An arc is independent if its starting and ending points do not exist in any other arc's
+    starting or ending points.
+
+    Parameters
+    ----------
+    arcs : np.ndarray
+        A 2D array of shape (n_points, 2) where each row represents indices of the starting and ending points
+        of an arc.
+
+    Returns
+    -------
+    np.ndarray
+        A 2D array of independent arcs, where each row represents indices of the starting and ending points
+        of an arc.
+    """
+    # Select arcs with unique starting points
+    _, unique_idx_start = np.unique(arcs[:, 0], return_index=True)
+    arcs = arcs[unique_idx_start, :]
+
+    # Select arcs with unique ending points
+    _, unique_idx_end = np.unique(arcs[:, 1], return_index=True)
+    arcs = arcs[unique_idx_end, :]
+
+    # After previous two steps, no arcs will share starting or ending points.
+    # However, there starting points may be the ending points of other arcs, and vice versa.
+    # To ensure independency, we loop through the rest arcs and add arc one by one
+    # In each interation, remove arcs that
+    # 1) start with the ending point of this arc, or
+    # 2) end with the starting point of this arc
+    arcs_selected = np.empty((0, 2), dtype=int)
+    while arcs.shape[0] > 0:
+        arc_current = arcs[0, :]
+        arcs_selected = np.append(arcs_selected, [arc_current], axis=0)
+        # Remove arcs which contain the starting point or ending point of the current arc
+        idx_remove = np.where((arcs[:, 1] == arc_current[0]) | (arcs[:, 0] == arc_current[1]))[0]
+        # add the index of the current arc to idx_remove
+        idx_remove = np.append(idx_remove, 0)
+        arcs = np.delete(arcs, idx_remove, axis=0)
+
+    return arcs_selected
