@@ -138,6 +138,117 @@ def test_periodogram_no_wavelength():
         )
 
 
+def test_periodogram_with_coh_mask_partial_epochs():
+    n_obs = 13
+    n_arcs = 4
+    velo_min = -1e-3
+    velo_max = 1e-4
+    height_min = -1
+    height_max = 1
+    arcs = get_arcs_stm(n_obs, n_arcs, velo_min, velo_max, height_min, height_max)
+
+    # Alternate coherent/incoherent epochs for every arc.
+    coh_mask = np.zeros((n_arcs, n_obs), dtype=bool)
+    coh_mask[:, ::2] = True
+    arcs["dt_coh_mask"] = (("space", "time"), coh_mask)
+
+    results = periodogram(
+        stm=arcs,
+        key_dphase="phs_obs_wrapped",
+        key_Btemporal="years",
+        key_h2ph="h2ph_values",
+        key_coh_mask="dt_coh_mask",
+        std_height=5,
+        std_vel=0.01,
+        init_step_height=abs(height_max - height_min) / 10,
+        init_step_vel=abs(velo_max - velo_min) / 10,
+        init_height=(height_min + height_max) / 2,
+        init_vel=(velo_min + velo_max) / 2,
+    )
+
+    unwrapped = results[0].values
+    ambiguities = results[1].values
+    est_height = results[2].values
+    est_vel = results[3].values
+    coherence = results[4].values
+
+    assert unwrapped.shape == (n_arcs, n_obs)
+    assert ambiguities.shape == (n_arcs, n_obs)
+
+    # Incoherent epochs must remain NaN in outputs with time dimension.
+    assert np.all(np.isnan(unwrapped[:, 1::2]))
+    assert np.all(np.isnan(ambiguities[:, 1::2]))
+
+    # Coherent epochs should be solved.
+    assert np.all(np.isfinite(unwrapped[:, ::2]))
+    assert np.all(np.isfinite(ambiguities[:, ::2]))
+    assert np.all(np.isfinite(est_height))
+    assert np.all(np.isfinite(est_vel))
+    assert np.all(np.isfinite(coherence))
+
+
+def test_periodogram_with_coh_mask_time_only_broadcast_to_space():
+    n_obs = 9
+    n_arcs = 3
+    arcs = get_arcs_stm(n_obs, n_arcs, -1e-3, 1e-4, -1, 1)
+
+    # Time-only mask should broadcast to all arcs in space.
+    mask_time = np.ones(n_obs, dtype=bool)
+    mask_time[2] = False
+    mask_time[7] = False
+    arcs["dt_coh_mask_time"] = (("time",), mask_time)
+
+    results = periodogram(
+        stm=arcs,
+        key_dphase="phs_obs_wrapped",
+        key_Btemporal="years",
+        key_h2ph="h2ph_values",
+        key_coh_mask="dt_coh_mask_time",
+    )
+
+    unwrapped = results[0].values
+    ambiguities = results[1].values
+
+    assert np.all(np.isnan(unwrapped[:, 2]))
+    assert np.all(np.isnan(unwrapped[:, 7]))
+    assert np.all(np.isnan(ambiguities[:, 2]))
+    assert np.all(np.isnan(ambiguities[:, 7]))
+
+
+def test_periodogram_with_coh_mask_missing_key_raises():
+    arcs = get_arcs_stm(13, 4, -1e-3, 1e-4, -1, 1)
+
+    with pytest.raises(ValueError, match="Coherence mask variable"):
+        _ = periodogram(
+            stm=arcs,
+            key_dphase="phs_obs_wrapped",
+            key_Btemporal="years",
+            key_h2ph="h2ph_values",
+            key_coh_mask="not_present",
+        )
+
+
+def test_periodogram_with_coh_mask_all_false_returns_nan():
+    n_obs = 11
+    n_arcs = 2
+    arcs = get_arcs_stm(n_obs, n_arcs, -1e-3, 1e-4, -1, 1)
+    arcs["dt_coh_mask"] = (("space", "time"), np.zeros((n_arcs, n_obs), dtype=bool))
+
+    results = periodogram(
+        stm=arcs,
+        key_dphase="phs_obs_wrapped",
+        key_Btemporal="years",
+        key_h2ph="h2ph_values",
+        key_coh_mask="dt_coh_mask",
+    )
+
+    assert np.all(np.isnan(results[0].values))
+    assert np.all(np.isnan(results[1].values))
+    assert np.all(np.isnan(results[2].values))
+    assert np.all(np.isnan(results[3].values))
+    assert np.all(np.isnan(results[4].values))
+
+
 def test_build_periodogram_search_space():
     """Test the build_search_space function."""
 
