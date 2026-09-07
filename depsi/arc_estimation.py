@@ -1438,7 +1438,7 @@ def periodogram(
         Key for the temporal baseline in the STM.
         The value should be in decimal years.
     std_obs : float, optional
-        A-poriori standard deviation of the observations in rads, by default 1.0.
+        A-priori standard deviation of the observations in rads, by default 1.0.
         This value is used to construct the stochastic model (Qyy) of the observations.
     std_height : float, optional
         A-priori standard deviation of the height in meters, by default 50.0.

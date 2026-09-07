@@ -6,7 +6,7 @@ from depsi.stochastic import _q_no_mother_atmo, _q_with_mother_atmo, vce_tempora
 
 
 def simulated_stm(n_ifg, n_points):
-    """function to simulate arcs stm for testing."""
+    """Function to simulate arcs stm for testing."""
     rng = np.random.default_rng(31)
 
     # Simulate coordinates
