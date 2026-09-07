@@ -1408,6 +1408,7 @@ def periodogram(
     key_dphase: str,
     key_h2ph: str,
     key_Btemporal: str,
+    key_coh_mask: str = None,
     std_obs: float = 1.0,
     std_height: float = 50.0,
     std_vel: float = 0.02,
@@ -1437,6 +1438,16 @@ def periodogram(
     key_Btemporal : str
         Key for the temporal baseline in the STM.
         The value should be in decimal years.
+    key_coh_mask : str, optional
+        Key for the coherence mask of Designated Targets (DTs) in the STM.
+        The mask indicates coherent epochs of DTs, with dimensions (space, time).
+        Since DTs are not used as network points, periodogram computation for DTs is only
+        performed during densification. Therefore, for an arc between a DT and a network
+        point, the coherent epochs are determined by the DT epochs in this mask.
+        True values indicate coherent epochs for each DT.
+        Only coherent epochs (True values) are considered in the periodogram computation.
+        Estimated phase and ambiguities are NaN for incoherent epochs (False values).
+        If not provided, all epochs are treated as coherent.
     std_obs : float, optional
         A-poriori standard deviation of the observations in rads, by default 1.0.
         This value is used to construct the stochastic model (Qyy) of the observations.
@@ -1505,15 +1516,18 @@ def periodogram(
     n_obs = stm[key_dphase].sizes["time"]  # number of observations
     Qyy = np.diag(np.repeat(std_obs**2, n_obs))
 
-    # Normal matrix N and rhs for the least squares solution
-    N = B.T @ np.linalg.inv(Qyy) @ B  # B.T * Qyy^-1 * B , size n_params x n_params
-    # Solve N * x = B.T * Qyy^-1, then rhs =  N^-1 * B.T * Qyy^-1
-    rhs = np.linalg.inv(N) @ B.T @ np.linalg.inv(Qyy)
-
     # check if the time dimension is not chunked, and unchunk it if necessary
     if "time" in stm.chunks.keys():
         if len(stm.chunks["time"]) != 1:
             stm = stm.chunk({"time": -1})
+
+    # Load coherence mask and ensure it can be broadcast to (space, time)
+    if key_coh_mask is None:
+        da_coh_mask = xr.ones_like(stm[key_dphase], dtype=bool)
+    else:
+        if key_coh_mask not in stm:
+            raise ValueError(f"Coherence mask variable '{key_coh_mask}' is not found in STM.")
+        da_coh_mask = stm[key_coh_mask].astype(bool).broadcast_like(stm[key_dphase])
 
     # Build initial search space for height and velocity
     n_steps_height = max(round(2 * std_height / init_step_height), min_steps)
@@ -1528,6 +1542,7 @@ def periodogram(
     # The residuals phase_residual_all_arcs is a large array with n_arcs x n_obs x n_search
     # so use .data to avoid loading it into memory if it is a dask array
     dphase_obs = stm[key_dphase].data  # n_arcs x n_obs x 1
+    coh_mask = da_coh_mask.data  # n_arcs x n_obs
 
     # If the memory size of phase_residual_all_arcs will exceed the threshold
     # chunk dphase_obs and init_search_space to enable computation
@@ -1535,21 +1550,29 @@ def periodogram(
         dphase_obs.shape[0] * dphase_obs.shape[1] * init_search_space.shape[0] * dphase_obs.dtype.itemsize
     ) / (1024**2)  # in MB
     if mem_size_estimation > THRES_TEMP_COH_MEMORY:
-        dphase_obs, init_search_space = _chunk_for_temp_coh_compute(dphase_obs, init_search_space)
+        dphase_obs, init_search_space, coh_mask = _chunk_for_temp_coh_compute(dphase_obs, init_search_space, coh_mask)
 
     # Compute modelled phase for all arcs and all search candidates
     phs_model = B @ init_search_space.T  # n_obs x n_search
 
     # Expand dimensions and compute the phase residuals for all arcs and all search candidates
     dphase_obs = dphase_obs[:, :, None]  # n_arcs x n_obs x 1
+    coh_mask = coh_mask[:, :, None]  # n_arcs x n_obs x 1
     phs_model = phs_model[None, :, :]  # 1 x n_obs x n_search
     phase_residual_all_arcs = dphase_obs - phs_model
 
     # Find the best initial height and velocity based on the temporal coherence
+    n_coh_epochs_all_arcs = coh_mask.sum(axis=1)  # n_arcs x 1
     coh_search_space_all_arcs = (
-        np.cos(phase_residual_all_arcs).sum(axis=1) + 1j * np.sin(phase_residual_all_arcs).sum(axis=1)
-    ) / stm[key_dphase].sizes["time"]  # n_arcs x n_search
-    coh_idx_all_arcs = np.argmax(np.abs(coh_search_space_all_arcs), axis=1)  # n_arcs
+        (np.cos(phase_residual_all_arcs) * coh_mask).sum(axis=1)
+        + 1j * (np.sin(phase_residual_all_arcs) * coh_mask).sum(axis=1)
+    ) / np.maximum(n_coh_epochs_all_arcs, 1)  # n_arcs x n_search
+    coh_abs_all_arcs = np.abs(coh_search_space_all_arcs)
+    if isinstance(coh_abs_all_arcs, da.Array):
+        coh_abs_all_arcs = da.where(n_coh_epochs_all_arcs > 0, coh_abs_all_arcs, -np.inf)
+    else:
+        coh_abs_all_arcs = np.where(n_coh_epochs_all_arcs > 0, coh_abs_all_arcs, -np.inf)
+    coh_idx_all_arcs = np.argmax(coh_abs_all_arcs, axis=1)  # n_arcs
 
     # Implicitly compute best coh index if dask array
     coh_idx_all_arcs = coh_idx_all_arcs.compute() if isinstance(coh_idx_all_arcs, da.Array) else coh_idx_all_arcs
@@ -1569,8 +1592,8 @@ def periodogram(
     # We are broadcasting _periodogram_arc on stm[key_dphase] and stm[key_h2ph] along the space dimension
     # The height and velocity are scalars
     # Therefore, we are only calling it on the "time" dimension for the first two parameters
-    # So we have the input_core_dims as [["time"], ["time"], [], []]
-    input_core_dims = [["time"], ["time"], [], []]
+    # So we have the input_core_dims as [["time"], ["time"], ["time"], [], []]
+    input_core_dims = [["time"], ["time"], ["time"], [], []]
 
     # There are 5 outputs from _periodogram_arc
     # The first two are np arrays with time dimension
@@ -1581,6 +1604,7 @@ def periodogram(
         _periodogram_arc,
         stm[key_dphase],
         stm[key_h2ph],
+        da_coh_mask,
         da_init_height_all_arcs,
         da_init_vel_all_arcs,
         input_core_dims=input_core_dims,
@@ -1589,8 +1613,6 @@ def periodogram(
             "h2ph_approx": h2ph_approx,
             "B": B,
             "Qyy": Qyy,
-            "N": N,
-            "rhs": rhs,
             "init_step_height": init_step_height,
             "init_step_vel": init_step_vel,
             "min_steps": min_steps,
@@ -1606,13 +1628,12 @@ def periodogram(
 def _periodogram_arc(
     phs_obs_wrapped: np.ndarray,
     h2ph: np.ndarray,
+    coh_mask: np.ndarray,
     init_height: float,
     init_vel: float,
     h2ph_approx: np.ndarray,
     B: np.ndarray,
     Qyy: np.ndarray,
-    N: np.ndarray,
-    rhs: np.ndarray,
     init_step_height: float,
     init_step_vel: float,
     min_steps: float,
@@ -1625,6 +1646,8 @@ def _periodogram_arc(
         Wrapped phase observations in radians, shape (n_obs,).
     h2ph : np.ndarray:
         Height-to-phase factor of the arc, shape (n_obs,).
+    coh_mask : np.ndarray
+        Coherence mask of the arc, shape (n_obs,). True values indicate coherent epochs.
     init_height : float
         Initial value for the height parameter in meters.
     init_vel : float
@@ -1635,10 +1658,6 @@ def _periodogram_arc(
         Design matrix, size n_obs x n_params, where n_params = 2 (height and velocity).
     Qyy : np.ndarray
         Stochastic model of the observations, size n_obs x n_obs.
-    N : np.ndarray
-        Normal matrix, size n_params x n_params.
-    rhs : np.ndarray
-        Right-hand side matrix for the least squares solution, size n_params x n_obs.
     init_step_height : float
         Initial step size for the height parameter in meters.
     init_step_vel : float
@@ -1656,6 +1675,26 @@ def _periodogram_arc(
         - Estimated velocity: in meters per year, scalar, dtype np.float64.
         - Temporal coherence: unitless float number, norm of the complex coherence, scalar, dtype np.float64.
     """
+    # Ensure boolean coherence mask and prepare outputs
+    coh_mask = np.asarray(coh_mask, dtype=bool)
+    n_obs = phs_obs_wrapped.shape[0]
+    if coh_mask.shape[0] != n_obs:
+        raise ValueError("coh_mask must have the same length as phs_obs_wrapped.")
+
+    phs_obs_unwrapped = np.full(n_obs, np.nan, dtype=np.float64)
+    ambiguities = np.full(n_obs, np.nan, dtype=np.float64)
+
+    # No estimate can be made without at least two coherent observations
+    n_coh = np.count_nonzero(coh_mask)
+    if n_coh < 2:
+        return phs_obs_unwrapped, ambiguities, np.nan, np.nan, np.nan
+
+    phs_obs_wrapped_coh = phs_obs_wrapped[coh_mask]
+    h2ph_coh = h2ph[coh_mask]
+    h2ph_approx_coh = h2ph_approx[coh_mask]
+    B_coh = B[coh_mask, :]
+    Qyy_coh = Qyy[np.ix_(coh_mask, coh_mask)]
+
     # Assign initial values for the search
     step_height = init_step_height
     step_vel = init_step_vel
@@ -1664,9 +1703,9 @@ def _periodogram_arc(
 
     # Calculate the initial temporal coherence for the initial height and velocity,
     # in case the search loop is not entered
-    phs_model = B @ np.array([param_height, param_vel])  # size n_obs
-    phase_residual = phs_obs_wrapped[:, None] - phs_model
-    coh_best = (np.cos(phase_residual).sum() + 1j * np.sin(phase_residual).sum()) / phs_obs_wrapped.shape[0]
+    phs_model = B_coh @ np.array([param_height, param_vel])  # size n_obs_coh
+    phase_residual = phs_obs_wrapped_coh - phs_model
+    coh_best = (np.cos(phase_residual).sum() + 1j * np.sin(phase_residual).sum()) / n_coh
 
     # Search loop
     count = 0
@@ -1677,7 +1716,7 @@ def _periodogram_arc(
         )
 
         # Calculate the wrapped model phase for all candidates
-        phs_model = wrap_phase(B @ search_space.T)  # size n_obs x n_search
+        phs_model = wrap_phase(B_coh @ search_space.T)  # size n_obs_coh x n_search
 
         # Calculate the temporal coherence for all search candidates
         # Expand dimension of phs_obs_wrapped to facilitate broadcasting
@@ -1686,10 +1725,8 @@ def _periodogram_arc(
         # Reference: van Leijen 2014, Eq. 4.55
         # The following implementation equivalent to:
         # np.exp(1j * (np.expand_dims(phs_obs_wrapped, axis=1) - phs_model)).sum(axis=0) / phs_obs_wrapped.shape[0]
-        phase_residual = phs_obs_wrapped[:, None] - phs_model
-        coh_search_space = (
-            np.cos(phase_residual).sum(axis=0) + 1j * np.sin(phase_residual).sum(axis=0)
-        ) / phs_obs_wrapped.shape[0]
+        phase_residual = phs_obs_wrapped_coh[:, None] - phs_model
+        coh_search_space = (np.cos(phase_residual).sum(axis=0) + 1j * np.sin(phase_residual).sum(axis=0)) / n_coh
 
         # Get the best temporal coherence value and its index
         coh_idx = np.argmax(np.abs(coh_search_space))
@@ -1706,32 +1743,54 @@ def _periodogram_arc(
 
     # Correct the height parameter for using h2ph_approx
     # Method copied from MATLAB DePSI code
-    factor = np.median(h2ph / h2ph_approx)  # correct factor
+    factor = np.median(h2ph_coh / h2ph_approx_coh)  # correct factor
+    if not np.isfinite(factor) or np.isclose(factor, 0.0):
+        return phs_obs_unwrapped, ambiguities, np.nan, np.nan, np.nan
     param_height = param_height / factor
 
-    # Calculate the modelled phase and unwrapped phase
-    model_est = B @ np.array([param_height, param_vel]) + np.angle(coh_best)  # Absolute modelled phase
-    dphase_new = wrap_phase(phs_obs_wrapped - model_est)  # Wrapped modelled phase
-    ambiguities = np.round((model_est + dphase_new - phs_obs_wrapped) / (2 * np.pi))  # Ambiguities
-    phs_obs_unwrapped = 2 * np.pi * ambiguities + phs_obs_wrapped  # Unwrapped phase
-    param = rhs @ phs_obs_unwrapped  # [height_est, velocity_est]
+    # Calculate modelled and unwrapped phase for coherent epochs only
+    model_est_coh = B_coh @ np.array([param_height, param_vel]) + np.angle(coh_best)
+    dphase_new_coh = wrap_phase(phs_obs_wrapped_coh - model_est_coh)
+    ambiguities_coh = np.round((model_est_coh + dphase_new_coh - phs_obs_wrapped_coh) / (2 * np.pi))
+    phs_obs_unwrapped_coh = 2 * np.pi * ambiguities_coh + phs_obs_wrapped_coh
+
+    # Final LSQ estimate using coherent epochs
+    try:
+        Qyy_inv_coh = np.linalg.inv(Qyy_coh)
+        N_coh = B_coh.T @ Qyy_inv_coh @ B_coh
+        rhs_coh = np.linalg.inv(N_coh) @ B_coh.T @ Qyy_inv_coh
+        param = rhs_coh @ phs_obs_unwrapped_coh
+    except np.linalg.LinAlgError:
+        param = np.array([np.nan, np.nan])
+
+    phs_obs_unwrapped[coh_mask] = phs_obs_unwrapped_coh
+    ambiguities[coh_mask] = ambiguities_coh
 
     return phs_obs_unwrapped, ambiguities, param[0], param[1], np.abs(coh_best)
 
 
-def _chunk_for_temp_coh_compute(phs_obs_wrapped, search_space):
+def _chunk_for_temp_coh_compute(phs_obs_wrapped, search_space, coh_mask=None):
     """Chunk observations and search space for temporal coherence computation."""
+    return_mask = coh_mask is not None
+    if coh_mask is None:
+        coh_mask = np.ones(phs_obs_wrapped.shape, dtype=bool)
+
     if isinstance(phs_obs_wrapped, da.Array):  # Existing chunk size for the arc dimension
         chunk_arcs = phs_obs_wrapped.chunks[0][0]
+        if not isinstance(coh_mask, da.Array):
+            coh_mask = da.from_array(coh_mask, chunks=phs_obs_wrapped.chunks)
     else:
         # If phs_obs_wrapped is not a dask array, chunk it in the arc dimension, making each chunk about 10 MB
         chunk_arcs = max(1, 10 * 1024**2 // (phs_obs_wrapped.shape[1] * phs_obs_wrapped.dtype.itemsize))
         phs_obs_wrapped = da.from_array(phs_obs_wrapped, chunks=(chunk_arcs, phs_obs_wrapped.shape[1]))
+        coh_mask = da.from_array(coh_mask, chunks=(chunk_arcs, coh_mask.shape[1]))
     # Decide the chunk size for the search space dimension
     # making each n_arcs x n_obs x n_search chunk about 100 MB
     chunk_searches = max(1, 100 * 1024**2 // (chunk_arcs * phs_obs_wrapped.shape[1] * phs_obs_wrapped.dtype.itemsize))
     search_space = da.from_array(search_space, chunks=(chunk_searches, 2))
 
+    if return_mask:
+        return phs_obs_wrapped, search_space, coh_mask
     return phs_obs_wrapped, search_space
 
 
