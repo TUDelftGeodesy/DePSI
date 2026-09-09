@@ -8,6 +8,7 @@ from depsi.network import (
     form_network,
     spatial_integration,
 )
+from depsi.visualization import plot_arcs, plot_mrm, plot_points
 
 __all__ = (
     "read_slc_stack",
@@ -19,4 +20,7 @@ __all__ = (
     "densification",
     "estimate_model_params",
     "estimate_atmosphere_phase",
+    "plot_mrm",
+    "plot_points",
+    "plot_arcs",
 )
