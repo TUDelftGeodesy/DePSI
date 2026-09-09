@@ -1,5 +1,6 @@
 """arc estimation algorithms."""
 
+import logging
 from typing import Literal
 
 import dask.array as da
@@ -10,6 +11,8 @@ from scipy.optimize import curve_fit
 import depsi.model_definition as md
 import depsi.stats as est
 from depsi.utils import get_distance, wrap_phase
+
+logger = logging.getLogger(__name__)
 
 # Constants
 STOP_HEIGHT = 1e-4  # Stop search step for height [m]
@@ -661,8 +664,8 @@ def arc_estimation_xarray_input(
         "succeeded_arcs": [],
     }
 
-    print(f"idx pnt i: {int(stm_pnt_i['space'].values)}")
-    print(f"idx pnt j: {int(stm_pnt_j['space'].values)}")
+    logger.debug(f"idx pnt i: {int(stm_pnt_i['space'].values)}")
+    logger.debug(f"idx pnt j: {int(stm_pnt_j['space'].values)}")
 
     dates = stm_pnt_i["time"].values
     Btemporal = stm_pnt_i["years_since_first_img"].values
@@ -836,8 +839,8 @@ def arc_estimation_xarray_input(
         )
 
     except (RuntimeError, ValueError) as e:
-        print(f"Optimal parameters not found. Skipping arc {(pnt_i_idx, pnt_j_idx)}")
-        print(f"Encountered error: {e}")
+        logger.warning(f"Optimal parameters not found. Skipping arc {(pnt_i_idx, pnt_j_idx)}")
+        logger.warning(f"Encountered error: {e}")
 
         # Fill everything with nans
         ts_length = len(Btemporal)
@@ -920,31 +923,26 @@ def arc_estimation_xarray_input(
         # Step 6. Printing
 
         if print_output:
-            print(
-                "Estimated cross_range (phase domain NMAD):",
-                np.around(x_hat_arc_ph[0, 0], 2),
-                "+/-",
-                np.around((np.sqrt(Qx_hat_arc_ph[0, 0])) / (-1 * m2ph), 2),
+            logger.info(
+                "Estimated cross_range (phase domain NMAD): "
+                f"{np.around(x_hat_arc_ph[0, 0], 2)} +/- "
+                f"{np.around((np.sqrt(Qx_hat_arc_ph[0, 0])) / (-1 * m2ph), 2)}"
             )
-            print(
-                "Estimated cross_range (2nd order + partitions and bounds):",
-                np.around(x_hat_2_p_b[-2], 2),
-                "+/-",
-                np.around((np.sqrt(pcov_2_p_b[-2, -2])) / (-1 * m2ph), 2),
+            logger.info(
+                "Estimated cross_range (2nd order + partitions and bounds): "
+                f"{np.around(x_hat_2_p_b[-2], 2)} +/- "
+                f"{np.around((np.sqrt(pcov_2_p_b[-2, -2])) / (-1 * m2ph), 2)}"
             )
-            print(
-                "Estimated thermal expansion (phase domain NMAD):",
-                np.around(x_hat_arc_ph[1, 0] * 1000 / m2ph, 4),
-                "+/-",
-                np.around(np.sqrt(Qx_hat_arc_ph[1, 1]) * 1000 / m2ph, 2),
+            logger.info(
+                "Estimated thermal expansion (phase domain NMAD): "
+                f"{np.around(x_hat_arc_ph[1, 0] * 1000 / m2ph, 4)} +/- "
+                f"{np.around(np.sqrt(Qx_hat_arc_ph[1, 1]) * 1000 / m2ph, 2)}"
             )
-            print(
-                "Estimated thermal expansion (2nd order + partitions and bounds):",
-                np.around(x_hat_2_p_b[-1] * 1000 / m2ph, 4),
-                np.around(np.sqrt(pcov_2_p_b[-1, -1]) * 1000 / m2ph, 2),
+            logger.info(
+                "Estimated thermal expansion (2nd order + partitions and bounds): "
+                f"{np.around(x_hat_2_p_b[-1] * 1000 / m2ph, 4)} "
+                f"{np.around(np.sqrt(pcov_2_p_b[-1, -1]) * 1000 / m2ph, 2)}"
             )
-            print("")
-            print("")
 
     if test_stochastics:
         return results, stochastic_results
@@ -1113,8 +1111,8 @@ def arc_estimation_control_network(
     for a in arcs_to_analyse:
         pnt_i_idx, pnt_j_idx = a
 
-        print(f"idx pnt i: {pnt_i_idx}")
-        print(f"idx pnt j: {pnt_j_idx}")
+        logger.debug(f"idx pnt i: {pnt_i_idx}")
+        logger.debug(f"idx pnt j: {pnt_j_idx}")
 
         # Extract information of the two points of the arc
         sd_complex_i = sd_complex[pnt_i_idx, :]
@@ -1280,7 +1278,7 @@ def arc_estimation_control_network(
                 bkps, xx_data, arc_obs, x0_2_p, bounds_2_p, Q_dd_cmplx, n_max_iter
             )
         except (RuntimeError, ValueError):
-            print(f"Optimal parameters not found. Skipping arc {(pnt_i_idx, pnt_j_idx)}")
+            logger.warning(f"Optimal parameters not found. Skipping arc {(pnt_i_idx, pnt_j_idx)}")
 
             # Fill everything with nans
             ts_length = len(ampl_i)
@@ -1366,31 +1364,26 @@ def arc_estimation_control_network(
                 # stochastic_results = flatten_arrays_in_dict(stochastic_results)
 
             if print_output:
-                print(
-                    "Estimated cross_range (phase domain NMAD):",
-                    np.around(x_hat_arc_ph[0, 0], 2),
-                    "+/-",
-                    np.around((np.sqrt(Q_x_hat_arc_ph[0, 0])) / (-1 * m2ph), 2),
+                logger.info(
+                    "Estimated cross_range (phase domain NMAD): "
+                    f"{np.around(x_hat_arc_ph[0, 0], 2)} +/- "
+                    f"{np.around((np.sqrt(Q_x_hat_arc_ph[0, 0])) / (-1 * m2ph), 2)}"
                 )
-                print(
-                    "Estimated cross_range (2nd order + partitions and bounds):",
-                    np.around(x_hat_2_p_b[-2], 2),
-                    "+/-",
-                    np.around((np.sqrt(pcov_2_p_b[-2, -2])) / (-1 * m2ph), 2),
+                logger.info(
+                    "Estimated cross_range (2nd order + partitions and bounds): "
+                    f"{np.around(x_hat_2_p_b[-2], 2)} +/- "
+                    f"{np.around((np.sqrt(pcov_2_p_b[-2, -2])) / (-1 * m2ph), 2)}"
                 )
-                print(
-                    "Estimated thermal expansion (phase domain NMAD):",
-                    np.around(x_hat_arc_ph[1, 0] * 1000 / m2ph, 4),
-                    "+/-",
-                    np.around(np.sqrt(Q_x_hat_arc_ph[1, 1]) * 1000 / m2ph, 2),
+                logger.info(
+                    "Estimated thermal expansion (phase domain NMAD): "
+                    f"{np.around(x_hat_arc_ph[1, 0] * 1000 / m2ph, 4)} +/- "
+                    f"{np.around(np.sqrt(Q_x_hat_arc_ph[1, 1]) * 1000 / m2ph, 2)}"
                 )
-                print(
-                    "Estimated thermal expansion (2nd order + partitions and bounds):",
-                    np.around(x_hat_2_p_b[-1] * 1000 / m2ph, 4),
-                    np.around(np.sqrt(pcov_2_p_b[-1, -1]) * 1000 / m2ph, 2),
+                logger.info(
+                    "Estimated thermal expansion (2nd order + partitions and bounds): "
+                    f"{np.around(x_hat_2_p_b[-1] * 1000 / m2ph, 4)} "
+                    f"{np.around(np.sqrt(pcov_2_p_b[-1, -1]) * 1000 / m2ph, 2)}"
                 )
-                print("")
-                print("")
 
         p = p + 1
 
