@@ -554,7 +554,6 @@ def arc_estimation_xarray_input(
     jump_percentage_2pi=0.85,
     vcm_complex_method="mad_median",
     test_stochastics=False,
-    print_output=False,
 ):
     """Estimate parameters for the arc defined between the connection point j and control point i.
 
@@ -591,8 +590,6 @@ def arc_estimation_xarray_input(
         Options are "sigma_mean" or "mad_median" (default: "mad_median").
     test_stochastics : bool, optional
         Flag for performing stochastic testing (default: False).
-    print_output : bool, optional
-        Flag for enabling or disabling print statements (default: False).
 
     Returns
     -------
@@ -922,27 +919,26 @@ def arc_estimation_xarray_input(
 
         # Step 6. Printing
 
-        if print_output:
-            logger.info(
-                "Estimated cross_range (phase domain NMAD): "
-                f"{np.around(x_hat_arc_ph[0, 0], 2)} +/- "
-                f"{np.around((np.sqrt(Qx_hat_arc_ph[0, 0])) / (-1 * m2ph), 2)}"
-            )
-            logger.info(
-                "Estimated cross_range (2nd order + partitions and bounds): "
-                f"{np.around(x_hat_2_p_b[-2], 2)} +/- "
-                f"{np.around((np.sqrt(pcov_2_p_b[-2, -2])) / (-1 * m2ph), 2)}"
-            )
-            logger.info(
-                "Estimated thermal expansion (phase domain NMAD): "
-                f"{np.around(x_hat_arc_ph[1, 0] * 1000 / m2ph, 4)} +/- "
-                f"{np.around(np.sqrt(Qx_hat_arc_ph[1, 1]) * 1000 / m2ph, 2)}"
-            )
-            logger.info(
-                "Estimated thermal expansion (2nd order + partitions and bounds): "
-                f"{np.around(x_hat_2_p_b[-1] * 1000 / m2ph, 4)} "
-                f"{np.around(np.sqrt(pcov_2_p_b[-1, -1]) * 1000 / m2ph, 2)}"
-            )
+        logger.debug(
+            "Estimated cross_range (phase domain NMAD): "
+            f"{np.around(x_hat_arc_ph[0, 0], 2)} +/- "
+            f"{np.around((np.sqrt(Qx_hat_arc_ph[0, 0])) / (-1 * m2ph), 2)}"
+        )
+        logger.debug(
+            "Estimated cross_range (2nd order + partitions and bounds): "
+            f"{np.around(x_hat_2_p_b[-2], 2)} +/- "
+            f"{np.around((np.sqrt(pcov_2_p_b[-2, -2])) / (-1 * m2ph), 2)}"
+        )
+        logger.debug(
+            "Estimated thermal expansion (phase domain NMAD): "
+            f"{np.around(x_hat_arc_ph[1, 0] * 1000 / m2ph, 4)} +/- "
+            f"{np.around(np.sqrt(Qx_hat_arc_ph[1, 1]) * 1000 / m2ph, 2)}"
+        )
+        logger.debug(
+            "Estimated thermal expansion (2nd order + partitions and bounds): "
+            f"{np.around(x_hat_2_p_b[-1] * 1000 / m2ph, 4)} "
+            f"{np.around(np.sqrt(pcov_2_p_b[-1, -1]) * 1000 / m2ph, 2)}"
+        )
 
     if test_stochastics:
         return results, stochastic_results
@@ -975,7 +971,6 @@ def arc_estimation_control_network(
     jump_percentage_2pi=0.85,
     vcm_complex_method="mad_median",
     test_stochastics=False,
-    print_output=False,
 ):
     """Estimate parameters for arcs in a control network based on input time series and geodetic measurements.
 
@@ -1032,8 +1027,6 @@ def arc_estimation_control_network(
         Options are "sigma_mean" or "mad_median" (default: "mad_median").
     test_stochastics : bool, optional
         Flag for performing stochastic testing (default: False).
-    print_output : bool, optional
-        Flag for enabling or disabling print statements (default: False).
 
     Returns
     -------
@@ -1363,27 +1356,26 @@ def arc_estimation_control_network(
                 # Get the dictionaries in the right shape and format
                 # stochastic_results = flatten_arrays_in_dict(stochastic_results)
 
-            if print_output:
-                logger.info(
-                    "Estimated cross_range (phase domain NMAD): "
-                    f"{np.around(x_hat_arc_ph[0, 0], 2)} +/- "
-                    f"{np.around((np.sqrt(Q_x_hat_arc_ph[0, 0])) / (-1 * m2ph), 2)}"
-                )
-                logger.info(
-                    "Estimated cross_range (2nd order + partitions and bounds): "
-                    f"{np.around(x_hat_2_p_b[-2], 2)} +/- "
-                    f"{np.around((np.sqrt(pcov_2_p_b[-2, -2])) / (-1 * m2ph), 2)}"
-                )
-                logger.info(
-                    "Estimated thermal expansion (phase domain NMAD): "
-                    f"{np.around(x_hat_arc_ph[1, 0] * 1000 / m2ph, 4)} +/- "
-                    f"{np.around(np.sqrt(Q_x_hat_arc_ph[1, 1]) * 1000 / m2ph, 2)}"
-                )
-                logger.info(
-                    "Estimated thermal expansion (2nd order + partitions and bounds): "
-                    f"{np.around(x_hat_2_p_b[-1] * 1000 / m2ph, 4)} "
-                    f"{np.around(np.sqrt(pcov_2_p_b[-1, -1]) * 1000 / m2ph, 2)}"
-                )
+            logger.debug(
+                "Estimated cross_range (phase domain NMAD): "
+                f"{np.around(x_hat_arc_ph[0, 0], 2)} +/- "
+                f"{np.around((np.sqrt(Q_x_hat_arc_ph[0, 0])) / (-1 * m2ph), 2)}"
+            )
+            logger.debug(
+                "Estimated cross_range (2nd order + partitions and bounds): "
+                f"{np.around(x_hat_2_p_b[-2], 2)} +/- "
+                f"{np.around((np.sqrt(pcov_2_p_b[-2, -2])) / (-1 * m2ph), 2)}"
+            )
+            logger.debug(
+                "Estimated thermal expansion (phase domain NMAD): "
+                f"{np.around(x_hat_arc_ph[1, 0] * 1000 / m2ph, 4)} +/- "
+                f"{np.around(np.sqrt(Q_x_hat_arc_ph[1, 1]) * 1000 / m2ph, 2)}"
+            )
+            logger.debug(
+                "Estimated thermal expansion (2nd order + partitions and bounds): "
+                f"{np.around(x_hat_2_p_b[-1] * 1000 / m2ph, 4)} "
+                f"{np.around(np.sqrt(pcov_2_p_b[-1, -1]) * 1000 / m2ph, 2)}"
+            )
 
         p = p + 1
 
