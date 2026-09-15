@@ -1286,7 +1286,7 @@ def construct_control_network(
         arcs_to_test = arcs_without_excluded[0:end_idx]
 
         if not arcs_to_test:  # Break if no more arcs to add
-            print("No more arcs to test.")
+            logger.info("No more arcs to test.")
             more_arcs_to_test = False
             continue
 
@@ -1305,7 +1305,7 @@ def construct_control_network(
 
         # Test the network against requirements
         avg_degree = len(current_network.edges) / len(current_network.nodes) if len(current_network.nodes) > 0 else 0
-        print(f"The average degree is {avg_degree:.2f}")
+        logger.debug(f"The average degree is {avg_degree:.2f}")
 
         if len(current_network.nodes) >= min_nodes and avg_degree >= min_redundancy:
             network_reqs_not_met = False
@@ -1313,7 +1313,7 @@ def construct_control_network(
 
     # Final check if the network meets requirements
     if len(current_network.nodes) < min_nodes or avg_degree < min_redundancy:
-        print("Warning: Network could not meet all requirements with the given arcs.")
+        logger.warning("Network could not meet all requirements with the given arcs.")
 
     # The arcs constructed above are no longer sorted based on their quality
     arcs_updated_network_sorted = sorted(
@@ -1516,7 +1516,7 @@ def test_succeeded_arcs_control_network(
     if not nodes_to_remove:
         # Test the network against requirements
         avg_degree = len(current_network.edges) / len(current_network.nodes) if len(current_network.nodes) > 0 else 0
-        print(f"The average degree is {avg_degree:.2f}")
+        logger.debug(f"The average degree is {avg_degree:.2f}")
 
         if len(current_network.nodes) >= min_nodes and avg_degree >= min_redundancy:
             network_check = 1
@@ -1527,7 +1527,7 @@ def test_succeeded_arcs_control_network(
             )
 
     else:
-        print("We remove low degree nodes")
+        logger.debug("We remove low degree nodes")
         # Remove the nodes with low degree and test the network again
         current_network, _, ref_pnt = _remove_low_centrality_nodes(
             current_network, deg_threshold=deg_threshold, plot=visualize_network
@@ -1536,7 +1536,7 @@ def test_succeeded_arcs_control_network(
 
         # Test the network against requirements
         avg_degree = len(current_network.edges) / len(current_network.nodes) if len(current_network.nodes) > 0 else 0
-        print(f"The average degree is {avg_degree:.2f}")
+        logger.debug(f"The average degree is {avg_degree:.2f}")
 
         if len(current_network.nodes) >= min_nodes and avg_degree >= min_redundancy:
             network_check = 1
@@ -1784,7 +1784,7 @@ def construct_control_network_test_arcs(
             False,
         )
 
-        print("Computing the solutions for the arcs")
+        logger.info("Computing the solutions for the arcs")
         # Test whether solutions for all arcs can be found (sometimes it happens that because of the complex
         # functions no solutions can be found)
         results_initial_control_network_v1 = arc_estimation_control_network(
@@ -1826,7 +1826,7 @@ def construct_control_network_test_arcs(
             if np.isnan(succeeded).any() or not succeeded.any()
         ]
         failed_arcs = list(set(failed_arcs).union(failed_arcs_temp))
-        print(f"Failed arcs {failed_arcs}")
+        logger.info(f"Failed arcs {failed_arcs}")
 
         # Remove the failed arcs from the dictionary with all the results (as the estimated parameters etc)
         results_initial_control_network_v2 = {}  # Make a new dictionary where we will not save
@@ -1846,7 +1846,7 @@ def construct_control_network_test_arcs(
             else:
                 results_initial_control_network_v2[key] = value  # Keep values that are not row-based unchanged
 
-        print("Check if the network with the solved arcs still meets our requirements")
+        logger.info("Check if the network with the solved arcs still meets our requirements")
 
         # Since we have 'failed_arcs', where no solution was found, the new network need to be tested
         # It can happen that we have isolated points,
@@ -1856,10 +1856,10 @@ def construct_control_network_test_arcs(
         )
 
         if network_check == 0:
-            print("Network fails requirements, starting again")
+            logger.warning("Network fails requirements, starting again")
 
         if network_check == 1:
-            print("Network meets requirements")
+            logger.info("Network meets requirements")
             # After the last test, the isolated arcs are removed (so they are still in
             # 'succeeded_arcs' and in the dictionary)
             # And these arcs need to be removed from the dictionary
@@ -1882,7 +1882,7 @@ def construct_control_network_test_arcs(
             # We compute solutions for all arcs and computed RMSE
             # In the next part, we will remove any arcs that are too noisy for the requirements, and then test if
             # the network still fulfills the requirements
-            print("Calculate whether there are arcs where the solution that we found is noisy")
+            logger.info("Calculate whether there are arcs where the solution that we found is noisy")
 
             est_displ_phase = (
                 results_control_network_temp["unwrap_phases_arc"]
@@ -1902,30 +1902,28 @@ def construct_control_network_test_arcs(
             good_arcs = results_control_network_temp["succeeded_arcs"][idx_good_arcs].astype(int)
             good_arcs = [tuple(row) for row in good_arcs]  # Change the output to a list
 
-            print(f"The value for sigma_post_over_prior is {sigma_post_over_sigma_prior}")
+            logger.debug(f"The value for sigma_post_over_prior is {sigma_post_over_sigma_prior}")
 
-            print("we removed arcs")
+            logger.debug("we removed arcs")
 
-            print("The bad arcs are")
-            print(idx_bad_arcs)
-            print("The good arcs are")
-            print(idx_good_arcs)
+            logger.debug(f"The bad arcs are: {idx_bad_arcs}")
+            logger.debug(f"The good arcs are: {idx_good_arcs}")
 
             # Add the noisy arcs to the list with failed_arcs
             failed_arcs = list(set(failed_arcs).union([tuple(row.astype(int)) for row in bad_arcs]))
             noisy_arcs = list(set(noisy_arcs).union([tuple(row.astype(int)) for row in bad_arcs]))
 
             # Check whether the network without the noisy arcs still meets requirements
-            print("Check whether the network stil meets the requirements, even after the removal of bad arcs")
+            logger.info("Check whether the network stil meets the requirements, even after the removal of bad arcs")
             network_check_good, arcs_updated_network, ref_pnt = test_succeeded_arcs_control_network(
                 good_arcs, quality_dict_arcs, deg_threshold, min_nodes, min_redundancy, visualize_network=False
             )
 
             if network_check_good == 0:
-                print("Network does not meet requirements, start over")
+                logger.warning("Network does not meet requirements, start over")
 
             if network_check_good == 1:
-                print("We are happy! The network consisting of the good arcs fulfills the requirements.")
+                logger.info("We are happy! The network consisting of the good arcs fulfills the requirements.")
 
                 # If there are noisy arcs, they need to be removed from the final network
                 # Convert noisy_arcs to set for quicker lookup
@@ -1950,7 +1948,9 @@ def construct_control_network_test_arcs(
 
         if not network_meets_requirements:
             # If the network doesn't meet the requirements, start over
-            print("Network does not meet the requirements. Recomputing the network with updated failed_arcs...")
+            logger.warning(
+                "Network does not meet the requirements. Recomputing the network with updated failed_arcs..."
+            )
 
     return results_control_network, ref_pnt, arcs_updated_network
 
