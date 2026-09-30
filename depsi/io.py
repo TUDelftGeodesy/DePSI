@@ -7,6 +7,7 @@ import warnings
 from datetime import datetime
 from glob import glob
 from io import StringIO
+from pathlib import Path
 from typing import Literal
 
 import geopandas as gpd
@@ -421,7 +422,7 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
 
 
 def read_slc_stack(
-    filename: str, engine: str = "zarr", nlines_file: str = None, npixels_file: str = None, chunks=(500, 500)
+    filename: str | Path, engine: str = "zarr", nlines_file: str = None, npixels_file: str = None, chunks=(500, 500)
 ) -> xr.Dataset:
     """Read a stack of SLCs into an xarray.Dataset.
 
@@ -431,7 +432,7 @@ def read_slc_stack(
 
     Parameters
     ----------
-    filename : str
+    filename : str | Path
         Absolute filepath to the data archive (zarr folder or doris stack folder).
     engine : str, optional
         Engine to use for reading the data. Defaults to 'zarr'.
@@ -449,8 +450,6 @@ def read_slc_stack(
         - coordinates azimuth, range, lat, lon, time
         - variables h2ph, complex, amplitude, phase
     """
-    assert os.path.exists(filename), f"The requested file/folder {filename} does not exist!"
-
     if engine.lower() == "zarr":
         # Load the zarr file as a xr.Dataset
         dataset = xr.open_zarr(filename)
