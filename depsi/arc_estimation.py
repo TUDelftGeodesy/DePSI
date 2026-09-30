@@ -1540,7 +1540,7 @@ def periodogram(
     coh_idx_all_arcs = coh_idx_all_arcs.compute() if isinstance(coh_idx_all_arcs, da.Array) else coh_idx_all_arcs
 
     # Build xr.DataArray for the initial height and velocity of all arcs
-    # No chunk
+    # Merge all arcs into a single chunk along the space dimension
     da_init_height_all_arcs = xr.DataArray(
         init_search_space[coh_idx_all_arcs, 0],
         dims=["space"],
