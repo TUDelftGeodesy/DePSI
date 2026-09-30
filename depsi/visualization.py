@@ -9,8 +9,6 @@ All three functions plot in radar coordinates (`range`/`azimuth` by default), ma
 of the MRM raster - not `lat`/`lon`, which does not align with the MRM's pixel grid.
 """
 
-from typing import Literal
-
 import matplotlib.colors as plc
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,10 +18,9 @@ from matplotlib.axes import Axes
 
 def plot_mrm(
     mrm: xr.DataArray,
+    pctl_min: int = 2,
+    pctl_max: int = 95,
     ax: Axes | None = None,
-    clim: tuple[float, float] = (0, 40000),
-    cmap: str = "gray",
-    aspect: float | Literal["auto", "equal"] | None = None,
 ) -> Axes:
     """Plot a Mean Reflectivity Map (MRM) as a radar-coordinate basemap.
 
@@ -32,15 +29,12 @@ def plot_mrm(
     mrm: xarray.DataArray
         Mean Reflectivity Map, e.g. as returned by `stack.slcstack.mrm()`. If it is a lazy (dask-backed)
         array, it is computed before plotting.
+    pctl_min: int
+        Minimum percentile for the MRM image. Default is 2.
+    pctl_max: int
+        Maximum percentile for the MRM image. Default is 95.
     ax: matplotlib.axes.Axes, optional
         Axes to plot on. A new figure and axes are created if not given.
-    clim: tuple of float
-        Colour limits passed to the MRM image, as (vmin, vmax). Default is (0, 40000).
-    cmap: str
-        Colormap for the MRM image. Default is "gray".
-    aspect: float, "auto", "equal", or None
-        Axes aspect ratio, forwarded to `ax.set_aspect`. Left as the matplotlib default (None) unless given:
-        the range/azimuth pixel spacing ratio is product-specific, so there is no universally correct default.
 
     Returns
     -------
@@ -49,15 +43,12 @@ def plot_mrm(
     """
     if ax is None:
         _, ax = plt.subplots()
+    mrm_values = mrm.data.flatten()
+    pctl_min = np.percentile(mrm_values, pctl_min)
+    pctl_max = np.percentile(mrm_values, pctl_max)
 
-    if getattr(mrm, "chunks", None) is not None:
-        mrm = mrm.compute()
+    mrm.plot(ax=ax, vmin=pctl_min, vmax=pctl_max, cmap="gray", add_colorbar=False)
 
-    im = mrm.plot(ax=ax, cmap=cmap, add_colorbar=False)
-    im.set_clim(clim)
-
-    if aspect is not None:
-        ax.set_aspect(aspect)
     ax.axis("off")
 
     return ax
