@@ -52,14 +52,18 @@ def test_plot_mrm_returns_axes_with_image(mrm):
     ax = plot_mrm(mrm)
     assert ax is not None
     assert len(ax.collections) == 1
-    assert ax.collections[0].get_clim() == (0, 40000)
+    expected_min = np.percentile(mrm.values, 2)
+    expected_max = np.percentile(mrm.values, 95)
+    assert ax.collections[0].get_clim() == pytest.approx((expected_min, expected_max))
 
 
-def test_plot_mrm_custom_clim_and_cmap(mrm):
-    ax = plot_mrm(mrm, clim=(0, 10), cmap="viridis")
+def test_plot_mrm_custom_percentiles(mrm):
+    ax = plot_mrm(mrm, pctl_min=10, pctl_max=90)
     quadmesh = ax.collections[0]
-    assert quadmesh.get_clim() == (0, 10)
-    assert quadmesh.get_cmap().name == "viridis"
+    expected_min = np.percentile(mrm.values, 10)
+    expected_max = np.percentile(mrm.values, 90)
+    assert quadmesh.get_clim() == pytest.approx((expected_min, expected_max))
+    assert quadmesh.get_cmap().name == "gray"
 
 
 def test_plot_mrm_computes_dask_backed_array(mrm):
@@ -73,6 +77,11 @@ def test_plot_mrm_computes_dask_backed_array(mrm):
 def test_plot_mrm_no_colorbar(mrm):
     ax = plot_mrm(mrm)
     assert len(ax.figure.axes) == 1  # no colorbar axes added
+
+
+def test_plot_mrm_axis_is_off(mrm):
+    ax = plot_mrm(mrm)
+    assert not ax.axison
 
 
 def test_plot_points_positions(stm_points):
