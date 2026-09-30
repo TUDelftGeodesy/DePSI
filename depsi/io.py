@@ -422,13 +422,14 @@ def read_weather_data(filename: str, dates: list, requested_data_columns: tuple 
 
 
 def read_slc_stack(
-    filename: str | Path, engine: str = "zarr", nlines_file: str = None, npixels_file: str = None, chunks=(500, 500)
+    filename: str | Path, engine: str = "zarr", nlines: int = None, npixels: int = None, chunks=(500, 500)
 ) -> xr.Dataset:
     """Read a stack of SLCs into an xarray.Dataset.
 
     Supports different engines for reading:
     - zarr: reads a zarr archive (default)
-    - doris: reads using the doris engine
+    - doris: reads using the doris engine. If using this engine, the shape of the stack
+    must be known in advance (nlines and npixels).
 
     Parameters
     ----------
@@ -436,10 +437,10 @@ def read_slc_stack(
         Absolute filepath to the data archive (zarr folder or doris stack folder).
     engine : str, optional
         Engine to use for reading the data. Defaults to 'zarr'.
-    nlines_file : str, optional
-        Required for doris engine. Path to the file containing number of lines in the stack.
-    npixels_file : str, optional
-        Required for doris engine. Path to the file containing number of pixels in the stack.
+    nlines : int, optional
+        Required for doris engine. Number of lines in the stack.
+    npixels : int, optional
+        Required for doris engine. Number of pixels in the stack.
     chunks : tuple, optional
         Tuple specifying the chunk size for loading doris stacks (default is (500, 500)).
 
@@ -458,24 +459,13 @@ def read_slc_stack(
         return slcs
 
     elif engine.lower() == "doris":
-        if nlines_file is None or npixels_file is None:
-            raise ValueError(
-                "For doris engine, 'nlines_file' and 'npixels_file' must be provided. Recommended 500x500."
-            )
+        if nlines is None or npixels is None:
+            raise ValueError("For doris engine, 'nlines' and 'npixels' must be provided.")
 
         # Collect file paths of the SLC stack
         stack_list = glob(os.path.join(filename, "*", "slc_srd.raw"))
         if not stack_list:
             raise FileNotFoundError(f"No SLC files found in {filename} matching pattern */slc_srd.raw")
-
-        # Read the number of lines and pixels from the configuration files
-        try:
-            with open(nlines_file) as f:
-                nlines = int(f.readline().strip())
-            with open(npixels_file) as f:
-                npixels = int(f.readline().strip())
-        except Exception as e:
-            raise RuntimeError("Failed to read number of lines or pixels. ") from e
 
         # Load the SLC stack using sarxarray
         try:
