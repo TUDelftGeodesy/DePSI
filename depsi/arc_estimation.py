@@ -1548,7 +1548,7 @@ def periodogram(
     da_init_vel_all_arcs = xr.DataArray(
         init_search_space[coh_idx_all_arcs, 1],
         dims=["space"],
-    ).chunk({"space": -1})
+    ).chunk({"space": "auto"})
 
     # Apply the _periodogram_arc on stm[key_dphase] along "space" dimension
     # Set up input core dimensions, which are the dimensions _periodogram_arc will be applied to
