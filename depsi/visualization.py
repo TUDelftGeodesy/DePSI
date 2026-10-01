@@ -44,8 +44,7 @@ def plot_mrm(
     if ax is None:
         _, ax = plt.subplots()
     mrm_values = mrm.data.flatten()
-    pctl_min = np.percentile(mrm_values, pctl_min)
-    pctl_max = np.percentile(mrm_values, pctl_max)
+    pctl_min, pctl_max = np.percentile(mrm_values, [pctl_min, pctl_max])
 
     mrm.plot(ax=ax, vmin=pctl_min, vmax=pctl_max, cmap="gray", add_colorbar=False)
 
@@ -135,8 +134,8 @@ def plot_arcs(
     Parameters
     ----------
     stm_points: xarray.Dataset
-        Point STM the arcs' `source`/`target` indices refer to, with `x_coord`/`y_coord` (default
-        `range`/`azimuth`) coordinates or data variables on its `space` dimension.
+        Point STM the arcs' `source`/`target` indices refer to, with `range`/`azimuth` coordinates
+        or data variables on its `space` dimension.
     stm_arcs: xarray.Dataset
         Arc STM with a `space` dimension, and `source`/`target` data variables holding integer positional
         indices into `stm_points`'s `space` dimension.
@@ -147,8 +146,8 @@ def plot_arcs(
         Mean Reflectivity Map to draw as a basemap before the arcs, via `plot_mrm`.
     cmap: str
         Colormap used for arc colors. Default is "jet_r".
-    vmin, vmax: float, optional
-        Color scale limits for `color_by`. If not provided, the data min/max are used.
+    vmin, vmax: float
+        Color scale limits for `color_by`. Defaults are 0.0 and 1.0.
     colorbar: bool
         Whether to add a colorbar for `color_by`. Default is True.
     linewidth: float

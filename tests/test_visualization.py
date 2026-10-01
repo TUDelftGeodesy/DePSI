@@ -16,9 +16,9 @@ def _close_figures():
 
 @pytest.fixture
 def mrm():
-    # Real MRM DataArrays carry evenly-spaced range/azimuth coordinates, which is what makes
-    # xarray's `.plot()` render an AxesImage (imshow) rather than falling back to a QuadMesh
-    # (pcolormesh) for coordinate-less 2D data.
+    # Real MRM DataArrays carry evenly-spaced range/azimuth coordinates. xarray's `.plot()` renders
+    # this 2D data as a QuadMesh (pcolormesh), so the plot_mrm tests inspect it via `ax.collections`
+    # rather than `ax.images`.
     data = np.arange(20, dtype=float).reshape(4, 5)
     return xr.DataArray(data, dims=("azimuth", "range"), coords={"azimuth": np.arange(4), "range": np.arange(5)})
 
@@ -98,7 +98,7 @@ def test_plot_points_color_by_adds_colorbar(stm_points):
     assert len(ax.figure.axes) == 2  # scatter axes + colorbar axes
 
 
-def test_plot_points_no_color_by_no_colorbar(stm_points):
+def test_plot_points_color_by_no_colorbar(stm_points):
     ax = plot_points(stm_points, color_by="velocity", colorbar=False)
     assert len(ax.figure.axes) == 1
 
