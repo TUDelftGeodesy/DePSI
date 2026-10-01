@@ -1544,7 +1544,7 @@ def periodogram(
     da_init_height_all_arcs = xr.DataArray(
         init_search_space[coh_idx_all_arcs, 0],
         dims=["space"],
-    ).chunk({"space": -1})
+    ).chunk({"space": "auto"})
     da_init_vel_all_arcs = xr.DataArray(
         init_search_space[coh_idx_all_arcs, 1],
         dims=["space"],
