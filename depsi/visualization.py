@@ -176,15 +176,13 @@ def plot_arcs(
     xx = np.stack([stm_points["range"].values[source], stm_points["range"].values[target]]).T
     yy = np.stack([stm_points["azimuth"].values[source], stm_points["azimuth"].values[target]]).T
 
-    norm = None
-    if color_by is not None:
-        values = np.abs(stm_arcs[color_by].values)
-        norm = plc.Normalize(
-            vmin=vmin if vmin is not None else values.min(),
-            vmax=vmax if vmax is not None else values.max(),
-        )
-        cmap_obj = plt.get_cmap(cmap)
-        colors = cmap_obj(norm(values))
+    values = np.abs(stm_arcs[color_by].values)
+    norm = plc.Normalize(
+        vmin=vmin if vmin is not None else values.min(),
+        vmax=vmax if vmax is not None else values.max(),
+    )
+    cmap_obj = plt.get_cmap(cmap)
+    colors = cmap_obj(norm(values))
 
     for i in range(n_arcs):
         ax.plot(xx[i], yy[i], color=colors[i], linewidth=linewidth)
