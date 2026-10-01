@@ -110,7 +110,7 @@ def test_plot_points_over_mrm(stm_points, mrm):
 
 
 def test_plot_arcs_line_positions(stm_points, stm_arcs):
-    ax = plot_arcs(stm_points, stm_arcs)
+    ax = plot_arcs(stm_points, stm_arcs, color_by="temp_coh")
     assert len(ax.lines) == 3
 
     source = stm_arcs["source"].values
@@ -122,11 +122,9 @@ def test_plot_arcs_line_positions(stm_points, stm_arcs):
         assert np.allclose(line.get_ydata(), expected_y)
 
 
-def test_plot_arcs_default_color(stm_points, stm_arcs):
-    ax = plot_arcs(stm_points, stm_arcs)
-    colors = {line.get_color() for line in ax.lines}
-    assert colors == {"tab:blue"}
-    assert len(ax.figure.axes) == 1  # no colorbar without color_by
+def test_plot_arcs_no_colorbar(stm_points, stm_arcs):
+    ax = plot_arcs(stm_points, stm_arcs, color_by="temp_coh", colorbar=False)
+    assert len(ax.figure.axes) == 1
 
 
 def test_plot_arcs_color_by_adds_colorbar(stm_points, stm_arcs):
@@ -147,6 +145,6 @@ def test_plot_arcs_color_by_uses_absolute_value(stm_points, stm_arcs):
 
 
 def test_plot_arcs_over_mrm(stm_points, stm_arcs, mrm):
-    ax = plot_arcs(stm_points, stm_arcs, mrm=mrm)
+    ax = plot_arcs(stm_points, stm_arcs, color_by="temp_coh", mrm=mrm)
     assert sum(isinstance(c, QuadMesh) for c in ax.collections) == 1
     assert len(ax.lines) == 3

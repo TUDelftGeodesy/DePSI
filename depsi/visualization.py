@@ -120,17 +120,14 @@ def plot_points(
 def plot_arcs(
     stm_points: xr.Dataset,
     stm_arcs: xr.Dataset,
+    color_by: str,
     mrm: xr.DataArray | None = None,
-    color_by: str | None = None,
-    ax: Axes | None = None,
     cmap: str = "jet_r",
-    vmin: float | None = None,
-    vmax: float | None = None,
+    vmin: float | 0.0 = None,
+    vmax: float | 1.0 = None,
     colorbar: bool = True,
     linewidth: float = 0.5,
-    default_color: str = "tab:blue",
-    x_coord: str = "range",
-    y_coord: str = "azimuth",
+    ax: Axes | None = None,
     mrm_kwargs: dict | None = None,
 ) -> Axes:
     """Plot arc STMs as line segments between their source and target points, optionally over an MRM basemap.
@@ -143,26 +140,21 @@ def plot_arcs(
     stm_arcs: xarray.Dataset
         Arc STM with a `space` dimension, and `source`/`target` data variables holding integer positional
         indices into `stm_points`'s `space` dimension.
+    color_by: str
+        Name of a data variable on `stm_arcs` used to color the arcs. Its absolute value is used
+        (e.g. for complex-valued temporal coherence).
     mrm: xarray.DataArray, optional
         Mean Reflectivity Map to draw as a basemap before the arcs, via `plot_mrm`.
-    color_by: str, optional
-        Name of a data variable on `stm_arcs` to colour the arcs by (its absolute value is used, e.g. for a
-        complex-valued temporal coherence). If not given, all arcs are drawn in `default_color`.
-    ax: matplotlib.axes.Axes, optional
-        Axes to plot on. A new figure and axes are created if not given.
     cmap: str
-        Colormap used when `color_by` is given. Default is "jet_r".
+        Colormap used for arc colors. Default is "jet_r".
     vmin, vmax: float, optional
-        Colour scale limits used when `color_by` is given. Default to the data's own min/max.
+        Color scale limits for `color_by`. If not provided, the data min/max are used.
     colorbar: bool
-        Whether to add a colorbar when `color_by` is given. Default is True.
+        Whether to add a colorbar for `color_by`. Default is True.
     linewidth: float
         Line width for the arcs. Default is 0.5.
-    default_color: str
-        Colour used for all arcs when `color_by` is not given. Default is "tab:blue".
-    x_coord, y_coord: str
-        Names of the coordinates/data variables on `stm_points` to use for the arc endpoint positions.
-        Default is "range" and "azimuth".
+    ax: matplotlib.axes.Axes, optional
+        Axes to plot on. A new figure and axes are created if not given.
     mrm_kwargs: dict, optional
         Extra keyword arguments forwarded to `plot_mrm` when `mrm` is given.
 
@@ -181,8 +173,8 @@ def plot_arcs(
     target = stm_arcs["target"].values
     n_arcs = stm_arcs.sizes["space"]
 
-    xx = np.stack([stm_points[x_coord].values[source], stm_points[x_coord].values[target]]).T
-    yy = np.stack([stm_points[y_coord].values[source], stm_points[y_coord].values[target]]).T
+    xx = np.stack([stm_points["range"].values[source], stm_points["range"].values[target]]).T
+    yy = np.stack([stm_points["azimuth"].values[source], stm_points["azimuth"].values[target]]).T
 
     norm = None
     if color_by is not None:
@@ -193,8 +185,6 @@ def plot_arcs(
         )
         cmap_obj = plt.get_cmap(cmap)
         colors = cmap_obj(norm(values))
-    else:
-        colors = [default_color] * n_arcs
 
     for i in range(n_arcs):
         ax.plot(xx[i], yy[i], color=colors[i], linewidth=linewidth)
