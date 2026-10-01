@@ -178,7 +178,7 @@ def densification(
         stm_dens_pnts_output = stm_dens_pnts_output.chunk({"space": stm_dens_pnts.chunks["space"][0]})
     else:
         # Default to a single chunk if no chunking exists
-        stm_dens_pnts_output = stm_dens_pnts_output.chunk({"space": -1})
+        stm_dens_pnts_output = stm_dens_pnts_output.chunk({"space": "auto"})
 
     return stm_dens_pnts_output
 
