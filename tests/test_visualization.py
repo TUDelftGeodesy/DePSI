@@ -85,7 +85,7 @@ def test_plot_mrm_axis_is_off(mrm):
 
 
 def test_plot_points_positions(stm_points):
-    ax = plot_points(stm_points)
+    ax = plot_points(stm_points, color_by="velocity")
     offsets = ax.collections[0].get_offsets()
     expected = np.column_stack([stm_points["range"].values, stm_points["azimuth"].values])
     assert np.allclose(offsets, expected)
@@ -99,12 +99,12 @@ def test_plot_points_color_by_adds_colorbar(stm_points):
 
 
 def test_plot_points_no_color_by_no_colorbar(stm_points):
-    ax = plot_points(stm_points)
+    ax = plot_points(stm_points, color_by="velocity", colorbar=False)
     assert len(ax.figure.axes) == 1
 
 
 def test_plot_points_over_mrm(stm_points, mrm):
-    ax = plot_points(stm_points, mrm=mrm)
+    ax = plot_points(stm_points, color_by="velocity", mrm=mrm)
     assert sum(isinstance(c, QuadMesh) for c in ax.collections) == 1
     assert sum(isinstance(c, PathCollection) for c in ax.collections) == 1
 

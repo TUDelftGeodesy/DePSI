@@ -56,13 +56,10 @@ def plot_mrm(
 
 def plot_points(
     stm_points: xr.Dataset,
+    color_by: str,
     mrm: xr.DataArray | None = None,
-    color_by: str | None = None,
     ax: Axes | None = None,
-    cmap: str = "jet_r",
     colorbar: bool = True,
-    x_coord: str = "range",
-    y_coord: str = "azimuth",
     mrm_kwargs: dict | None = None,
     **scatter_kwargs,
 ) -> Axes:
@@ -71,26 +68,23 @@ def plot_points(
     Parameters
     ----------
     stm_points: xarray.Dataset
-        Point STM with a `space` dimension, and `x_coord`/`y_coord` (default `range`/`azimuth`) coordinates
-        or data variables on that dimension.
+        Point STM with `range` and `azimuth` coordinates/data variables (used as x/y), plus
+        `color_by` as a data variable used for colouring.
+    color_by: str
+        Name of a data variable on `stm_points` used as `hue` in
+        `stm_points.plot.scatter(..., hue=color_by)`.
     mrm: xarray.DataArray, optional
         Mean Reflectivity Map to draw as a basemap before the scatter, via `plot_mrm`.
-    color_by: str, optional
-        Name of a data variable on `stm_points` to colour the points by. If not given, `scatter_kwargs["c"]`
-        is used if present, otherwise all points are drawn in a single default colour.
     ax: matplotlib.axes.Axes, optional
         Axes to plot on. A new figure and axes are created if not given.
-    cmap: str
-        Colormap used when `color_by` is given. Default is "jet_r".
     colorbar: bool
         Whether to add a colorbar when `color_by` is given. Default is True.
-    x_coord, y_coord: str
-        Names of the coordinates/data variables on `stm_points` to use for the point positions.
-        Default is "range" and "azimuth".
     mrm_kwargs: dict, optional
         Extra keyword arguments forwarded to `plot_mrm` when `mrm` is given.
     **scatter_kwargs
-        Extra keyword arguments forwarded to `ax.scatter` (e.g. `s`, `marker`, `vmin`, `vmax`, `norm`).
+        Extra keyword arguments forwarded to `stm_points.plot.scatter` (e.g. `s`, `marker`, `vmin`,
+        `vmax`, `norm`). Defaults set by this function are `cmap="jet_r"`, `s=1`,
+        `marker="s"`, and `edgecolor="none"` unless provided explicitly.
 
     Returns
     -------
@@ -100,17 +94,25 @@ def plot_points(
     if ax is None:
         _, ax = plt.subplots()
 
+    # Plot the MRM basemap first (if any)
     if mrm is not None:
         plot_mrm(mrm, ax=ax, **(mrm_kwargs or {}))
 
-    if color_by is not None:
-        scatter_kwargs["c"] = stm_points[color_by].values
-        scatter_kwargs.setdefault("cmap", cmap)
+    # Set default scatter kwargs
+    scatter_kwargs.setdefault("cmap", "jet_r")
+    scatter_kwargs.setdefault("s", 1)
+    scatter_kwargs.setdefault("marker", "s")
+    scatter_kwargs.setdefault("edgecolor", "none")
 
-    scatter = ax.scatter(stm_points[x_coord].values, stm_points[y_coord].values, **scatter_kwargs)
-
-    if color_by is not None and colorbar:
-        plt.colorbar(scatter, ax=ax, label=color_by)
+    # Plot the scatter points
+    stm_points.plot.scatter(
+        x="range",
+        y="azimuth",
+        hue=color_by,
+        ax=ax,
+        add_colorbar=colorbar,
+        **scatter_kwargs,
+    )
 
     return ax
 
