@@ -3,7 +3,11 @@ import pytest
 import sarxarray
 import xarray as xr
 
-from depsi.transformations import radar_to_latlonh, radar_to_time, seconds_of_day
+from depsi.transformations import latlonh_to_xyz, radar_to_latlonh, radar_to_time, seconds_of_day, xyz_to_latlonh
+
+# WGS84 defining parameters (EPSG:4326 / NIMA TR8350.2), independent of the pyproj call under test.
+WGS84_SEMI_MAJOR_M = 6378137.0
+WGS84_SEMI_MINOR_M = 6356752.314245
 
 
 @pytest.mark.parametrize(
@@ -61,3 +65,60 @@ def test_radar_to_latlonh():
         ),
     )
     assert latlonh.shape == (3, azimuths.shape[0])
+
+
+# For these four points, the ellipsoid-to-ECEF transform has a closed-form, unambiguous answer
+# derived directly from the WGS84 semi-major/-minor axes, independent of the transform under test:
+# - on the equator/prime meridian, X is the axis, so height simply adds to X;
+# - on the equator at 90 degrees East, Y is the axis;
+# - at the pole, Z is the axis (only tested in the lat/lon -> xyz direction: longitude is singular
+#   at the poles, so the inverse transform's longitude is not meaningfully checkable there).
+@pytest.mark.parametrize(
+    "latlonh, expected_xyz",
+    [
+        ([0.0, 0.0, 0.0], [WGS84_SEMI_MAJOR_M, 0.0, 0.0]),
+        ([0.0, 90.0, 0.0], [0.0, WGS84_SEMI_MAJOR_M, 0.0]),
+        ([90.0, 0.0, 0.0], [0.0, 0.0, WGS84_SEMI_MINOR_M]),
+        ([-90.0, 0.0, 0.0], [0.0, 0.0, -WGS84_SEMI_MINOR_M]),
+        ([0.0, 0.0, 1000.0], [WGS84_SEMI_MAJOR_M + 1000.0, 0.0, 0.0]),
+    ],
+)
+def test_latlonh_to_xyz(latlonh, expected_xyz):
+    xyz = latlonh_to_xyz(np.array([latlonh]))
+    assert np.allclose(xyz, expected_xyz, atol=1e-6)
+
+
+def test_latlonh_to_xyz_batched():
+    latlonh = np.array([[0.0, 0.0, 0.0], [0.0, 90.0, 0.0], [90.0, 0.0, 0.0]])
+    expected_xyz = np.array(
+        [
+            [WGS84_SEMI_MAJOR_M, 0.0, 0.0],
+            [0.0, WGS84_SEMI_MAJOR_M, 0.0],
+            [0.0, 0.0, WGS84_SEMI_MINOR_M],
+        ]
+    ).T  # latlonh_to_xyz returns (3, N) for N > 1 points, columns in input order
+
+    xyz = latlonh_to_xyz(latlonh)
+    assert xyz.shape == (3, 3)
+    assert np.allclose(xyz, expected_xyz, atol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "xyz, expected_latlonh",
+    [
+        ([WGS84_SEMI_MAJOR_M, 0.0, 0.0], [0.0, 0.0, 0.0]),
+        ([0.0, WGS84_SEMI_MAJOR_M, 0.0], [0.0, 90.0, 0.0]),
+        ([WGS84_SEMI_MAJOR_M + 1000.0, 0.0, 0.0], [0.0, 0.0, 1000.0]),
+    ],
+)
+def test_xyz_to_latlonh(xyz, expected_latlonh):
+    latlonh = xyz_to_latlonh(np.array([xyz]))
+    assert np.allclose(latlonh, expected_latlonh, atol=1e-9)
+
+
+def test_xyz_to_latlonh_roundtrip():
+    # Round-trip an arbitrary, non-degenerate point through both transforms.
+    original = np.array([[52.0, 5.0, 100.0]])
+    xyz = latlonh_to_xyz(original)
+    roundtrip = xyz_to_latlonh(np.array([xyz]))
+    assert np.allclose(roundtrip, original.squeeze(), atol=1e-6)
