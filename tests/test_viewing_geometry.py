@@ -2,7 +2,12 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from depsi.viewing_geometry import add_cross_range, add_local_viewing_geometry
+from depsi.viewing_geometry import (
+    add_cross_range,
+    add_local_viewing_geometry,
+    estimate_plane_viewing_geometry,
+    fit_plane_viewing_geometry,
+)
 
 rng = np.random.default_rng(seed=42)
 
@@ -133,6 +138,33 @@ class TestAddLocalViewingGeometry:
 
         with pytest.raises(AssertionError, match="Orbit provided is"):
             add_local_viewing_geometry(sample_stm, "dummy.cfg", 0.01, "IWS", "s1_dsc_t110")
+
+
+class TestPlaneViewingGeometry:
+    def test_fit_plane_viewing_geometry_recovers_known_plane(self):
+        """The least-squares fit should recover the exact plane coefficients used to generate the angle field."""
+        x = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        y = np.array([0.0, 2.0, 1.0, 3.0, 2.0])
+        expected_coeffs = np.array([2.5, -1.25, 10.0], dtype=float)
+        angle = expected_coeffs[0] * x + expected_coeffs[1] * y + expected_coeffs[2]
+
+        coeffs = fit_plane_viewing_geometry(x, y, angle)
+
+        np.testing.assert_allclose(coeffs, expected_coeffs, rtol=0.0, atol=1e-12)
+        np.testing.assert_allclose(estimate_plane_viewing_geometry(x, y, coeffs), angle, rtol=0.0, atol=1e-12)
+
+    def test_fit_plane_viewing_geometry_uses_least_squares_for_noisy_data(self):
+        """With noise, the fit should stay close to the underlying plane instead of returning arbitrary values."""
+        x = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+        y = np.array([0.0, 2.0, 1.0, 3.0, 5.0, 4.0])
+        true_coeffs = np.array([1.5, -0.75, 2.5], dtype=float)
+        noise = np.array([0.15, -0.10, 0.05, -0.20, 0.10, -0.05], dtype=float)
+        angle = true_coeffs[0] * x + true_coeffs[1] * y + true_coeffs[2] + noise
+
+        coeffs = fit_plane_viewing_geometry(x, y, angle)
+
+        np.testing.assert_allclose(coeffs, true_coeffs, rtol=2e-2, atol=5e-2)
+        np.testing.assert_allclose(estimate_plane_viewing_geometry(x, y, coeffs), angle, rtol=5e-2, atol=2.5e-1)
 
 
 class TestAddCrossRange:
