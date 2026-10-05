@@ -144,8 +144,8 @@ if __name__ == "__main__":
 
     # Access paths from the YAML file
     doris_stack_folder = params["paths"]["doris_stack_folder"]
-    nlines_file = params["paths"]["nlines_file"]
-    npixels_file = params["paths"]["npixels_file"]
+    nlines = params["metadata"]["nlines"]
+    npixels = params["metadata"]["npixels"]
 
     rcsoutput_folder = params["paths"]["rcs_output_folder"]
     rcsAnalizer = params["paths"]["rcsAnalizer"]
@@ -161,18 +161,15 @@ if __name__ == "__main__":
         slc_stack = io.read_slc_stack(doris_stack_folder)
         print(f"Loaded stack from Zarr format: {doris_stack_folder}")
     else:
-        # Ensure nlines_file and npixels_file paths are provided
-        if not (nlines_file and npixels_file):
-            raise ValueError("nlines_file and npixels_file paths must be specified for non-Zarr stack folders.")
         # Load the stack using io.doris_sar_stack_to_xarray
         slc_stack = io.read_slc_stack(
             filename=doris_stack_folder,
             engine="doris",
-            nlines_file=nlines_file,
-            npixels_file=npixels_file,
+            nlines=nlines,
+            npixels=npixels,
             chunks=(500, 500),
         )
-        print(f"Loaded stack from folder with nlines and npixels files: {doris_stack_folder}")
+        print(f"Loaded stack from folder: {doris_stack_folder}")
 
     print("")
 
