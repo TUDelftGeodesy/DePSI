@@ -38,6 +38,16 @@ classifiers=[
     'Programming Language :: Python :: 3.12',
 ]
 
+[project.optional-dependencies]
+docs = [
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocs-jupyter",
+    "mkdocstrings[python]",
+    "mkdocs-gen-files",
+    "mike",
+]
+
 [dependency-groups]
 dev = [
     "pytest",
@@ -53,6 +63,7 @@ docs = [
     "mkdocs-jupyter",
     "mkdocstrings[python]",
     "mkdocs-gen-files",
+    "mike",
 ]
 demo = [
     "jupyterlab",
