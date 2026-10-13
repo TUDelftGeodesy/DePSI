@@ -62,7 +62,7 @@ def plot_points(
     mrm_kwargs: dict | None = None,
     **scatter_kwargs,
 ) -> Axes:
-    """Plot a point STM as a scatter, optionally over an MRM basemap.
+    """Plot a point STM as a scatter plot, optionally over an MRM basemap.
 
     Parameters
     ----------
