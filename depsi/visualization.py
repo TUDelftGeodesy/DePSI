@@ -88,6 +88,8 @@ def plot_points(
         Whether to add a colorbar when `color_by` is given. Default is True.
     mrm_kwargs: dict, optional
         Extra keyword arguments forwarded to `plot_mrm` when `mrm` is given.
+        By default, no extra keyword arguments are forwarded.
+        Please see `plot_mrm` for available options.
     **scatter_kwargs
         Extra keyword arguments forwarded to `stm_points.plot.scatter` (e.g. `s`, `marker`, `vmin`,
         `vmax`, `norm`). Defaults set by this function are `cmap="jet_r"`, `s=1`,
@@ -164,6 +166,8 @@ def plot_arcs(
         Axes to plot on. A new figure and axes are created if not given.
     mrm_kwargs: dict, optional
         Extra keyword arguments forwarded to `plot_mrm` when `mrm` is given.
+        By default, no extra keyword arguments are forwarded.
+        Please see `plot_mrm` for available options.
 
     Returns
     -------
