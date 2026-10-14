@@ -57,8 +57,17 @@ def test_plot_mrm_returns_axes_with_image(mrm):
     assert ax.collections[0].get_clim() == pytest.approx((expected_min, expected_max))
 
 
+def test_plot_mrm_invalid_percentiles(mrm):
+    with pytest.raises(ValueError):
+        plot_mrm(mrm, percentile_min=-1)
+    with pytest.raises(ValueError):
+        plot_mrm(mrm, percentile_max=101)
+    with pytest.raises(ValueError):
+        plot_mrm(mrm, percentile_min=50, percentile_max=10)
+
+
 def test_plot_mrm_custom_percentiles(mrm):
-    ax = plot_mrm(mrm, pctl_min=10, pctl_max=90)
+    ax = plot_mrm(mrm, percentile_min=10, percentile_max=90)
     quadmesh = ax.collections[0]
     expected_min = np.percentile(mrm.values, 10)
     expected_max = np.percentile(mrm.values, 90)

@@ -18,8 +18,8 @@ from matplotlib.axes import Axes
 
 def plot_mrm(
     mrm: xr.DataArray,
-    pctl_min: int = 2,
-    pctl_max: int = 95,
+    percentile_min: int = 2,
+    percentile_max: int = 95,
     ax: Axes | None = None,
 ) -> Axes:
     """Plot a Mean Reflectivity Map (MRM) as a radar-coordinate basemap.
@@ -29,9 +29,9 @@ def plot_mrm(
     mrm: xarray.DataArray
         Mean Reflectivity Map, e.g. as returned by `stack.slcstack.mrm()`. If it is a lazy (dask-backed)
         array, it is computed before plotting.
-    pctl_min: int
+    percentile_min: int
         Minimum percentile for the MRM image. Default is 2.
-    pctl_max: int
+    percentile_max: int
         Maximum percentile for the MRM image. Default is 95.
     ax: matplotlib.axes.Axes, optional
         Axes to plot on. A new figure and axes are created if not given.
@@ -41,12 +41,20 @@ def plot_mrm(
     matplotlib.axes.Axes
         The axes the MRM was plotted on.
     """
+    # Check percentile values
+    if not (0 <= percentile_min <= 100):
+        raise ValueError("percentile_min must be between 0 and 100")
+    if not (0 <= percentile_max <= 100):
+        raise ValueError("percentile_max must be between 0 and 100")
+    if percentile_min >= percentile_max:
+        raise ValueError("percentile_min must be less than percentile_max")
+
     if ax is None:
         _, ax = plt.subplots()
     mrm_values = mrm.data.flatten()
-    pctl_min, pctl_max = np.percentile(mrm_values, [pctl_min, pctl_max])
+    percentile_min, percentile_max = np.percentile(mrm_values, [percentile_min, percentile_max])
 
-    mrm.plot(ax=ax, vmin=pctl_min, vmax=pctl_max, cmap="gray", add_colorbar=False)
+    mrm.plot(ax=ax, vmin=percentile_min, vmax=percentile_max, cmap="gray", add_colorbar=False)
 
     ax.axis("off")
 
