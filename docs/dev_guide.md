@@ -64,8 +64,8 @@ on the `main` branch.
 
 This repository includes an agent skill for generating DePSI unit tests:
 
-- Skill definition: `.github/skills/generate-unittest/SKILL.md`
-- Archetype templates: `.github/skills/generate-unittest/catalog_archetypes.md`
+- Skill definition: `.github/skills/depsi-unittest/SKILL.md`
+- Archetype templates: `.github/skills/depsi-unittest/catalog_archetypes.md`
 
 Use this skill in Copilot Chat by explicitly naming the module path and function name, with an optional preferred archetype defined in the Archetype templates file.
 
@@ -74,13 +74,13 @@ Example prompts:
 Write unit tests for `form_network` function in `depsi/network.py`.
 
 ```text
-/generate-unittest depsi/network.py form_network
+/depsi-unittest depsi/network.py form_network
 ```
 
 Write unit tests for `form_network` function in `depsi/network.py` and prefer the `xarray_dataset_behavior_template` archetype.
 
 ```text
-/generate-unittest depsi/network.py form_network xarray_dataset_behavior_template
+/depsi-unittest depsi/network.py form_network xarray_dataset_behavior_template
 ```
 
 The currently supported archetypes in `catalog_archetypes.md` are:
