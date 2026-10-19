@@ -1,5 +1,5 @@
 ---
-name: generate-unittest
+name: depsi-unittest
 description: 'Generate new pytest unit tests for DePSI functions using curated template archetypes. Use when adding new functions or improving test coverage.'
 argument-hint: '[module_path] [function_name] [optional_preferred_archetype] [optional_fixture_path]'
 user-invocable: true
