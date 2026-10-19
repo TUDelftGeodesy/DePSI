@@ -6,7 +6,8 @@ on:
   release:
     types:
       - published
-
+permissions:
+  pages: write
 
 jobs:
   build:
