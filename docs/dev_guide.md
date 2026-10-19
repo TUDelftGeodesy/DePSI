@@ -64,10 +64,10 @@ on the `main` branch.
 
 This repository includes an agent skill for generating DePSI unit tests:
 
-- Skill definition: `.github/skills/depsi-unittest/SKILL.md`
-- Archetype templates: `.github/skills/depsi-unittest/catalog_archetypes.md`
+- Skill definition: `.agents/skills/depsi-unittest/SKILL.md`
+- Archetype templates: `.agents/skills/depsi-unittest/catalog_archetypes.md`
 
-Use this skill in Copilot Chat by explicitly naming the module path and function name, with an optional preferred archetype defined in the Archetype templates file.
+Use this skill in AI coding assistant by explicitly naming the module path and function name, with an optional preferred archetype defined in the Archetype templates file.
 
 Example prompts:
 
@@ -108,6 +108,7 @@ Tip:
 - Generate unit tests for one function at a time to keep review and debugging focused.
 - When using the "fixture_io_template" archetype, a fixture file path must be provided. The skill will not generate a fixture file automatically.
 
+
 ## Documentation
 
 We use `mkdocs` for documentation. 
@@ -119,6 +120,35 @@ mkdocs serve
 ```
 
 This will build and render the documentation at a local server. Follow the link provided in the terminal to view the documentation in the browser.
+
+### Agent skill for module/function documentation
+
+This repository also includes an agent skill for writing DePSI documentation per module and function:
+
+- Skill definition: `.agents/skills/depsi-docs/SKILL.md`
+
+Use this skill in AI coding assistant by passing module name and function name, with an optional example notebook or script.
+
+Example prompts:
+
+Document `form_network` in `depsi.network`, this is expected to only generate the API documentation:
+
+```text
+/depsi-docs network.py form_network
+```
+
+Document `form_network` in `depsi.network` using an example notebook, this is expected to generate both API and user documentation:
+
+```text
+/depsi-docs network.py form_network docs/notebooks/demo_network.ipynb
+```
+
+Expected behavior:
+
+- API documentation is updated first from the function docstring.
+- User documentation references docstring, tests (if available), and the provided example (if provided).
+- If neither a unit test nor an example is available, the skill warns and stops before adding user documentation.
+- Documentation updates follow the structure and navigation defined in `mkdocs.yml`.
 
 ## Parallelization
 
