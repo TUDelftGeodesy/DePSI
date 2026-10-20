@@ -31,7 +31,7 @@ import numpy as np
 import pytz
 import xarray as xr
 
-from depsi.constants import EARTH_RADIUS
+from depsi.constants import EARTH_RADIUS, WAVELENGTH_S1
 
 logger = logging.getLogger(__name__)
 
@@ -834,3 +834,8 @@ def concatenate_stms(
     stm_dens_pnts_output = stm_dens_pnts_output.reset_coords(names=coords_to_reset, drop=False)
 
     return stm_dens_pnts_output
+
+
+def get_m2ph(wavelength: float = WAVELENGTH_S1):
+    """Get the conversion factor from meters to phase."""
+    return -4 * np.pi / wavelength
