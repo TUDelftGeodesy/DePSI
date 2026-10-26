@@ -1,6 +1,6 @@
-"""
-Executable that identifies designated targets within a corregistered SLC stack
-by loading the stack, loading the RadarCoding Toolbox output, querrying for targets in the stack
+"""Identify designated targets within a co-registered SLC stack.
+
+Load the stack and Radar Coding Toolbox output, then query targets in the stack.
 
 An example of the input parameter file (dtd_params.yml),
 an SLC stack in zarr frmat (nl_groningen_s1_dsc_t037_haren),
@@ -16,16 +16,14 @@ Created on Fri Jan 10 11:08:57 2025
 
 # Load Modules
 import os
-import sys
-import yaml
-import sarxarray
 import subprocess
-import numpy as np
-import xarray as xr
-import pandas as pd
-from depsi import io
+from pathlib import Path
 
-sys.path.append("/home/parallels/Sprint_Mobyle/DePSI_group/depsi/")
+import numpy as np
+import yaml
+
+from depsi import io
+from depsi.classification import designated_target_selection
 
 
 ## FUNCTIONS
@@ -137,7 +135,8 @@ if __name__ == "__main__":
     # Specify folders and files to be used:
     print("STEP 0 - LOAD INPUT PARAMS")
     # Load the YAML parameters containing folders and files to be used:
-    params = load_ymlparams("/home/parallels/Sprint_Mobyle/DePSI_group/experiments/scripts/data/dtd_params.yml")
+    params_file = Path(__file__).resolve().parent / "data" / "dtd_params.yml"
+    params = load_ymlparams(params_file)
 
     if params is None:
         raise ValueError("Failed to load parameters from ''.")
@@ -148,8 +147,8 @@ if __name__ == "__main__":
     npixels = params["metadata"]["npixels"]
 
     rcsoutput_folder = params["paths"]["rcs_output_folder"]
-    rcsAnalizer = params["paths"]["rcsAnalizer"]
-    rcs_AnalizerArgs = [params["paths"]["rcs_AnalizerArgs"]]
+    rcs_analyzer = params["paths"]["rcsAnalizer"]
+    rcs_analyzer_args = [params["paths"]["rcs_AnalizerArgs"]]
 
     print("")
 
@@ -177,32 +176,25 @@ if __name__ == "__main__":
     # In case results are already produced by RC Toolbox read them in only.
     # Note: Please configure your .parms and stacksRC.json beforehand
     print("STEP 2 - RUN RADAR CODING TOOLBOX, LOAD RESULTS")
-    # Run the script with rcs_AnalizerArgs if output does not exist already
-    rcsoutput_file = ensure_rc_csv_exists(rcsoutput_folder, rcsAnalizer, rcs_AnalizerArgs)
+    # Run the script with rcs_analyzer_args if output does not exist already
+    rcsoutput_file = ensure_rc_csv_exists(rcsoutput_folder, rcs_analyzer, rcs_analyzer_args)
     print("")
 
     ## STEP 3 - LOAD THE RC TOOLBOX OUTPUT CSV FILE IN XARRAY FORMAT
     print("STEP 3 - LOAD RADAR CODING TOOLBOX RESULTS")
-    dt_df, dt_dates = io.read_rcs_csv(rcsoutput_file)  # Extract information from RC Toolbox output csv
+    targets = io.read_rcs_csv(rcsoutput_file)
 
-    # Convert to xarray.Dataset
-    targets = xr.Dataset(
-        {
-            "existing_flag": (["space", "time"], dt_df.iloc[:, 7:].values),
-        },
-        coords={
-            "target": ("space", dt_df["ID"].to_numpy(dtype=object)),
-            "range": ("space", dt_df["Range"].values),
-            "azimuth": ("space", dt_df["Azimuth"].values),
-            "lat": ("space", dt_df["Lat"].values),
-            "lon": ("space", dt_df["Lon"].values),
-            "height": ("space", dt_df["Height"].values),
-            "time": pd.to_datetime(dt_dates, format="%Y%m%d"),
-            "detection_flag": (["space", "time"], dt_df.iloc[:, 7:].values),
-        },
-    )
+    # Keep only acquisition epochs available in both inputs. The designated
+    # target selection API requires identical, ordered time coordinates.
+    common_times = np.intersect1d(slc_stack["time"].values, targets["time"].values)
+    if common_times.size == 0:
+        raise ValueError("The SLC stack and Radar Coding results have no common acquisition epochs.")
+
+    slc_stack = slc_stack.sel(time=common_times)
+    targets = targets.sel(time=common_times)
+
     ## STEP 4 - EXTRACT THE TARGETS FROM THE STACK
-    matching_scatterers = io.get_targets_from_slc(slc_stack, targets)
+    matching_scatterers = designated_target_selection(slcs=slc_stack, targets=targets)
 
     # Re-organize the target names to the attributes, since they are currently string coords
     target_names = dict()
@@ -222,7 +214,7 @@ if __name__ == "__main__":
     for name, info in matching_scatterers.attrs.items():
         print(f" - {name}: (lon={info['lon']}, lat={info['lat']}, az={info['azimuth']}, rg={info['range']})")
 
-    matching_scatterers = matching_scatterers.drop(["target"])
+    matching_scatterers = matching_scatterers.drop_vars("target")
 
 
 ## Note: Key variables

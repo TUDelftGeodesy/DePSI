@@ -1,20 +1,21 @@
 paths:
-  # Step 1 Paths for loading corregistered stack of SLC in XArray format
-  ## In case one wants to use a doris stack stored in .zarr format
+  # Step 1: path to a co-registered SLC stack in Zarr format.
   doris_stack_folder: "/home/parallels/Sprint_Mobyle/DePSI_group/examples/scripts/data/stack/nl_groningen_s1_dsc_t037_haren/nl_groningen_s1_dsc_t037_cropped.zarr"
- 
 
-  # Step 2 Paths for deciding to run RADAR CODING TOOLBOX, get targets radard coordinates.
-  rcs_output_folder: "/home/parallels/CarolineRadarCodingToolbox1/Caroline-Radar-Coding-Toolbox/results/nl_groningen_s1_dsc_t037_test1/"
+  # To load a classic stitched DORIS stack instead, use its stack directory:
+  # doris_stack_folder: "/home/parallels/Sprint_Mobyle/DePSI_group/examples/scripts/data/stack/nl_groningen_s1_dsc_t037/cropped_stack"
+
+  # Step 2: Radar Coding Toolbox paths used to obtain target radar coordinates.
+  rcs_output_folder: "/home/parallels/Sprint_Mobyle/DePSI_group/examples/scripts/data/dtd_results/nl_groningen_s1_dsc_t037_test/RadarCoordinates/"
   rcsAnalizer: "/home/parallels/CarolineRadarCodingToolbox1/Caroline-Radar-Coding-Toolbox/detectDesignatedTargets.py"
   rcs_AnalizerArgs: "/home/parallels/Sprint_Mobyle/DePSI_group/examples/scripts/data/dtd_results/radar_coding_prep/nl_groningen_s1_dsct037.parms"
 
 metadata:
-  nlines: null
-  npixels: null
-  ## When using doris, one can find the number of lines and pixels from the corresponding files.
-  ## For example:
-  #doris_stack_folder: "/home/parallels/Sprint_Mobyle/DePSI_group/examples/scripts/data/stack/nl_groningen_s1_dsc_t037/cropped_stack"
-  #nlines_file: "/home/parallels/Sprint_Mobyle/DePSI_group/examples/scripts/data/stack/nl_groningen_s1_dsc_t037/cropped_stack/nlines_crp.txt"
-  #npixels_file: "/home/parallels/Sprint_Mobyle/DePSI_group/examples/scripts/data/stack/nl_groningen_s1_dsc_t037/cropped_stack/npixels_crp.txt"
+  # Required only when doris_stack_folder points to a raw DORIS stack.
+  # This is the first entry in nlines_crp.txt. The second and third entries
+  # are the first and last crop lines with respect to the original image.
+  nlines: 193
 
+  # This is the first entry in npixels_crp.txt. The second and third entries
+  # are the first and last crop pixels with respect to the original image.
+  npixels: 773
