@@ -435,8 +435,9 @@ def _coherence_matrix(slc_stack, ds_mask, ds_id, shp_test=None):
         Mask array with the same 2D shape as SLC data containing parcel_id.
     ds_id : int
         ID of the parcel for which to estimate coherence
-    shp_test : bool, optional
-        Whether to perform shape test on the selected pixels, by default True
+    shp_test : None | str, optional
+        Whether to perform shape test on the selected pixels, by default None,
+        options: None or "ks-test".
 
     Returns
     -------
@@ -514,15 +515,15 @@ def _shp_test(data, method="ks-test"):
 
     Parameters
     ----------
-    data : 1D array
-        Selected radar pixels inside parcel polygon.
+    data : 2D array
+        Selected radar pixels inside parcel polygon (npixels, time).
     method : str, optional
         Method to perform the SHP test, by default "ks-test".
 
     Returns
     -------
-    data : 1D array
-        Selected radar pixels inside parcel polygon after removing outliers.
+    data : 2D array
+        Selected radar pixels inside parcel polygon after removing outliers (npixels, time).
 
     Raises
     ------
@@ -542,9 +543,10 @@ def _shp_test(data, method="ks-test"):
         ksmat = ksmat.reshape(data.shape[0], data.shape[0])
         ksmat_sum = np.sum(ksmat, axis=1)
         idx = np.argwhere(ksmat_sum == np.max(ksmat_sum))[0, 0]
-        data_sorted_idx = np.argsort(np.abs(data))
-        data_sorted = data[data_sorted_idx]
-        data = data_sorted[ksmat[idx].astype(bool)]
+        data = data[ksmat[idx].astype(bool)]
+        # data_sorted_idx = np.argsort(np.abs(data))
+        # data_sorted = data[data_sorted_idx]
+        # data = data_sorted[ksmat[idx].astype(bool)]
 
     else:
         raise NotImplementedError("This module is not yet implemented.")
@@ -774,7 +776,7 @@ def select_common_fop_ref(
         ref_idxs_ori.append(pnt_idx_ori[ref_idx])
         pnt_idx_candidates_ori.append(pnt_idx_ori[pnt_idx_candidate])
 
-    return ref_idxs_ori, pnt_idx_candidates_ori
+    return ref_idxs_ori, pnt_idx_candidates_ori, pnt_q_sum
 
 
 def ps_ds_arc(
