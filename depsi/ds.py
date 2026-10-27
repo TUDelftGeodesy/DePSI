@@ -544,9 +544,6 @@ def _shp_test(data, method="ks-test"):
         ksmat_sum = np.sum(ksmat, axis=1)
         idx = np.argwhere(ksmat_sum == np.max(ksmat_sum))[0, 0]
         data = data[ksmat[idx].astype(bool)]
-        # data_sorted_idx = np.argsort(np.abs(data))
-        # data_sorted = data[data_sorted_idx]
-        # data = data_sorted[ksmat[idx].astype(bool)]
 
     else:
         raise NotImplementedError("This module is not yet implemented.")
