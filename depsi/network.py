@@ -645,7 +645,7 @@ def _ambiguity_adaptation(
         idx_previous_arc_fix = -1  # Avoid fixing the same arc again in the same epoch
         counter = 0
 
-        while OMT >= OMT_THRES & counter < stm_arcs_updated.sizes["space"]:  # While the OMT fails, fix for this epoch
+        while OMT >= OMT_THRES and counter < stm_arcs_updated.sizes["space"]:  # While the OMT fails, fix for this epoch
             # Find arc index with largest abs echeck
             # When OMT > kOMT, echeck_ifg[idx_max_echeck] is guaranteed to be non-zero
             idx_sort = np.argsort(np.abs(echeck_ifg))[::-1]  # Indices of echeck sorted by abs value, descending
