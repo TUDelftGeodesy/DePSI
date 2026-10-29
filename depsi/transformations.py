@@ -725,12 +725,18 @@ def validate_geocoding_metadata(
     """
     assert mode in VALIDATION_NONORBIT_KEYS.keys(), f"Unknown mode {mode}, known are {VALIDATION_NONORBIT_KEYS.keys()}"
     for key in VALIDATION_NONORBIT_KEYS[mode]:
-        if key == "first_range_time" and key not in metadata.keys():
-            assert "first_range_time_burstwise" in metadata.keys(), (
-                "first_range_time is missing from metadata and cannot be reproduced from "
-                "first_range_time_burstwise, cannot proceed!"
-            )
-            metadata["first_range_time"] = min(numpy.array(metadata["first_range_time_burstwise"]).flatten())
+        if key == "first_range_time":
+            do_frt_reconstruct = False
+            if key not in metadata.keys():  # it is missing altogether
+                do_frt_reconstruct = True
+            elif metadata[key] is None:  # sarxarray behaviour: sets it to None instead
+                do_frt_reconstruct = True
+            if do_frt_reconstruct:
+                assert "first_range_time_burstwise" in metadata.keys(), (
+                    "first_range_time is missing from metadata and cannot be reproduced from "
+                    "first_range_time_burstwise, cannot proceed!"
+                )
+                metadata["first_range_time"] = min(numpy.array(metadata["first_range_time_burstwise"]).flatten())
         assert key in metadata.keys(), f"Key {key} is missing from metadata, cannot proceed!"
 
     if orbit_required:
