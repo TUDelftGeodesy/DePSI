@@ -743,6 +743,9 @@ def validate_geocoding_metadata(
             else:
                 raise ValueError("Key orbit_time is missing and cannot be reconstructed from orbit_txyz!")
 
+        if metadata["orbit_time"].ndim > 1:
+            metadata["orbit_time"] = metadata["orbit_time"].flatten()  # necessary for chebfit
+
         if "orbit_position" not in metadata.keys():
             if "orbit_txyz" in metadata.keys():
                 metadata["orbit_position"] = metadata["orbit_txyz"][:, 1:]
