@@ -726,7 +726,7 @@ def validate_geocoding_metadata(
     assert mode in VALIDATION_NONORBIT_KEYS.keys(), f"Unknown mode {mode}, known are {VALIDATION_NONORBIT_KEYS.keys()}"
     for key in VALIDATION_NONORBIT_KEYS[mode]:
         if key == "first_range_time":
-           metadata.get(key) is None # if first_range_time missing or None
+            if metadata.get(key) is None: # if first_range_time missing or None
                 assert "first_range_time_burstwise" in metadata.keys(), (
                     "first_range_time is missing from metadata and cannot be reproduced from "
                     "first_range_time_burstwise, cannot proceed!"
