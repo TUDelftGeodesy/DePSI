@@ -52,10 +52,10 @@ When generating API documentation for a function, use the following template as 
 3. Gather usage evidence for user documentation:
    - Always inspect the function docstring.
    - Search for unit tests that call the function (prefer `tests/test_<module_name>.py`, then broader `tests/` if needed).
-   - If `optiona_example` is provided, inspect and use it.
+   - If `optional_example` is provided, inspect and use it.
 
 4. Decide whether user documentation can be added:
-   - If **no unit test is found** and **no `optiona_example` is provided**, emit a warning and **stop before adding/updating user documentation**.
+   - If **no unit test is found** and **no `optional_example` is provided**, emit a warning and **stop before adding/updating user documentation**.
    - API documentation from step 2 must be completed before proceeding to user documentation.
 
 5. Add or update user documentation (only when allowed by step 4):
