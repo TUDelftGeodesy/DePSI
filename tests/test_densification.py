@@ -174,6 +174,25 @@ def test_densification(npoints_net, npoints_dens, ntime):
     assert np.allclose(unw_phase - true_phase_dd, 0)
 
 
+def test_densification_chunked_input_preserves_space_chunking():
+    """Chunked densification inputs should keep the input chunk size for the output space dimension."""
+    stm_network_pnts = make_stm_network_pnts(17, 24)
+    stm_pnt_densification = make_stm_pnt_densification(13, 24).chunk({"space": 3})
+
+    stm_densified = densification(
+        stm_pnt_densification,
+        stm_network_pnts,
+        n_connections=1,
+        key_xcoord="azimuth",
+        key_ycoord="range",
+        key_Btemporal="time",
+        key_h2ph="h2ph",
+        key_sdphase="sd_phase",
+    )
+
+    assert stm_densified.chunks["space"][0] == stm_pnt_densification.chunks["space"][0]
+
+
 def test_densification_inconsistent_time():
     """Value error raised when time coordinates are inconsistent."""
     ntime_net = 5

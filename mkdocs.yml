@@ -27,6 +27,7 @@ nav:
     - depsi.contextual_information: api/contextual_information.md
     - depsi.transformations: api/transformations.md
     - depsi.io: api/io.md
+    - depsi.visualization: api/visualization.md
   - Contributing: 
     - Contributing guide: CONTRIBUTING.md
     - Practical info for developers: dev_guide.md

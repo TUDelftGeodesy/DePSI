@@ -889,10 +889,8 @@ def test_select_common_fop_ref_returns_common_points_and_best_reference():
         quality=[9.0, 2.0],
     )
 
-    ref_idxs, pnt_idx_candidates = select_common_fop_ref(
-        ps_stm_list=[track_1, track_2, track_3],
-        proj_crs=28992,
-        dist_ub=20.0,
+    ref_idxs_ori, pnt_idx_candidates_ori, pnt_q_sum = select_common_fop_ref(
+        ps_stm_list=[track_1, track_2, track_3], proj_crs=28992, dist_ub=20.0, quality_var="full_ts_nad"
     )
 
     expected_candidates = np.array(
@@ -903,8 +901,9 @@ def test_select_common_fop_ref_returns_common_points_and_best_reference():
         ]
     )
 
-    np.testing.assert_array_equal(pnt_idx_candidates, expected_candidates)
-    np.testing.assert_array_equal(ref_idxs, np.array([1, 1, 1]))
+    np.testing.assert_array_equal(pnt_idx_candidates_ori, expected_candidates)
+    np.testing.assert_array_equal(ref_idxs_ori, np.array([1, 1, 1]))
+    np.testing.assert_array_equal(pnt_q_sum, np.array([27.0, 8.0]))
 
 
 def test_select_common_fop_ref_restores_original_indices_after_nan_filtering():
@@ -924,10 +923,8 @@ def test_select_common_fop_ref_restores_original_indices_after_nan_filtering():
         quality=[5.0, 2.0],
     )
 
-    ref_idxs, pnt_idx_candidates = select_common_fop_ref(
-        ps_stm_list=[track_1, track_2],
-        proj_crs=28992,
-        dist_ub=10.0,
+    ref_idxs_ori, pnt_idx_candidates_ori, pnt_q_sum = select_common_fop_ref(
+        ps_stm_list=[track_1, track_2], proj_crs=28992, dist_ub=10.0, quality_var="full_ts_nad"
     )
 
     expected_candidates = np.array(
@@ -937,8 +934,9 @@ def test_select_common_fop_ref_restores_original_indices_after_nan_filtering():
         ]
     )
 
-    np.testing.assert_array_equal(pnt_idx_candidates, expected_candidates)
-    np.testing.assert_array_equal(ref_idxs, np.array([2, 1]))
+    np.testing.assert_array_equal(pnt_idx_candidates_ori, expected_candidates)
+    np.testing.assert_array_equal(ref_idxs_ori, np.array([2, 1]))
+    np.testing.assert_array_equal(pnt_q_sum, np.array([15.0, 3.0]))
 
 
 def test_select_common_fop_ref_raises_when_no_points_are_common():
@@ -1163,8 +1161,8 @@ def test_shp_test_keeps_pixels_matching_selected_reference(monkeypatch):
 
     expected = np.array(
         [
+            3.0 + 4.0j,  # magnitude = 5
             1.0 + 0.0j,  # magnitude = 1
-            2.0 + 0.0j,  # magnitude = 2
         ]
     )
 
@@ -1188,7 +1186,7 @@ def test_shp_test_empty_method_uses_ks_test_branch(monkeypatch):
     monkeypatch.setattr("depsi.ds._kstest", lambda pair: 1.0)
 
     result = _shp_test(data, method="")
-    expected = data[np.argsort(np.abs(data))]
+    expected = data
 
     np.testing.assert_array_equal(result, expected)
 
