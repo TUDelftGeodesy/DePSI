@@ -10,6 +10,7 @@ import xarray
 from depsi.arc_estimation import periodogram
 from depsi.atmosphere_estimation import estimate_atmosphere_phase
 from depsi.classification import network_stm_selection, ps_selection
+from depsi.constants import SPEED_OF_LIGHT
 from depsi.densification import densification
 from depsi.io import (
     export_to_csv,
@@ -33,8 +34,6 @@ from depsi.viewing_geometry import add_local_viewing_geometry
 
 
 # ############## INPUT VARIABLES
-SPEED_OF_LIGHT = 299_792_458
-
 start_at_checkpoint = 0  # 0 from start, 1 post atmosphere estimation, 2 post densification, 3 for output generation
 
 slc_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_zarr/nl_amsterdam_s1_dsc_t037_base.zarr'
