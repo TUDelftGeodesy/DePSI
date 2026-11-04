@@ -41,24 +41,29 @@ When generating API documentation for a function, use the following template as 
 
 1. Resolve and validate target function:
    - Locate `depsi/<module_name>.py`.
-   - Confirm `function_name` exists and has a docstring.
+   - Confirm `function_name` exists.
    - If missing, stop and return a clear error.
 
-2. Add or update API documentation first:
+2. Inspect if the function has a docstring and at least one unit test:
+   - Confirm the function has a non-empty docstring.
+   - Search for unit tests that call the function (prefer `tests/test_<module_name>.py`, then broader `tests/` if needed).
+   - If the function has no docstring or no unit tests, stop and return a clear error.
+
+3. Add or update API documentation first:
    - Target API page: `docs/api/<module_name>.md` (or the file mapped for that module in `mkdocs.yml`).
    - Use the API Documentation Template section above as a starting point.
    - Use the function docstring as the canonical source for parameters, returns, and behavior.
 
-3. Gather usage evidence for user documentation:
+4. Gather usage evidence for user documentation:
    - Always inspect the function docstring.
    - Search for unit tests that call the function (prefer `tests/test_<module_name>.py`, then broader `tests/` if needed).
    - If `optional_example` is provided, inspect and use it.
 
-4. Decide whether user documentation can be added:
+5. Decide whether user documentation can be added:
    - If **no unit test is found** and **no `optional_example` is provided**, emit a warning and **stop before adding/updating user documentation**.
-   - API documentation from step 2 must be completed before proceeding to user documentation.
+   - API documentation from step 3 must be completed before proceeding to user documentation.
 
-5. Add or update user documentation (only when allowed by step 4):
+6. Add or update user documentation (only when allowed by step 5):
    - Update the relevant file under `docs/usages/` based on the module/topic mapping in `mkdocs.yml`.
    - Include:
      - Purpose and context of the function.
