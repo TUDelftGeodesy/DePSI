@@ -14,7 +14,7 @@ Create or update DePSI documentation for one function at a time, including:
 
 ## Inputs
 
-- `module_name`: DePSI module name (for example: `network`, `io`, `densification`).
+- `module_name`: DePSI module name (for example: `network`, `io`, `densification`). Modules are located under the `depsi/` directory as `<module_name>.py` files.
 - `function_name`: Function name inside `depsi/<module_name>.py`.
 - `optional_example` (optional): Path to a Jupyter notebook (`.ipynb`) or Python script (`.py`) that demonstrates calling the function.
 

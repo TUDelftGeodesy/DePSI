@@ -134,7 +134,7 @@ Example prompts:
 Document `form_network` in `depsi.network`, this is expected to only generate the API documentation:
 
 ```text
-/depsi-docs network.py form_network
+/depsi-docs network form_network
 ```
 
 Document `form_network` in `depsi.network` using an example notebook, this is expected to generate both API and user documentation:
