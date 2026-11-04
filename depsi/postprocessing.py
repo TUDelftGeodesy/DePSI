@@ -100,9 +100,11 @@ def estimate_reference_point_noise(
 
     if method == "mean":
         reference_point_noise = residual_phase.mean(dim=space_dim, skipna=True)
-    else:
+    elif method == "median":
         # A median needs all points of an epoch in one chunk when using dask
         reference_point_noise = residual_phase.median(dim=space_dim, skipna=True)
+    else:
+        raise NotImplementedError(f"Unsupported method: {method}")
 
     stm_rpn["reference_point_noise"] = reference_point_noise
 
