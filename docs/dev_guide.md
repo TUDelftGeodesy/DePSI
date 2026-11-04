@@ -127,7 +127,7 @@ This repository also includes an agent skill for writing DePSI documentation per
 
 - Skill definition: `.agents/skills/depsi-docs/SKILL.md`
 
-Use this skill in AI coding assistant by passing module name and function name, with an optional example notebook or script.
+Use this skill with your AI coding assistant by passing module name and function name, with an optional example notebook or script.
 
 Example prompts:
 
