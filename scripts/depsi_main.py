@@ -142,12 +142,11 @@ stm_save_path = '/Users/sanvandiepen/PycharmProjects/workingEnvironment2/test_za
 print(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} Reading Metadata...")
 metadata = sarxarray.read_metadata(metadata_path, driver="doris5")
 
-if isinstance(metadata["wavelength"], float):
-    pass
-elif isinstance(metadata["radar_frequency"], float):
-    metadata["wavelength"] = SPEED_OF_LIGHT / metadata["radar_frequency"]
-else:
-    raise ValueError("wavelength is missing from metadata and cannot be reconstructed from frequency!")
+if not isinstance(metadata["wavelength"], float):
+  if isinstance(metadata["radar_frequency"], float):
+      metadata["wavelength"] = SPEED_OF_LIGHT / metadata["radar_frequency"]
+  else:
+      raise ValueError("wavelength is missing from metadata and cannot be reconstructed from frequency!")
 
 if start_at_checkpoint < 1:
     # 1. Project setup
