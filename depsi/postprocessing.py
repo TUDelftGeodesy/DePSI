@@ -57,9 +57,10 @@ def stm_point_filter(
 
     return retained_stm
 
+
 def estimate_reference_point_noise(
     stm: xr.Dataset,
-    key_phase: str="phase_residuals",
+    key_phase: str = "phase_residuals",
     method: str = "mean",
     space_dim: str = "space",
 ) -> xr.DataArray:
@@ -79,6 +80,8 @@ def estimate_reference_point_noise(
     method: str
         Statistic used to estimate the RPN per epoch: "mean" or "median".
         Default is "mean". anything else will be treated as "median".
+    space_dim: str
+        The name of the spatial dimension in the dataset. Default is "space".
 
     Returns
     -------
