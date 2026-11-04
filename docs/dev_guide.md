@@ -67,7 +67,7 @@ This repository includes an agent skill for generating DePSI unit tests:
 - Skill definition: `.agents/skills/depsi-unittest/SKILL.md`
 - Archetype templates: `.agents/skills/depsi-unittest/catalog_archetypes.md`
 
-Use this skill in AI coding assistant by explicitly naming the module path and function name, with an optional preferred archetype defined in the Archetype templates file.
+Use this skill with your AI coding assistant by explicitly naming the module path and function name, with an optional preferred archetype defined in the Archetype templates file.
 
 Example prompts:
 

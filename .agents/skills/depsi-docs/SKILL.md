@@ -1,6 +1,6 @@
 ---
 name: depsi-docs
-description: 'Write DePSI documentation per module and function. Use when creating or updating API docs and user-facing usage docs from docstrings, tests, and examples.'
+description: 'Write DePSI documentation per module and function. Use when creating or updating API docs and docs for user-facing features, using content from docstrings, tests, and examples.'
 argument-hint: '[module_name] [function_name] [optional_example]' 
 user-invocable: true
 ---
@@ -16,7 +16,7 @@ Create or update DePSI documentation for one function at a time, including:
 
 - `module_name`: DePSI module name (for example: `network`, `io`, `densification`).
 - `function_name`: Function name inside `depsi/<module_name>.py`.
-- `optiona_example` (optional): Path to a Jupyter notebook (`.ipynb`) or Python script (`.py`) that demonstrates calling the function.
+- `optional_example` (optional): Path to a Jupyter notebook (`.ipynb`) or Python script (`.py`) that demonstrates calling the function.
 
 ## Repository Documentation Conventions
 

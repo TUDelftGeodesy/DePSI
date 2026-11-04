@@ -30,7 +30,7 @@ This produces a grayscale image in which the color scale is defined by the 2nd a
 
 ## Plot point STMs
 
-`plot_points` is used to visualize a point-based STM as a radar-coordinate scatter plot. It expects an `xarray.Dataset` with radarcoordinates (`range` and `azimuth`), and colors points according to a data variable, such as `velocity`.
+`plot_points` is used to visualize a point-based STM as a radar-coordinate scatter plot. It expects an `xarray.Dataset` with radar coordinates (`range` and `azimuth`), and colors points according to a data variable, such as `velocity`.
 
 ```python
 import numpy as np
