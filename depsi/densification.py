@@ -173,6 +173,13 @@ def densification(
     # If a time-only variable exists in both STMs, it is assumed to be identical across those STMs.
     stm_dens_pnts_output = concatenate_stms([stm_network_pnts, stm_dens_pnts_output])
 
+    # Chunk stm_dens_pnts_output with the same chunking as input densification points
+    if "space" in stm_dens_pnts.chunks:
+        stm_dens_pnts_output = stm_dens_pnts_output.chunk({"space": stm_dens_pnts.chunks["space"][0]})
+    else:
+        # Default to a single chunk if no chunking exists
+        stm_dens_pnts_output = stm_dens_pnts_output.chunk({"space": "auto"})
+
     return stm_dens_pnts_output
 
 

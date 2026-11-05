@@ -31,5 +31,9 @@ jobs:
       run: uv sync --all-groups
     - name: Build the package
       run: uv build
-    - name: Test with pytest
+    - name: Test with pytest (Ubuntu full suite)
+      if: matrix.os == 'ubuntu-latest'
       run: uv run pytest
+    - name: Test with pytest (macOS/Windows skip visualization tests)
+      if: matrix.os != 'ubuntu-latest'
+      run: uv run pytest --ignore=tests/test_visualization.py

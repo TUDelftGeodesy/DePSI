@@ -13,6 +13,7 @@ nav:
     - Network estimation: usages/network.md
     - Atmospheric phase screen estimation: usages/aps_estimation.md
     - Densification: usages/densification.md
+    - Visualization: usages/visualization.md
     - Geo-coding: usages/geocoding.md
     - Post-processing: usages/postprocessing.md
     - Add Contextual information: usages/contextual_information.md
@@ -27,6 +28,7 @@ nav:
     - depsi.contextual_information: api/contextual_information.md
     - depsi.transformations: api/transformations.md
     - depsi.io: api/io.md
+    - depsi.visualization: api/visualization.md
   - Contributing: 
     - Contributing guide: CONTRIBUTING.md
     - Practical info for developers: dev_guide.md

@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 
-from depsi.postprocessing import stm_point_filter
+from depsi.postprocessing import estimate_reference_point_noise, stm_point_filter
 
 
 def test_stm_point_filter_two_bounds():
@@ -120,3 +120,24 @@ def test_stm_point_filter_no_filter():
     res = stm_point_filter(stm, filter_layer, vmin=vmin, vmax=vmax, return_removed=False)
     assert res.sizes["time"] == 10
     assert res.sizes["space"] == stm.sizes["space"]
+
+
+def test_reference_point_noise_estimation():
+    rng = np.random.default_rng(0)
+    n_points, n_epochs = 500, 5
+    sigma = 0.1
+    offset = np.array([0.3, -0.5, 1.0, 0.0, 0.2])  # the "true" RPN
+    stm = xr.Dataset(
+        data_vars={
+            "residual_phase": (("space", "time"), rng.normal(0, sigma, (n_points, n_epochs)) + offset),
+        },
+        coords={
+            "space": np.arange(n_points),
+            "time": np.arange(n_epochs),
+        },
+    )
+
+    resultmean = estimate_reference_point_noise(stm, key_phase="residual_phase", method="mean")
+    assert np.abs(resultmean["reference_point_noise"].values - offset).max() < 0.02
+    resultmedian = estimate_reference_point_noise(stm, key_phase="residual_phase", method="median")
+    assert np.abs(resultmedian["reference_point_noise"].values - offset).max() < 0.02

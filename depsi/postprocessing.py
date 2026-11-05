@@ -56,3 +56,56 @@ def stm_point_filter(
         return retained_stm, removed_stm
 
     return retained_stm
+
+
+def estimate_reference_point_noise(
+    stm: xr.Dataset,
+    key_phase: str = "phase_residuals",
+    method: str = "mean",
+    space_dim: str = "space",
+) -> xr.DataArray:
+    """Estimate the reference point noise (RPN) per epoch.
+
+    All points are relative to a common reference point, so the noise of the
+    reference point appears as the same offset in every point at each epoch.
+    Following Chang and Hanssen (2016), Eq. 15, this offset is estimated as the
+    spatial mean (or median) of the residual phases per epoch.
+
+    Parameters
+    ----------
+    stm: xr.Dataset
+        The input dataset containing the residual phases.
+    key_phase: str
+        The key of the residual phase data in the dataset. Default is "residual_phase".
+    method: str
+        Statistic used to estimate the RPN per epoch: "mean" or "median".
+        Default is "mean". anything else will be treated as "median".
+    space_dim: str
+        The name of the spatial dimension in the dataset. Default is "space".
+
+    Returns
+    -------
+    xr.DataArray
+        The estimated reference point noise, one value per epoch.
+
+    References
+    ----------
+    Chang, L. and Hanssen, R. F. (2016). A probabilistic approach for InSAR
+    time-series postprocessing. IEEE Transactions on Geoscience and Remote
+    Sensing, 54(1), 421-430.
+    """
+    stm_rpn = stm.copy()  # Avoid modifying the original dataset
+
+    residual_phase = stm_rpn[key_phase]
+
+    if method == "mean":
+        reference_point_noise = residual_phase.mean(dim=space_dim, skipna=True)
+    elif method == "median":
+        # A median needs all points of an epoch in one chunk when using dask
+        reference_point_noise = residual_phase.median(dim=space_dim, skipna=True)
+    else:
+        raise NotImplementedError(f"Unsupported method: {method}")
+
+    stm_rpn["reference_point_noise"] = reference_point_noise
+
+    return stm_rpn
