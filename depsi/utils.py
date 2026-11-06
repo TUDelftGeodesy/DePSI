@@ -486,12 +486,14 @@ def stm_compute_single_time_differences(
     Returns
     -------
     xr.Dataset
-      the space-time matrix with four new variables:
-        - sd_h2ph (space, time): single difference height to phase conversion with respect to single_difference_mother
-        - sd_complex (space, time): single difference complex phasor with respect to single_difference_mother
+        the space-time matrix with four new variables:
+        - sd_h2ph (space, time): single difference height to phase conversion
+          (daughter minus mother)
+        - sd_complex (space, time): single difference complex phasor computed as
+          mother times conjugate(daughter)
         - sd_amplitude_unnormalized (space, time): single difference complex phasor amplitude to
-            single_difference_mother, not normalized
-        - sd_phase (space, time): single difference phase with respect to single_difference_mother
+          single_difference_mother, not normalized
+        - sd_phase (space, time): single difference phase (mother minus daughter)
 
     Raises
     ------
@@ -547,7 +549,7 @@ def stm_compute_single_time_differences(
     # calculate the complex single difference, the amplitude, and the phase
     mother_comp = stm["complex"][:, sd_mother_index].conj()
     sd_complex_transposed = stm["complex"].transpose() * mother_comp
-    sd_complex = sd_complex_transposed.transpose()
+    sd_complex = sd_complex_transposed.transpose().conj()
     sd_phase = da.angle(sd_complex)
     sd_amplitude_unnormalized = da.abs(sd_complex)
     stm = stm.assign({"sd_complex": (["space", "time"], sd_complex.data)})
