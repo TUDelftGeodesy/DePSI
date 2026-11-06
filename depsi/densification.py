@@ -5,7 +5,7 @@ import xarray as xr
 from scipy.spatial import KDTree
 
 from depsi.arc_estimation import periodogram
-from depsi.utils import compute_phase_difference, concatenate_stms, generate_pnt_uids
+from depsi.utils import compute_phase_difference, generate_pnt_uids
 
 
 def densification(
@@ -49,12 +49,15 @@ def densification(
         Name of the data variable containing temporal baselines for arc estimation (default is 'years').
     **kwargs_arc_estimation :
         Additional keyword arguments to pass to the arc estimation function.
+        If key_coh_mask is provided by designated targets (DT), the corresponding variable must exist in
+        stm_dens_pnts with dimensions (space, time). Only coherent epochs
+        are considered during periodogram estimation.
 
     Returns
     -------
     xarray.Dataset
-        Densified points with estimated ambiguities, including both the original network points and
-        the densification points.
+        Densification points with estimated ambiguities, unwrapped phases, and local temporal coherence. 
+        The original network points are not included in the returned dataset.
     """
     # Make pnt_uid if not present
     if "pnt_uid" not in stm_dens_pnts:
@@ -94,8 +97,11 @@ def densification(
         raise ValueError("stm_dens_pnts and stm_network_pnts must have the same 'time' coordinates.")
 
     # Remove network points that are also in densification points
-    mask = np.isin(stm_dens_pnts["pnt_uid"].data, stm_network_pnts["pnt_uid"].data)
-    stm_dens_pnts = stm_dens_pnts.isel(space=np.where(~mask)[0])
+    densification_uids = np.asarray(stm_dens_pnts["pnt_uid"].values)
+    network_uids = np.asarray(stm_network_pnts["pnt_uid"].values)
+    mask = np.isin(densification_uids, network_uids)
+    stm_dens_pnts = stm_dens_pnts.isel(space=np.flatnonzero(~mask))
+    
 
     # Make a copy of densification points
     stm_dens_pnts_output = stm_dens_pnts.copy()
@@ -128,6 +134,18 @@ def densification(
         },
         attrs={"wavelength": wavelength},
     )
+    
+    # Attach optional designated target coherence mask to densification arcs
+    key_coh_mask = kwargs_arc_estimation.get("key_coh_mask")
+    if key_coh_mask is not None:
+        if key_coh_mask not in stm_dens_pnts:
+            raise ValueError(
+                f"Coherence mask variable '{key_coh_mask}' is not found in the densification points."
+            )
+        stm_densification_arcs[key_coh_mask] = (
+            ("space", "time"),
+            stm_dens_pnts[key_coh_mask].isel(space=idx_dens_pnts).data,
+        )
 
     # unwrap densification arcs phase
     _, ambiguities, _, _, temporal_coh_arc = periodogram(
@@ -166,20 +184,7 @@ def densification(
     # Local temporal coherence with one arc connection is the same as arc temporal coherence
     stm_dens_pnts_output["local_temp_coh"] = (("space",), temporal_coh_arc.data)
 
-    # Attach network points to the output
-    # Concatenate in space dimension
-    # For variables with (space,) or (space, time) dimensions, missing values will be filled with NaNs
-    # For time-only variables, the values will be directly copied from stm_network_pnts or stm_dens_pnts_output
-    # If a time-only variable exists in both STMs, it is assumed to be identical across those STMs.
-    stm_dens_pnts_output = concatenate_stms([stm_network_pnts, stm_dens_pnts_output])
-
-    # Chunk stm_dens_pnts_output with the same chunking as input densification points
-    if "space" in stm_dens_pnts.chunks:
-        stm_dens_pnts_output = stm_dens_pnts_output.chunk({"space": stm_dens_pnts.chunks["space"][0]})
-    else:
-        # Default to a single chunk if no chunking exists
-        stm_dens_pnts_output = stm_dens_pnts_output.chunk({"space": "auto"})
-
+    # Return only densification points, keeping the first-order network separate
     return stm_dens_pnts_output
 
 
