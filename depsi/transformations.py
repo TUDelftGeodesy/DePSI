@@ -23,6 +23,8 @@ import numpy
 import pyproj
 from numpy.polynomial.chebyshev import chebval
 
+from depsi.constants import SECONDS_IN_A_DAY
+
 logger = logging.getLogger(__name__)
 
 SPEED_OF_LIGHT = 299792458.0
@@ -745,6 +747,9 @@ def validate_geocoding_metadata(
 
         if metadata["orbit_time"].ndim > 1:
             metadata["orbit_time"] = metadata["orbit_time"].flatten()  # necessary for chebfit
+
+        # Force timestamps to be seconds_of_day (regardless of if originally timestamp or seconds_of_day)
+        metadata["orbit_time"] = metadata["orbit_time"] % SECONDS_IN_A_DAY
 
         if "orbit_position" not in metadata.keys():
             if "orbit_txyz" in metadata.keys():
