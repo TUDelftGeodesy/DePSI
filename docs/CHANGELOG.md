@@ -13,10 +13,11 @@ This release marks the first public changelog entry for DePSI and captures the c
 - Initial Python package release of DePSI for PS-InSAR processing.
 - End-to-end workflow support for:
   - PS candidate selection
-  - network generation and deformation estimation
+  - network generation and spatial integration
+  - deformation model estimation
   - atmospheric phase screen (APS) estimation
   - densification of PS points
-  - geocoding of deformation estimates
+  - geocoding of PS points
 - Modernized Python-based implementation built around the scientific Python ecosystem.
 - PyPI packaging and installation workflow for end users.
 - Documentation and usage guides covering installation, workflow steps, and API reference.
