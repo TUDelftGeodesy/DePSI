@@ -37,7 +37,7 @@ nav:
     - DePSI example workflow: notebooks/demo_depsi_full.ipynb
     - Add Contextual Information: notebooks/demo_get_and_add_contextualinformation.ipynb
     - SARXarray and STMTools Dependencies of DePSI: notebooks/demo_sarxarray_and_stmtools.ipynb
-
+  - Changelog: CHANGELOG.md
 
 theme:
   name: material
