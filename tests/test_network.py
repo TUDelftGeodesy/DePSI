@@ -7,6 +7,7 @@ import xarray as xr
 from depsi.network import (
     _ensure_network_min_connections,
     _ensure_single_network,
+    _independent_arcs,
     _network_relation_matrix,
     _remove_network_points_min_connections,
     form_network,
@@ -500,3 +501,31 @@ class TestNetworkUnwrap:
 
         assert A.shape == A_exp.shape
         assert np.all(A.todense() == A_exp)
+
+
+class TestArcsUtils:
+    @pytest.mark.timeout(10)  # Each should finish in 10 seconds
+    @pytest.mark.parametrize(
+        "npoints, narcs",
+        [
+            (103, 1000),
+            (1923, 10000),
+            (12, 30),
+        ],
+    )
+    def test_independent_arcs(self, npoints, narcs):
+        # Simulate random arcs
+        rng = np.random.default_rng(42)
+        arcs = rng.integers(0, npoints, size=(narcs, 2))
+        # remove arcs which has the same start and end point
+        arcs = arcs[arcs[:, 0] != arcs[:, 1]]
+        # Remove duplicate arcs
+        arcs = np.unique(np.sort(arcs, axis=1), axis=0)
+
+        # Test that the arcs are independent.
+        independent_arcs = _independent_arcs(arcs)
+
+        # A point index should only appear once
+        # either as a start or end point of an arc.
+        all_idx = independent_arcs.flatten()
+        assert all_idx.shape == np.unique(all_idx).shape
