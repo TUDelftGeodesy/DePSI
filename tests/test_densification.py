@@ -148,8 +148,8 @@ def test_densification(npoints_net, npoints_dens, ntime):
         key_sdphase="sd_phase",
     )
 
-    # Densification should inherit reference point index attribute from network points
-    assert "idx_refpnt" in stm_densified.attrs
+    # Densification should return only the newly densified points
+    assert stm_densified.sizes["space"] == npoints_dens
 
     # Following variables should be in the densification output
     assert "ambiguities" in stm_densified.data_vars
@@ -162,7 +162,7 @@ def test_densification(npoints_net, npoints_dens, ntime):
     true_phase = stm_densified["phase_true"].data
     # Reference phase from network points
     # Reference phase are also true phase therefore it needs to be single-differenced
-    reference_phase = stm_network_pnts["phase_true"].data[stm_densified.attrs["idx_refpnt"], :]
+    reference_phase = stm_network_pnts["phase_true"].data[stm_network_pnts.attrs["idx_refpnt"], :]
     sd_reference_phase = reference_phase - reference_phase[0]
     # Get true double-difference phase
     true_phase_dd = (
@@ -290,20 +290,68 @@ def test_densification_time_variables():
         key_sdphase="sd_phase",
     )
 
-    # Check that time-only variables are present in the output
-    for var in ["time_var_common", "time_var_net", "time_var_dens"]:
+    # Check that time-only variables from densification points are preserved
+    for var in ["time_var_common", "time_var_dens"]:
         assert var in stm_densified.data_vars
         assert stm_densified[var].dims == ("time",)
 
-    assert np.allclose(
-        stm_densified["time_var_net"].data,
-        stm_network_pnts["time_var_net"].data,
-    )
+    # Network-only variables should not be included in densification output
+    assert "time_var_net" not in stm_densified.data_vars
+
     assert np.allclose(
         stm_densified["time_var_dens"].data,
         stm_pnt_densification["time_var_dens"].data,
     )
     assert np.allclose(
         stm_densified["time_var_common"].data,
-        stm_network_pnts["time_var_common"].data,
+        stm_pnt_densification["time_var_common"].data,
     )
+
+    
+
+def test_densification_with_coh_mask():
+    """Test densification with a coherence mask for designated targets."""
+    npoints_net = 17
+    npoints_dens = 5
+    ntime = 13
+
+    stm_network_pnts = make_stm_network_pnts(npoints_net, ntime)
+    stm_pnt_densification = make_stm_pnt_densification(npoints_dens, ntime)
+
+    # Create a coherence mask with some incoherent epochs
+    coh_mask = np.ones((npoints_dens, ntime), dtype=bool)
+    coh_mask[0, 3] = False
+    coh_mask[1, 5:7] = False
+
+    stm_pnt_densification["dt_coh_mask"] = (
+        ("space", "time"),
+        coh_mask,
+    )
+
+    # Densify using only coherent epochs
+    stm_densified = densification(
+        stm_pnt_densification,
+        stm_network_pnts,
+        n_connections=1,
+        key_xcoord="azimuth",
+        key_ycoord="range",
+        key_Btemporal="time",
+        key_h2ph="h2ph",
+        key_sdphase="sd_phase",
+        key_coh_mask="dt_coh_mask",
+    )
+
+    ambiguities = stm_densified["ambiguities"].values
+    unwrapped_phase = stm_densified["unwrapped_phase"].values
+
+    # Incoherent epochs should have NaN results
+    assert np.isnan(ambiguities[~coh_mask]).all()
+    assert np.isnan(unwrapped_phase[~coh_mask]).all()
+
+    # Coherent epochs should have valid results
+    assert np.isfinite(ambiguities[coh_mask]).all()
+    assert np.isfinite(unwrapped_phase[coh_mask]).all()
+
+    # Only newly densified points should be returned
+    assert stm_densified.sizes["space"] == npoints_dens
+

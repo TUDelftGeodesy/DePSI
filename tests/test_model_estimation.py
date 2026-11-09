@@ -255,3 +255,66 @@ def test_estimate_model_params_dataset_behavior():
         stm_out["unw_phase"].values - stm_out["expected_phases_yhat"].values,
         atol=1e-8,
     )
+
+    
+
+def test_estimate_model_params_with_coh_mask():
+    """Test model estimation using valid epochs of designated targets."""
+    stm = stm_linear_height(3, 12)
+
+    # Create coherence masks with different numbers of valid epochs
+    mask = np.ones((3, 12), dtype=bool)
+    mask[0, 2] = False
+    mask[1, 5:8] = False
+    mask[2, 2:] = False
+
+    stm["dt_coh_mask"] = (("space", "time"), mask)
+
+    # Introduce incorrect phase values at incoherent epochs
+    stm["unw_phase"] = stm["unw_phase"].where(
+        stm["dt_coh_mask"],
+        stm["unw_phase"] + 100.0,
+    )
+
+    # Estimate model parameters using only coherent epochs
+    stm_out, param_names = estimate_model_params(
+        stm,
+        models=["offset", "velocity", "height"],
+        key_observations="unw_phase",
+        key_h2ph="h2ph",
+        key_time="time",
+        key_mask="dt_coh_mask",
+    )
+
+    stm_out = stm_out.compute()
+
+    # Check estimated parameters for points with sufficient valid epochs
+    for param_name, true_name in [
+        ("pnt_offset", "true_offset"),
+        ("pnt_velocity", "true_velocity"),
+        ("pnt_height", "true_height"),
+    ]:
+        assert param_name in param_names
+        np.testing.assert_allclose(
+            stm_out[param_name].values[:2],
+            stm[true_name].values[:2],
+            atol=1e-8,
+        )
+
+        # The third point has insufficient valid epochs
+        assert np.isnan(stm_out[param_name].values[2])
+
+    # Check that incoherent epochs remain NaN
+    yhat = stm_out["expected_phases_yhat"].values
+    residuals = stm_out["phase_residuals"].values
+
+    assert np.isnan(yhat[~mask]).all()
+    assert np.isnan(residuals[~mask]).all()
+
+    # Check valid epochs of successfully estimated points
+    assert np.isfinite(yhat[:2][mask[:2]]).all()
+    assert np.isfinite(residuals[:2][mask[:2]]).all()
+
+    # Insufficient observations give NaN predictions and residuals
+    assert np.isnan(yhat[2]).all()
+    assert np.isnan(residuals[2]).all()
