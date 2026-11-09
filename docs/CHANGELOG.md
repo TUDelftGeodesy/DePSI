@@ -1,0 +1,39 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## Notes: beta DePSI
+- DePSI is still a beta project and is under active development.
+- Frequent releases are expected during the beta phase.
+- The codebase is intended to be tested and documented further as development continues.
+
+## [v0.2.0] - 2026-11-06
+
+This release marks the first public changelog entry for DePSI and captures the current state of the Python implementation of the DePSI workflow. It follows the early v0.1.x prototype phase and introduces a more structured, maintainable package for Persistent Scatterer Interferometric SAR (PS-InSAR) processing.
+
+
+### Added
+- Initial Python package release of DePSI for PS-InSAR processing.
+- End-to-end workflow support for:
+  - PS candidate selection
+  - network generation and spatial integration
+  - deformation model estimation
+  - atmospheric phase screen (APS) estimation
+  - densification of PS points
+  - geocoding of PS points
+- Modernized Python-based implementation built around the scientific Python ecosystem.
+- PyPI packaging and installation workflow for end users.
+- Documentation and usage guides covering installation, workflow steps, and API reference.
+- Developer-oriented project structure for future maintenance and contribution.
+
+### Changed
+- Ported the original MATLAB-based DePSI workflow into a Python software package to improve maintainability and extensibility.
+- Reorganized the project around a reusable package structure and documentation-first workflow.
+- Improved accessibility for a broader InSAR and research community through modern tooling and packaging.
+
+
+### Previous versions
+- v0.1.x: early prototype / pre-release work; not yet a stable package baseline.

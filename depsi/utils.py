@@ -1,33 +1,15 @@
+import logging
 import math
 import os
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import asf_search as asf
 import dask.array as da
-import pandas as pd
-import pyproj
-
-try:
-    from datetime import UTC, datetime, timedelta
-except ImportError:  # UTC can only be imported from Python 3.11 onwards
-    import warnings
-    from datetime import datetime, timedelta, timezone
-
-    UTC = timezone.utc
-    warnings.warn(
-        """
-    DePSI uses datetime.UTC, which is only supported from Python 3.11 onwards.
-    For older Python versions, datetime.timezone.utc is used.
-    This might be deprecated in newer DePSI versions.
-    """,
-        DeprecationWarning,
-        stacklevel=1,  # necessary to start the call stack here.
-    )
-
-import logging
-
 import geopandas
 import numpy as np
+import pandas as pd
+import pyproj
 import pytz
 import xarray as xr
 
