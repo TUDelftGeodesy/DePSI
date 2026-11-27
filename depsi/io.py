@@ -6,6 +6,7 @@ import re
 import warnings
 from datetime import datetime
 from glob import glob
+from importlib.metadata import version
 from io import StringIO
 from pathlib import Path
 from typing import Literal
@@ -1005,20 +1006,40 @@ def export_to_skygeo_portal(
 
     # then generate the JSON file
     json_dict = {
-        "acquisition_period": f"{min(fmt_dates)} - {max(fmt_dates)}",
-        "number_of_observations_in_time": str(len(fmt_dates)),
-        "number_of_measurements_in_AoI": str(len(list(stm["space"].values))),
-        "resolution": f"{round(azimuth_spacing, 1)} x {round(range_spacing, 1)} m",
-        "deformation_direction": "Line of Sight" if ts_proj == "los" else "Projected onto Vertical",
-        "DEM": "SRTM",
-        "reference_point_location": ref_pts,
-        "satellite_name": satellite,
-        "satellite_incidence_angle": str(round(np.mean(stm.local_incidence_angle.values.flatten()), 1)),
-        "satellite_pass_direction": asc_dsc,
-        "processing_id": point_annotation_label,
-        "DePSI_version": "DePSI_group",
-        "description": "",
-        "estimated_models_for_time_series": ", ".join(model_names),
+        "product": {
+            "stack": {
+                "satellite": {
+                    "name": satellite,
+                    "wavelength": stm.wavelength,
+                    "pass_direction": asc_dsc,
+                },
+            },
+            "deformation_direction": "line of sight" if ts_proj == "los" else "vertical",
+            "type": "vector/psds",
+            "satellite_incidence_angle": str(round(np.mean(stm.local_incidence_angle.values.flatten()), 1)),
+            "pixel_spacing": {
+                "line": round(azimuth_spacing, 1),
+                "pixel": round(range_spacing, 1),
+            },
+            "acquisitions": {
+                "dates": fmt_dates
+            },
+            "number_of_points": str(len(list(stm["space"].values))),
+            "estimate_model": {
+                "least_squares_estimation": model_names,
+            },
+            "reference": {
+                "date": stm.mother_epoch,
+            },
+            "DEM": "SRTM",
+            "DePSI_version": version("depsi"),
+            "id": point_annotation_label,
+            "description": "",
+            "name": point_annotation_label,
+            "reference_point_location": ref_pts,
+        },
+        "log_location": "N/A",
+        "report_location": "N/A",
     }
     json_filename = ".".join(save_path.split(".")[:-1]) + ".json"
     with open(json_filename, "w") as f:
